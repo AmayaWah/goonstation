@@ -1,12 +1,13 @@
 /obj/filing_cabinet
 	name = "filing cabinet"
 	desc = "A cabinet whose sole purpose is to store your damn files."
-	icon = 'icons/obj/large_storage.dmi'//fucking stupid fucking ass nothing i do works to make this icon be closed if someone doesnt interact with the menu
+	icon = 'icons/obj/storage/large_storage.dmi'//fucking stupid fucking ass nothing i do works to make this icon be closed if someone doesnt interact with the menu
 	icon_state = "filecabinet" //i guess its a feature now               ok bye
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
+	deconstruct_flags = DECON_SCREWDRIVER | DECON_WRENCH
 
-	attackby(var/obj/item/W as obj, var/mob/user as mob)
+	attackby(var/obj/item/W, var/mob/user)
 		if (istype(W, /obj/item/paper) || istype(W, /obj/item/folder))
 			icon_state = "filecabinet-open"
 			if (istype(W, /obj/item/paper)) //couldnt get this to work nicely with [w] so you get this instead god
@@ -15,16 +16,18 @@
 				boutput(user, "You file the folder.")
 			user.drop_item()
 			W.set_loc(src)
-			SPAWN_DBG(5 DECI SECONDS)
+			SPAWN(5 DECI SECONDS)
 				icon_state = "filecabinet"
+				playsound(src, 'sound/effects/drawer_close.ogg', 50, TRUE)
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		icon_state = "filecabinet-open"
+		playsound(src, 'sound/effects/drawer_open.ogg', 50, TRUE)
 		show_window(user)
 
 	Topic(var/href, var/href_list)
 
-		if (get_dist(src, usr) > 1 || iswraith(usr) || isintangible(usr) || is_incapacitated(usr))
+		if (BOUNDS_DIST(src, usr) > 0 || iswraith(usr) || isintangible(usr) || is_incapacitated(usr))
 			return
 		..()
 
@@ -32,8 +35,10 @@
 			usr.put_in_hand_or_drop(src.contents[text2num_safe(href_list["id"])], usr)
 			visible_message("[usr] takes something out of the cabinet.")
 			icon_state = "filecabinet"
+			playsound(src, 'sound/effects/drawer_close.ogg', 50, TRUE)
 		else if(href_list["action"] == "close")
 			icon_state = "filecabinet"
+			playsound(src, 'sound/effects/drawer_close.ogg', 50, TRUE)
 		show_window(usr)
 		icon_state = "filecabinet"
 
@@ -44,6 +49,6 @@
 			return
 		var/output = "<html><head></head><body>"
 		for(var/i = 1, i <= src.contents.len, i++)
-			output += "<a href='?src=\ref[src];id=[i];action=retrieve'>[src.contents[i].name]</a><br>"
+			output += "<a href='byond://?src=\ref[src];id=[i];action=retrieve'>[src.contents[i].name]</a><br>"
 		output += "</body></html>"
 		user << browse(output, "window=filing_cabinet;size=200x400")

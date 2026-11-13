@@ -4,7 +4,8 @@
 			return
 		if (!owner.holder)
 			return
-		if (!isturf(usr.loc))
+		var/datum/targetable/critter/ability = owner
+		if (!isturf(usr.loc) && ability.needs_turf)
 			return
 		..()
 
@@ -25,9 +26,10 @@
 	icon_state = "template"  // TODO.
 	cooldown = 0
 	last_cast = 0
-	var/disabled = 0
+	disabled = 0
 	var/toggled = 0
 	var/is_on = 0   // used if a toggle ability
+	var/needs_turf = TRUE	//! set to false if it can be cast while not on a turf. E.g. inside a locker
 	preferred_holder_type = /datum/abilityHolder/critter
 
 	New()
@@ -64,18 +66,16 @@
 			object.icon_state = src.icon_state
 
 	proc/incapacitationCheck()
-		var/mob/living/M = holder.owner
-		return M.restrained() || is_incapacitated(M)
+		return is_incapacitated(src.holder.owner)
 
 	castcheck()
 		if (incapacitationCheck())
-			boutput(holder.owner, __red("Not while incapacitated."))
+			boutput(holder.owner, SPAN_ALERT("Not while incapacitated."))
 			return 0
 		if (disabled)
-			boutput(holder.owner, __red("You cannot use that ability at this time."))
+			boutput(holder.owner, SPAN_ALERT("You cannot use that ability at this time."))
 			return 0
 		return 1
 
 	cast(atom/target)
 		. = ..()
-		actions.interrupt(holder.owner, INTERRUPT_ACT)

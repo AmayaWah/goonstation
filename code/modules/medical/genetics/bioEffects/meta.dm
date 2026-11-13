@@ -3,6 +3,7 @@
 	desc = "This function of this gene is not well-researched."
 	researched_desc = "This gene will activate every latent mutation in the subject when activated."
 	id = "activator"
+	icon_state = "booster_x"
 	secret = 1
 	isBad = 1
 	probability = 33
@@ -22,13 +23,14 @@
 		for(var/ID in B.effectPool)
 			B.ActivatePoolEffect(B.effectPool[ID], 1, 0)
 			//Overrides incomplete DNA sequences
-		return
+		. = ..()
 
 /datum/bioEffect/scrambler
 	name = "Booster Gene Y"
 	desc = "This function of this gene is not well-researched."
 	researched_desc = "This gene will completely randomise the subject's gene pool and remove all active effects."
 	id = "gene_scrambler"
+	icon_state = "booster_y"
 	secret = 1
 	isBad = 1
 	probability = 33
@@ -45,15 +47,16 @@
 		var/mob/living/L = owner
 		var/datum/bioHolder/B = L.bioHolder
 
-		B.RemoveAllEffects()
+		B.RemoveAllEffects(null, TRUE)
 		B.BuildEffectPool()
-		return
+		. = ..()
 
 /datum/bioEffect/remove_all
 	name = "Booster Gene Z"
 	desc = "This function of this gene is not well-researched."
 	researched_desc = "This gene will remove all active and latent effects from the subject."
 	id = "gene_clearer"
+	icon_state = "booster_z"
 	secret = 1
 	isBad = 1
 	probability = 33
@@ -70,9 +73,9 @@
 		var/mob/living/L = owner
 		var/datum/bioHolder/B = L.bioHolder
 
-		B.RemoveAllEffects()
+		B.RemoveAllEffects(null, TRUE)
 		B.RemoveAllPoolEffects()
-		return
+		. = ..()
 
 /datum/bioEffect/early_secret_access
 	name = "High Complexity DNA"
@@ -80,7 +83,7 @@
 	id = "early_secret_access"
 	secret = 1
 	effectType = EFFECT_TYPE_POWER
-	mob_exclusive = /mob/living/carbon/human/
+	mob_exclusive = /mob/living/carbon/human
 	can_research = 0
 	blockCount = 1
 	probability = 35

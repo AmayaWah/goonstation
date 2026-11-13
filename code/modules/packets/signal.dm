@@ -7,7 +7,15 @@
 	var/data = list()
 	///Set to the error message displayed when sniffing the encrypted packet
 	var/encryption
+	///How obfuscated is this encryption, if sniffed by things that can read it?
+	var/encryption_obfuscation = 15
 	var/datum/computer/file/data_file
+
+	var/mob/author
+
+	New(mob/author=null)
+		..()
+		src.author = author || usr
 
 	proc/copy_from(datum/signal/model)
 		source = model.source
@@ -28,5 +36,5 @@
 		boutput(world, "end of signal")
 
 
-proc/get_free_signal()
-	return new /datum/signal
+proc/get_free_signal(mob/author=null)
+	return new /datum/signal(author)

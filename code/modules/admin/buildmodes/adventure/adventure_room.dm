@@ -18,7 +18,7 @@
 		else
 			var/turf/B = get_turf(object)
 			if (A.z != B.z)
-				boutput(usr, "<span class='alert'>The two corners must be on the same Z!</span>")
+				boutput(usr, SPAN_ALERT("The two corners must be on the same Z!"))
 				return
 
 			var/tz = A.z
@@ -32,7 +32,8 @@
 				for(var/turf/T in block(A, B))
 					var/atom/at = T
 					T.ReplaceWith(walltype, keep_old_material=0, force=1)
-					at.set_dir(holder.dir)
+					if(src.holder.dir)
+						at.set_dir(holder.dir)
 					blink(get_turf(at))
 					new /area/adventure(at)
 					reset_lum(at)
@@ -197,7 +198,8 @@
 				for(var/turf/T in block(Q, B))
 					C = T
 					C.ReplaceWith(floortype, keep_old_material=0, force=1)
-					C.set_dir(holder.dir)
+					if(src.holder.dir)
+						C.set_dir(holder.dir)
 					blink(C)
 					new /area/adventure(C)
 					reset_lum(C)
@@ -212,4 +214,4 @@
 		var/wallname = "[kind] wall"
 		floortype = turfs[turfname]
 		walltype = turfs[wallname]
-		boutput(usr, "<span class='notice'>Now building [kind] rooms in wide area spawn mode.</span>")
+		boutput(usr, SPAN_NOTICE("Now building [kind] rooms in wide area spawn mode."))

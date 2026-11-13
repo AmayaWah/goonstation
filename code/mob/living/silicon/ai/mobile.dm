@@ -9,10 +9,8 @@
 	icon = 'icons/mob/mobile_ai.dmi'
 	voice_name = "synthesized voice"
 	icon_state = "ai"
-	network = "SS13"
 	pixel_y = 15
 	layer = MOB_LAYER
-	announcearrival = 0
 	classic_move = 0
 	a_intent = "disarm" //So we don't get brohugged right off a rail.
 	var/malf = 0
@@ -25,7 +23,7 @@
 		src.cell = new /obj/item/cell(src)
 		src.cell.maxcharge = setup_charge_maximum
 		src.cell.charge = src.cell.maxcharge
-		SPAWN_DBG(0.6 SECONDS)
+		SPAWN(0.6 SECONDS)
 			var/obj/overlay/U1 = new
 			U1.icon = src.icon
 			U1.icon_state = "aitrack"
@@ -72,7 +70,7 @@
 			return
 
 		src.now_pushing = 0
-		SPAWN_DBG(0)
+		SPAWN(0)
 			..()
 			if (!istype(AM, /atom/movable))
 				return
@@ -138,7 +136,7 @@
 							boutput(src, "You've lost power!")
 							/*
 							// this shit is probably broken now but w/e mobile ais dont exist
-							SPAWN_DBG(5 SECONDS)
+							SPAWN(5 SECONDS)
 								while ((src:aiRestorePowerRoutine!=0) && stat!=2)
 									src.death_timer -= 1
 									sleep(5 SECONDS)
@@ -146,7 +144,7 @@
 
 		src.check_power()
 
-	set_face(var/emotion)
+	set_face(var/emotion, var/key, var/apply_glass_material = FALSE)
 		src.overlays.len = 0
 		if(src.stat || src.malf)
 			if(isdead(src))
@@ -186,7 +184,7 @@
 	icon = 'icons/mob/mobile_ai.dmi'
 	icon_state = "intact"
 	layer = AI_RAIL_LAYER
-	anchored = 1
+	anchored = ANCHORED
 	var/bitdir = 0 //Valid direction bitflags
 
 	New()
@@ -223,11 +221,11 @@
 	icon_state = "drone"
 	pixel_y = 15
 	layer = MOB_LAYER
-	anchored = 1
+	anchored = ANCHORED
 
 	New()
 		..()
-		SPAWN_DBG(0.6 SECONDS)
+		SPAWN(0.6 SECONDS)
 			var/obj/overlay/U1 = new
 			U1.icon = src.icon
 			U1.icon_state = "railtrack"
@@ -254,7 +252,7 @@
 
 	return_mainframe()
 		if(!isAI(src.mainframe) || !src.mind)
-			boutput(src, "<span class='alert'>--Host System Error</span>")
+			boutput(src, SPAN_ALERT("--Host System Error"))
 			return 1
 
 		src.mind.transfer_to(src.mainframe)
@@ -277,7 +275,7 @@
 			return
 
 		src.now_pushing = 0
-		SPAWN_DBG(0)
+		SPAWN(0)
 			..()
 			if (!istype(AM, /atom/movable))
 				return

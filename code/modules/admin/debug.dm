@@ -9,17 +9,19 @@ var/global/debug_messages = 0
 	set desc = "Toggle debug messages."
 	set name = "HDM" // debug ur haines
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	debug_messages = !(debug_messages)
-	logTheThing("admin", usr, null, "toggled debug messages [debug_messages ? "on" : "off"].")
-	logTheThing("diary", usr, null, "toggled debug messages [debug_messages ? "on" : "off"].", "admin")
+	logTheThing(LOG_ADMIN, usr, "toggled debug messages [debug_messages ? "on" : "off"].")
+	logTheThing(LOG_DIARY, usr, "toggled debug messages [debug_messages ? "on" : "off"].", "admin")
 	message_admins("[key_name(usr)] toggled debug messages [debug_messages ? "on" : "off"]")
 
 /client/proc/debug_deletions()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Deletions"
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/deletedJson = "\[{path:null,count:0}"
 	var/deletionWhat = "Deleted Object Counts:"
 	#ifdef DELETE_QUEUE_DEBUG
@@ -70,13 +72,15 @@ var/global/debug_messages = 0
 /client/proc/debug_image_deletions_clear()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Clear Image Deletion Log"
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	deletedImageData = new
 
 /client/proc/debug_image_deletions()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Image Deletions"
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	#ifdef IMAGE_DEL_DEBUG
 	var/deletedJson = "\[''"
 	var/deletionWhat = "Deleted Image data:"
@@ -112,164 +116,38 @@ var/global/debug_messages = 0
 	src.Browse(html, "window=deletedImageData;size=400x600")
 #endif
 
-/client/proc/debug_pools()
-	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	set name = "Debug Object Pools"
-	admin_only
-
-	#ifndef DETAILED_POOL_STATS
-	var/poolsJson = "\[{pool:null,count:0}"
-	for(var/pool in object_pools)
-		var/list/poolList = object_pools[pool]
-		poolsJson += ",{pool:'[pool]',count:[poolList.len]}\n"
-	poolsJson += "]"
-	var/html = {"<!doctype html><html>
-	<head><title>object pool counts</title>
-	<script type="text/javascript">
-	function display() {
-		var i, html,
-			listing = document.getElementById('listing'),
-			objectPools = [poolsJson].sort(function(a, b) { return b.count - a.count; });
-		html = '';
-		var total = 0;
-		for(i = 0;i < objectPools.length; i++) {
-			total += objectPools\[i].count;
-			html += '<li><strong>' + objectPools\[i].pool
-				+ '</strong>: ' + objectPools\[i].count.toString()
-				+ '</li>';
-		}
-		html = '<li><span style="color:red;font-weight:bold">Total</span>: ' + total.toString() + "</li>" + html;
-		listing.innerHTML = html;
-	}
-	</script>
-	</head><body onload="display()">
-	<h1>Object Pool Counts:</h1>
-	<ul id="listing"></ul>
-	</body></html>"}
-	#else
-	var/poolsJson = getPoolingJson()
-	var/html = {"<!doctype html><html>
-				<head><title>object pool counts</title>
-				<style>
-					table {
-						border: 1px solid black;
-						border-collapse:collapse;
-					}
-					th, td {
-						padding:5px;
-						border: 1px solid black;
-					}
-				</style>
-				</head><body>
-				<h1>Object Pool Counts:</h1>
-				<span id="listing"></span>
-				<script type="text/javascript">
-					function display() {
-						var i, html,
-							listing = document.getElementById('listing'),
-							objectPools = [poolsJson].sort(function(a, b) { return b.count - a.count; });
-						html = '';
-						var total = 0;
-						for(i = 0;i < objectPools.length; i++) {
-							var p = objectPools\[i];
-							total += p.count;
-							html += '<tr><td>' + p.path + '</td><td>' + p.count.toString() + '</td><td>' + p.hits.toString() + '</td><td>' + p.misses.toString() + '</td><td>' + p.poolings.toString() + '</td><td>' + p.unpoolings.toString() + '</td><td>' + p.evictions.toString() + '</td></tr>';
-						}
-						html = '<table><tr><th>Path</th><th>Count</th><th>Hits</th><th>Misses</th><th>Poolings</th><th>Unpoolings</th><th>Evictions</th></tr>' + html + '<tr><th>Total:</th><td>' + total.toString() + '</td></tr></table>';
-						listing.innerHTML = html;
-					};
-				display();
-				</script>
-				</body></html>"}
-	#endif
-	src.Browse(html, "window=poolCounts;size=400x800")
-
 /client/proc/call_proc_atom(atom/target as null|area|obj|mob|turf in world)
 	set name = "Call Proc"
 	set desc = "Calls a proc associated with the targeted atom"
 	SET_ADMIN_CAT(ADMIN_CAT_UNUSED)
-	admin_only
+	ADMIN_ONLY
 	if (!target)
 		return
-	doCallProc(target)
+	src.doCallProc(target)
 
 /client/proc/call_proc_all(var/typename as null|text)
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Call Proc All"
 	set desc = "Call proc on all instances of a type, will probably slow shit down"
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if (!typename)
+		typename = input("Input part of type:", "Type Input") as null|text
+	if (!typename)
 		return
-	var/thetype = get_one_match(typename, /atom, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
+	var/thetype = get_one_match(typename, /datum, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
 	if (thetype)
-		var/counter = 0
 		var/procname = input("Procpath","path:", null) as text
-		var/argnum = input("Number of arguments:","Number", 0) as num
-		var/list/listargs = list()
+		var/list/listargs = src.get_proccall_arglist()
+		if (listargs == null) return
 
-		for(var/i=0, i<argnum, i++)
-			var/class = input("Type of Argument #[i]","Variable Type", null) in list("text","num","type","json","ref","reference","mob reference","reference atom at current turf","icon","file","-cancel-")
-			switch(class)
-				if("-cancel-")
-					return
+		var/list/results = find_all_by_type(thetype, procname, "instance", listargs)
 
-				if("text")
-					listargs += input("Enter new text:","Text",null) as null|text
-
-				if("num")
-					listargs += input("Enter new number:","Num", 0) as null|num
-
-				if("type")
-					listargs += input("Enter type:","Type", null) in null|typesof(/obj,/mob,/area,/turf)
-
-				if("json")
-					listargs += list(json_decode(input("Enter json:") as null|text))
-
-				if ("ref")
-					var/input = input("Enter ref:") as null|text
-					var/target = locate(input)
-					if (!target) target = locate("\[[input]\]")
-					listargs += target
-
-				if("reference")
-					listargs += input("Select reference:","Reference", null) as null|mob|obj|turf|area in world
-
-				if("mob reference")
-					listargs += input("Select reference:","Reference", null) as null|mob in world
-
-				if("reference atom at current turf")
-					var/list/possible = list()
-					var/turf/T = get_turf(usr)
-					possible += T.loc
-					possible += T
-					for (var/atom/A in T)
-						possible += A
-						for (var/atom/B in A)
-							possible += B
-					listargs += input("Select reference:","Reference", null) as mob|obj|turf|area in possible
-
-				if("file")
-					listargs += input("Pick file:","File", null) as null|file
-
-				if("icon")
-					listargs += input("Pick icon:","Icon", null) as null|icon
-			if (listargs == null) return
-
-		for (var/atom/theinstance in world)
-			if (!istype(theinstance, thetype))
-				continue
-			counter++
-			if(listargs.len)
-				call(theinstance,procname)(arglist(listargs))
-			else
-				call(theinstance,procname)()
-
-			LAGCHECK(LAG_LOW)
-
-		boutput(usr, "<span class='notice'>'[procname]' called on [counter] instances of '[typename]'</span>")
-		message_admins("<span class='alert'>Admin [key_name(src)] called '[procname]' on all instances of '[typename]'</span>")
-		logTheThing("admin", src, null, "called [procname] on all instances of [typename]")
-		logTheThing("diary", src, null, "called [procname] on all instances of [typename]")
+		boutput(usr, SPAN_NOTICE("'[procname]' called on [length(results)] instances of '[thetype]'"))
+		message_admins(SPAN_ALERT("Admin [key_name(src)] called '[procname]' on all instances of '[thetype]'"))
+		logTheThing(LOG_ADMIN, src, "called [procname] on all instances of [thetype]")
+		logTheThing(LOG_DIARY, src, "called [procname] on all instances of [thetype]")
 	else
 		boutput(usr, "No type matches for [typename]")
 		return
@@ -280,7 +158,8 @@ var/global/debug_messages = 0
 /client/proc/call_proc()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Advanced ProcCall"
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/target = null
 
 	switch (alert("Proc owned by obj?",,"Yes","No","Cancel"))
@@ -292,16 +171,16 @@ var/global/debug_messages = 0
 				return
 		if ("No")
 			target = null
-	doCallProc(target)
+	src.doCallProc(target)
 
-/proc/doCallProc(target = null, procname = null) // also accepts actual proc
+/client/proc/doCallProc(datum/target = null, procname = null) // also accepts actual proc
 	var/returnval = null
 	if(isnull(procname))
 		procname = input("Procpath (ex. bust_lights)","path:", null) as null|text
 	if (isnull(procname))
 		return
 
-	var/list/listargs = get_proccall_arglist()
+	var/list/listargs = src.get_proccall_arglist()
 
 	var/list/name_list
 
@@ -315,14 +194,15 @@ var/global/debug_messages = 0
 		name_list = list(procname)
 
 	if(target)
-		boutput(usr, "<span class='notice'>Calling '[procname]' with [islist(listargs) ? listargs.len : "0"] arguments on '[target]'</span>")
+		boutput(usr, SPAN_NOTICE("Calling '[procname]' with [islist(listargs) ? listargs.len : "0"] arguments on '[target]'"))
 	else
-		boutput(usr, "<span class='notice'>Calling '[procname]' with [islist(listargs) ? listargs.len : "0"] arguments</span>")
+		boutput(usr, SPAN_NOTICE("Calling '[procname]' with [islist(listargs) ? listargs.len : "0"] arguments"))
 
 	var/success = FALSE
 	for(var/actual_proc in name_list)
 		try
 			if (target)
+				target.onProcCalled(actual_proc, listargs)
 				if(islist(listargs) && length(listargs))
 					returnval = call(target,actual_proc)(arglist(listargs))
 				else
@@ -336,11 +216,11 @@ var/global/debug_messages = 0
 			break
 		catch(var/exception/e)
 			if(e.name != "bad proc" && copytext(e.name, 1, 15) != "undefined proc") // fuck u byond
-				boutput(usr, "<span class='alert'>Exception occured! <a style='color: #88f;' href='byond://winset?command=View-Runtimes'>View Runtimes</a></span>")
+				boutput(usr, SPAN_ALERT("Exception occurred! <a style='color: #88f;' href='byond://winset?command=View-Runtimes'>View Runtimes</a>"))
 				throw e
 
 	if(!success)
-		boutput(usr, "<span class='alert'>Proc [procname] not found!</span>")
+		boutput(usr, SPAN_ALERT("Proc [procname] not found!"))
 		return
 
 	var/pretty_returnval = returnval
@@ -348,87 +228,171 @@ var/global/debug_messages = 0
 		pretty_returnval = "<a href='byond://?src=\ref[usr.client];Refresh=\ref[returnval]'>[returnval] \ref[returnval]</a>"
 	else
 		pretty_returnval = json_encode(returnval)
-	boutput(usr, "<span class='notice'>Proc returned: [pretty_returnval]</span>")
+	boutput(usr, SPAN_NOTICE("Proc returned: [pretty_returnval]"))
 	return
 
-/proc/get_proccall_arglist(list/arginfo = null)
+/datum/proccall_editor
+	var/atom/movable/target
+	/// The current key value state of the arguments we want to return
+	var/list/listargs
+	var/list/initialization_args
+	/// Boolean field describing if the tgui_color_picker was closed by the user.
+	var/closed = FALSE
+
+/datum/proccall_editor/New(atom/target, init_args)
+	..()
+	src.target = target
+	initialization_args = init_args
+	src.setup_listargs()
+
+/datum/proccall_editor/disposing()
+	src.target = null
+	src.listargs = null
+	src.initialization_args = null
+	..()
+
+/datum/proccall_editor/ui_state(mob/user)
+	return tgui_admin_state
+
+/datum/proccall_editor/ui_interact(mob/user, datum/tgui/ui)
+	ui = tgui_process.try_update_ui(user, src, ui)
+	if(!ui)
+		ui = new(user, src, "ProcCall")
+		ui.open()
+		//ui.set_autoupdate(timeout > 0)
+
+/**
+ * Waits for a user's response to the tgui_color_picker's prompt before returning. Returns early if
+ * the window was closed by the user.
+ */
+/datum/proccall_editor/proc/wait()
+	while (!closed && !QDELETED(src))
+		sleep(1)
+
+/datum/proccall_editor/ui_close(mob/user)
+	. = ..()
+	closed = TRUE
+
+///Set up the default values stored in listargs before we open the interface
+/datum/proccall_editor/proc/setup_listargs()
+	src.listargs = list()
+	for(var/customization in initialization_args)
+		if(length(customization) >= ARG_INFO_DEFAULT)
+			if (customization[ARG_INFO_TYPE] == DATA_INPUT_LIST_PROVIDED)
+				var/list/supplied_list = customization[ARG_INFO_DEFAULT]
+				src.listargs[customization[ARG_INFO_NAME]] = supplied_list[1]
+			else
+				src.listargs[customization[ARG_INFO_NAME]] = customization[ARG_INFO_DEFAULT]
+		else
+			src.listargs[customization[ARG_INFO_NAME]] = null
+
+/datum/proccall_editor/ui_data(mob/user)
+	. = list()
+	.["name"] = "Variables"
+	.["options"] = list()
+	for(var/customization in initialization_args)
+		.["options"][customization[ARG_INFO_NAME]] += list(
+			"type" = customization[ARG_INFO_TYPE],
+			"description" = customization[ARG_INFO_DESC])
+
+		//show coordinates as well as actual value
+		if(customization[ARG_INFO_TYPE] == DATA_INPUT_REFPICKER)
+			var/atom/target = src.listargs[customization[ARG_INFO_NAME]]
+			if(isatom(target))
+				.["options"][customization[ARG_INFO_NAME]]["value"] = "([target.x],[target.y],[target.z]) [target]"
+			else
+				.["options"][customization[ARG_INFO_NAME]]["value"] = "null"
+			continue
+		//supplied lists have a different interface with a `list` var and `value` being the currently selected list item
+		//confusing!!
+		if (customization[ARG_INFO_TYPE] == DATA_INPUT_LIST_PROVIDED)
+			var/list/key_list = list()
+			for (var/key in customization[ARG_INFO_DEFAULT])
+				key_list += "[key]" //stringify here to prevent encoding issues with letting the frontend do it
+			.["options"][customization[ARG_INFO_NAME]]["list"] = key_list
+			.["options"][customization[ARG_INFO_NAME]]["value"] = src.listargs[customization[ARG_INFO_NAME]]
+		//normal variable
+		.["options"][customization[ARG_INFO_NAME]]["value"] = src.listargs[customization[ARG_INFO_NAME]]
+
+/datum/proccall_editor/ui_act(action, list/params, datum/tgui/ui)
+	USR_ADMIN_ONLY
+	SHOW_VERB_DESC
+	. = ..()
+	if(.)
+		return
+
+	switch(action)
+		if("modify_value")
+			for(var/customization in initialization_args)
+				if(params["name"]==customization[ARG_INFO_NAME] \
+				&& params["type"]==customization[ARG_INFO_TYPE] )
+					listargs[params["name"]] = params["value"]
+					. = TRUE
+					break
+
+		if("modify_color_value")
+			for(var/customization in initialization_args)
+				if(params["name"]==customization[ARG_INFO_NAME] \
+				&& params["type"]==customization[ARG_INFO_TYPE] )
+					var/new_color = input(usr, "Pick new color", "Event Color") as color|null
+					if(new_color)
+						listargs[params["name"]] = new_color
+					. = TRUE
+					break;
+
+		if("modify_ref_value")
+			for(var/customization in initialization_args)
+				if(params["name"]==customization[ARG_INFO_NAME] \
+				&& params["type"]==customization[ARG_INFO_TYPE])
+					var/atom/target = pick_ref(usr)
+					listargs[params["name"]] = target
+					. = TRUE
+					break;
+		if ("modify_list_value")
+			for(var/customization in initialization_args)
+				if(params["name"]==customization[ARG_INFO_NAME] \
+				&& params["type"]==customization[ARG_INFO_TYPE])
+					//go through the actual values and compare their stringified value to the one we got from the frontend
+					//so we don't end up returning a string instead of a type for instance
+					for (var/list_option in customization[ARG_INFO_DEFAULT])
+						if (strip_illegal_characters("[list_option]") == params["value"])
+							src.listargs[params["name"]] = list_option
+							return TRUE
+		if("activate")
+			closed = TRUE
+			ui.close()
+
+		if("unsupported_type")
+			src.closed = TRUE
+			src.listargs = null
+			boutput(usr, "DataInput.tsx does not support type: [params["type"]] for name:[params["name"]]")
+			ui.close()
+
+/client/proc/get_proccall_arglist(list/arginfo = null, var/list/custom_options = null)
+	if(arginfo)
+		var/datum/proccall_editor/E = new /datum/proccall_editor(usr, arginfo)
+		if(E)
+			E.ui_interact(usr)
+			E.wait()
+			if(islist(E.listargs) && length(E.listargs))
+				return E.listargs
 	var/argnum = arginfo ? length(arginfo) : input("Number of arguments:","Number", 0) as null|num
 	var/list/listargs = list()
 	if (!argnum)
 		return listargs
 	for (var/i = 1 , i <= argnum, i++)
-		var/class = input(arginfo ? arginfo[i][ARG_INFO_DESC] + ":" : "Type of Argument #[i]", arginfo ? "Argument #[i]: " + arginfo[i][ARG_INFO_NAME] : "Variable Type", arginfo ? arginfo[i][ARG_INFO_TYPE] : null)\
-		 as null|anything in list("text","num","type","json","ref","reference","mob reference","reference atom at current turf","icon","color","file","the turf of which you are on top of right now")
-		if(!class)
+		var/datum/data_input_result/arg = src.input_data(list(DATA_INPUT_TEXT, DATA_INPUT_NUM, DATA_INPUT_BOOL, DATA_INPUT_TYPE, DATA_INPUT_JSON, DATA_INPUT_REF, DATA_INPUT_MOB_REFERENCE, \
+										DATA_INPUT_ATOM_ON_CURRENT_TURF, DATA_INPUT_ICON, DATA_INPUT_COLOR, DATA_INPUT_FILE, DATA_INPUT_REFPICKER, DATA_INPUT_LIST_BUILD, DATA_INPUT_NULL, \
+										DATA_INPUT_NEW_INSTANCE) \
+										+ custom_options, default = (length(arginfo?[i]) > 3) ? arginfo[i][ARG_INFO_DEFAULT] : null, custom_type_title = arginfo ? arginfo[i][ARG_INFO_DESC] + ":" : "Type of Argument #[i]", \
+										custom_type_message =  arginfo ? "Argument #[i]: " + arginfo[i][ARG_INFO_NAME] : "Variable Type", \
+										default_type = arginfo?[i][ARG_INFO_TYPE])
+
+		if(isnull(arg.output_type))
 			break
-		switch(class)
-			if ("text")
-				listargs += input("Enter new text:","Text", (arginfo?[i][ARG_INFO_TYPE] == class && length(arginfo[i])>=ARG_INFO_DEFAULT) ? arginfo[i][ARG_INFO_DEFAULT] : null) as null|text
 
-			if ("num")
-				listargs += input("Enter new number:","Num", (arginfo?[i][ARG_INFO_TYPE] == class && length(arginfo[i])>=ARG_INFO_DEFAULT) ? arginfo[i][ARG_INFO_DEFAULT] : 0) as null|num
+		listargs += list(arg.output)
 
-			if ("type")
-				boutput(usr, "<span class='notice'>Type part of the path of the type.</span>")
-				var/typename = input("Part of type path.", "Part of type path.", (arginfo?[i][ARG_INFO_TYPE] == class && length(arginfo[i])>=ARG_INFO_DEFAULT) ? arginfo[i][ARG_INFO_DEFAULT] : "/obj") as null|text
-				if (typename)
-					var/match = get_one_match(typename, /datum, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
-					if (match)
-						listargs += match
-
-			if("json")
-				listargs += list(json_decode(input("Enter json:") as null|text))
-
-			if ("ref")
-				var/input = input("Enter ref:") as null|text
-				var/target = locate(input)
-				if (!target) target = locate("\[[input]\]")
-				listargs += target
-
-			if ("reference")
-				listargs += input("Select reference:","Reference", null) as null|mob|obj|turf|area in world
-
-			if ("mob reference")
-				listargs += input("Select reference:","Reference", null) as null|mob in world
-
-			if ("the turf of which you are on top of right now")
-				listargs += get_turf(usr)
-
-			if ("reference atom at current turf")
-				var/list/possible = list()
-				var/turf/T = get_turf(usr)
-				possible += T.loc
-				possible += T
-				for (var/atom/A in T)
-					possible += A
-					for (var/atom/B in A)
-						possible += B
-				listargs += input("Select reference:","Reference", null) as mob|obj|turf|area in possible
-
-			if ("file")
-				listargs += input("Pick file:","File", null) as null|file
-
-			if ("icon")
-				listargs += input("Pick icon:","Icon", null) as null|icon
-
-			if ("color")
-				listargs += input("Pick color:","Color",  (arginfo?[i][ARG_INFO_TYPE] == class && length(arginfo[i])>=ARG_INFO_DEFAULT) ? arginfo[i][ARG_INFO_DEFAULT] : null) as null|color
-
-			if ("turf by coordinates")
-				var/x = input("X coordinate", "Set to turf at \[_, ?, ?\]", 1) as null|num
-				var/y = input("Y coordinate", "Set to turf at \[[x], _, ?\]", 1) as null|num
-				var/z = input("Z coordinate", "Set to turf at \[[x], [y], _\]", 1) as null|num
-				var/turf/T = locate(x, y, z)
-				if (istype(T))
-					listargs += T
-				else
-					boutput(usr, "<span class='alert'>Invalid coordinates!</span>")
-
-			else
-				continue
-
-		if (listargs == null)
-			return list()
 	return listargs
 
 /client/proc/cmd_admin_mobileAIize(var/mob/M in world)
@@ -439,9 +403,9 @@ var/global/debug_messages = 0
 		alert("Wait until the game starts")
 		return
 	if(ishuman(M))
-		logTheThing("admin", src, M, "has mobile-AIized [constructTarget(M,"admin")]")
-		logTheThing("diary", src, M, "has mobile-AIized [constructTarget(M,"diary")]", "admin")
-		SPAWN_DBG(1 SECOND)
+		logTheThing(LOG_ADMIN, src, "has mobile-AIized [constructTarget(M,"admin")]")
+		logTheThing(LOG_DIARY, src, "has mobile-AIized [constructTarget(M,"diary")]", "admin")
+		SPAWN(1 SECOND)
 			M:AIize(1)
 
 	else
@@ -460,12 +424,12 @@ var/global/debug_messages = 0
 		if (job_start_locations["AI"])
 			new_loc = pick(job_start_locations["AI"])
 		if (new_loc)
-			boutput(M, "<span class='notice'><B>You have been teleported to your new starting location!</B></span>")
+			boutput(M, SPAN_NOTICE("<B>You have been teleported to your new starting location!</B>"))
 			M.set_loc(new_loc)
 			M.buckled = null
-		message_admins("<span class='alert'>Admin [key_name(src)] AIized [key_name(M)]!</span>")
-		logTheThing("admin", src, M, "AIized [constructTarget(M,"admin")]")
-		logTheThing("diary", src, M, "AIized [constructTarget(M,"diary")]", "admin")
+		message_admins(SPAN_ALERT("Admin [key_name(src)] AIized [key_name(M)]!"))
+		logTheThing(LOG_ADMIN, src, "AIized [constructTarget(M,"admin")]")
+		logTheThing(LOG_DIARY, src, "AIized [constructTarget(M,"diary")]", "admin")
 		return H.AIize()
 
 	else
@@ -500,52 +464,37 @@ var/global/debug_messages = 0
 	else
 		alert("This only works on human mobs.")
 
-/* Just use the set traitor dialog thing
-/client/proc/cmd_admin_changelinginize(var/mob/M in world)
-	SET_ADMIN_CAT(ADMIN_CAT_UNUSED)
-	set name = "Make Changeling"
-	set popup_menu = 0
-	if(!ticker)
-		alert("Wait until the game starts")
-		return
-	if(ishuman(M) && M.mind != null)
-		logTheThing("admin", src, M, "has made [constructTarget(M,"admin")] a changeling.")
-		logTheThing("diary", src, M, "has made [constructTarget(M,"diary")] a changeling.", "admin")
-		SPAWN_DBG(1 SECOND)
-			M.mind.absorbed_dna[M.bioHolder] = M.real_name
-			M.make_changeling()
-	else
-		alert("Invalid mob")
-*/
-
 /client/proc/cmd_debug_del_all(var/typename as text)
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Del-All"
 	set desc = "Delete all instances of the selected type."
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+	// to prevent REALLY stupid deletions on live
+	var/hsbitem = get_one_match(typename, /atom, use_concrete_types=FALSE)
+	var/background =  alert("Run the process in the background?",,"Yes" ,"No")
 
-	// to prevent REALLY stupid deletions
+#ifdef LIVE_SERVER
 	var/blocked = list(/obj, /mob, /mob/living, /mob/living/carbon, /mob/living/carbon/human)
-	var/hsbitem = get_one_match(typename, /atom)
-	var/background =  alert("Run the process in the background?",,"Yes (High)","Yes (Low)" ,"No")
-
 	for(var/V in blocked)
 		if(V == hsbitem)
 			boutput(usr, "Can't delete that you jerk!")
 			return
+#endif
 	if(hsbitem)
 		src.delete_state = DELETE_RUNNING
 		src.verbs += /client/proc/cmd_debug_del_all_cancel
 		src.verbs += /client/proc/cmd_debug_del_all_check
 		boutput(usr, "Deleting [hsbitem]...")
+		var/station_only = alert("Only delete from the station Z?",,"Yes" ,"No")
 		var/numdeleted = 0
-		for(var/atom/O in world)
-			if(istype(O, hsbitem))
-				qdel(O)
-				numdeleted++
-				if(background == "Yes (Low)")
-					LAGCHECK(LAG_LOW)
-				else if(background == "Yes (High)")
-					LAGCHECK(LAG_REALTIME)
+		for(var/atom/O as anything in find_all_by_type(hsbitem, lagcheck=(background == "yes")))
+			if ((station_only == "Yes") && get_z(O) != Z_LEVEL_STATION)
+				continue
+			qdel(O)
+			numdeleted++
+			if(background == "Yes")
+				LAGCHECK(LAG_LOW)
 			if (src.delete_state == DELETE_STOP)
 				break
 			else if (src.delete_state == DELETE_CHECK)
@@ -554,8 +503,8 @@ var/global/debug_messages = 0
 
 		if(numdeleted == 0) boutput(usr, "No instances of [hsbitem] found!")
 		else boutput(usr, "Deleted [numdeleted] instances of [hsbitem]!")
-		logTheThing("admin", src, null, "has deleted [numdeleted] instances of [hsbitem].")
-		logTheThing("diary", src, null, "has deleted [numdeleted] instances of [hsbitem].", "admin")
+		logTheThing(LOG_ADMIN, src, "has deleted [numdeleted] instances of [hsbitem].")
+		logTheThing(LOG_DIARY, src, "has deleted [numdeleted] instances of [hsbitem].", "admin")
 		message_admins("[key_name(src)] has deleted [numdeleted] instances of [hsbitem].")
 		src.verbs -= /client/proc/cmd_debug_del_all_cancel
 		src.verbs -= /client/proc/cmd_debug_del_all_check
@@ -565,33 +514,36 @@ var/global/debug_messages = 0
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Del-Half"
 	set desc = "Delete approximately half of instances of the selected type. *snap"
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	// to prevent REALLY stupid deletions
-	var/blocked = list(/obj, /mob, /mob/living, /mob/living/carbon, /mob/living/carbon/human)
-	var/hsbitem = get_one_match(typename, /atom)
-	var/background =  alert("Run the process in the background?",,"Yes (High)","Yes (Low)" ,"No")
+	var/hsbitem = get_one_match(typename, /atom, use_concrete_types=FALSE)
+	var/background =  alert("Run the process in the background?",,"Yes" ,"No")
 
+#ifdef LIVE_SERVER
+	var/blocked = list(/obj, /mob, /mob/living, /mob/living/carbon, /mob/living/carbon/human)
 	for(var/V in blocked)
 		if(V == hsbitem)
 			boutput(usr, "Can't delete that you jerk!")
 			return
+#endif
 	if(hsbitem)
 		src.delete_state = DELETE_RUNNING
 		src.verbs += /client/proc/cmd_debug_del_all_cancel
 		src.verbs += /client/proc/cmd_debug_del_all_check
 		boutput(usr, "Deleting [hsbitem]...")
+		var/station_only = alert("Only delete from the station Z?",,"Yes" ,"No")
 		var/numdeleted = 0
 		var/numtotal = 0
-		for(var/atom/O in world)
-			if(istype(O, hsbitem))
-				numtotal++
-				if(prob(50))
-					qdel(O)
-					numdeleted++
-				if(background == "Yes (Low)")
-					LAGCHECK(LAG_LOW)
-				else if(background == "Yes (High)")
-					LAGCHECK(LAG_REALTIME)
+		for(var/atom/O as anything in find_all_by_type(hsbitem, lagcheck=(background == "yes")))
+			if ((station_only == "Yes") && get_z(O) != Z_LEVEL_STATION)
+				continue
+			numtotal++
+			if(prob(50))
+				qdel(O)
+				numdeleted++
+			if(background == "Yes")
+				LAGCHECK(LAG_LOW)
 			if (src.delete_state == DELETE_STOP)
 				break
 			else if (src.delete_state == DELETE_CHECK)
@@ -600,8 +552,8 @@ var/global/debug_messages = 0
 
 		if(numtotal == 0) boutput(usr, "No instances of [hsbitem] found!")
 		else boutput(usr, "Deleted [numdeleted]/[numtotal] instances of [hsbitem]!")
-		logTheThing("admin", src, null, "has deleted [numdeleted]/[numtotal] instances of [hsbitem].")
-		logTheThing("diary", src, null, "has deleted [numdeleted]/[numtotal] instances of [hsbitem].", "admin")
+		logTheThing(LOG_ADMIN, src, "has deleted [numdeleted]/[numtotal] instances of [hsbitem].")
+		logTheThing(LOG_DIARY, src, "has deleted [numdeleted]/[numtotal] instances of [hsbitem].", "admin")
 		message_admins("[key_name(src)] has deleted [numdeleted]/[numtotal] instances of [hsbitem].")
 		src.verbs -= /client/proc/cmd_debug_del_all_cancel
 		src.verbs -= /client/proc/cmd_debug_del_all_check
@@ -611,14 +563,16 @@ var/global/debug_messages = 0
 /client/proc/cmd_debug_del_all_cancel()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Del-All Cancel"
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	src.delete_state = DELETE_STOP
 
 // makes del_all print how much is currently deleted
 /client/proc/cmd_debug_del_all_check()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Del-All Progress"
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	src.delete_state = DELETE_CHECK
 
 // fuck this
@@ -636,8 +590,8 @@ var/global/debug_messages = 0
 	var/width = input("Enter WIDTH of Explosion\nLeave it on 360 if you have no idea what this does.", "Width", 360) as num
 	var/turf_safe = alert("Do you want to make the explosion safe for turfs?", "Turf safe?", "Yes", "No") == "Yes"
 
-	logTheThing("admin", src, null, "created an explosion (power [esize], brisance [bris]) at [log_loc(T)].")
-	logTheThing("diary", src, null, "created an explosion (power [esize], brisance [bris]) at [log_loc(T)].", "admin")
+	logTheThing(LOG_ADMIN, src, "created an explosion (power [esize], brisance [bris]) at [log_loc(T)].")
+	logTheThing(LOG_DIARY, src, "created an explosion (power [esize], brisance [bris]) at [log_loc(T)].", "admin")
 	message_admins("[key_name(src)] has created an explosion (power [esize], brisance [bris]) at [log_loc(T)].")
 
 	explosion_new(null, T, esize, bris, angle, width, turf_safe=turf_safe)
@@ -647,6 +601,8 @@ var/global/debug_messages = 0
 	set name = "Change Mutant Race"
 	SET_ADMIN_CAT(ADMIN_CAT_FUN)
 	set popup_menu = 0
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if(!ishuman(mob))
 		alert("[mob] is not a human mob!")
 		return
@@ -658,8 +614,6 @@ var/global/debug_messages = 0
 	if (!race)
 		return
 
-	if(H.mutantrace)
-		qdel(H.mutantrace)
 	H.set_mutantrace(race)
 	H.set_face_icon_dirty()
 	H.set_body_icon_dirty()
@@ -685,7 +639,7 @@ var/global/debug_messages = 0
 	for (var/V in prefs.vars)
 		names += V
 
-	names = sortList(names)
+	sortList(names, /proc/cmp_text_asc)
 
 	for (var/V in names)
 		body += debug_variable(V, prefs.vars[V], 0)
@@ -716,34 +670,39 @@ body
 /client/proc/check_gang_scores()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Check Gang Scores"
-
-	if(!(ticker?.mode && istype(ticker.mode, /datum/game_mode/gang)))
-		alert("It isn't gang mode, dummy!")
-		return
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	boutput(usr, "Gang scores:")
 
-	for(var/datum/gang/G in ticker.mode:gangs)
-		boutput(usr, "[G.gang_name]: [G.gang_score()] ([G.num_areas_controlled()] areas)")
+	for(var/datum/gang/G in get_all_gangs())
+		boutput(usr, "[G.gang_name]: [G.gang_score()] ([G.num_tiles_controlled()] tiles)")
 
 /client/proc/scenario()
 	SET_ADMIN_CAT(ADMIN_CAT_UNUSED)
 	set name = "Profiling Scenario"
 
-	var/selected = input("Select scenario", "Do not use on a live server for the love of god", "Cancel") in list("Cancel", "Disco Inferno", "Chemist's Delight", "Viscera Cleanup Detail", "Brighter Bonanza")
+	var/selected = input("Select scenario", "Do not use on a live server for the love of god", "Cancel") in list("Cancel", "Disco Inferno", "Chemist's Delight", "Viscera Cleanup Detail", "Brighter Bonanza", "Monkey Business","Monkey Chemistry","Monkey Gear","Clothing Dummies")
 	switch (selected)
 		if ("Disco Inferno")
-			for (var/turf/T in landmarks[LANDMARK_BLOBSTART])
+			for (var/turf/T as anything in landmarks[LANDMARK_BLOBSTART]+landmarks[LANDMARK_HALLOWEEN_SPAWN]+landmarks[LANDMARK_PESTSTART])
 				var/datum/gas_mixture/gas = new /datum/gas_mixture
-				gas.toxins = 10000
-				gas.oxygen = 10000
-				gas.temperature = 10000
+				gas.toxins = 33333
+				gas.oxygen = 66666
+				gas.temperature = 100000
 				T.assume_air(gas)
-			for (var/obj/machinery/door/airlock/maintenance/door in by_type[/obj/machinery/door])
-				LAGCHECK(LAG_LOW)
-				qdel(door)
-			for (var/obj/machinery/door/firedoor/door in by_type[/obj/machinery/door])
-				LAGCHECK(LAG_LOW)
+			for_by_tcl(door, /obj/machinery/door)
+				var/turf/T = get_step(door, NORTH)
+				if(istype(T, /turf/space) || istype(T, /turf/simulated/floor/airless/plating/catwalk))
+					continue
+				T = get_step(door, SOUTH)
+				if(istype(T, /turf/space) || istype(T, /turf/simulated/floor/airless/plating/catwalk))
+					continue
+				T = get_step(door, EAST)
+				if(istype(T, /turf/space) || istype(T, /turf/simulated/floor/airless/plating/catwalk))
+					continue
+				T = get_step(door, WEST)
+				if(istype(T, /turf/space) || istype(T, /turf/simulated/floor/airless/plating/catwalk))
+					continue
 				qdel(door)
 		if ("Chemist's Delight")
 			for (var/turf/simulated/floor/T in world)
@@ -771,6 +730,48 @@ body
 				for(var/obj/brighter in brighters)
 					brighter.set_loc(locate(rand(1, world.maxx), rand(1, world.maxy), Z_LEVEL_STATION))
 				sleep(0.2 SECONDS)
+		if ("Monkey Business")
+			var/list/station_areas = get_accessible_station_areas()
+			var/turf/location
+			for(var/i in 1 to 100)
+				LAGCHECK(LAG_LOW)
+				if(prob(25))
+					var/list/turfs = get_area_turfs(station_areas[pick(station_areas)],TRUE)
+					if(!length(turfs)) continue
+					location = pick(turfs)
+				else
+					var/job = pick(job_start_locations)
+					location = pick(job_start_locations[job])
+				var/mob/living/carbon/human/npc/monkey/M = new /mob/living/carbon/human/npc/monkey(location)
+				if(prob(10))
+					new /obj/item/implant/access/infinite/shittybill(M)
+				M.ai_offhand_pickup_chance = rand(20,80)
+				M.ai_poke_thing_chance = rand(20,50)
+		if ("Monkey Chemistry")
+			while(TRUE)
+				var/mob/M = pick(by_type[/mob/living/carbon/human/npc/monkey])
+				var/reagent_id = pick(reagents_cache)
+				M.reagents.add_reagent(reagent_id, rand(1,10))
+				sleep(0.2 SECONDS)
+		if ("Monkey Gear")
+			var/obj/item/I
+			for_by_tcl(monkey, /mob/living/carbon/human/npc/monkey)
+				I = pick(concrete_typesof(/obj/item))
+				new I(get_turf(monkey))
+			while(TRUE)
+				var/mob/M = pick(by_type[/mob/living/carbon/human/npc/monkey])
+				I = pick(concrete_typesof(/obj/item))
+				new I(get_turf(M))
+				sleep(1 SECONDS)
+		if ("Clothing Dummies")
+			for (var/i in 1 to 80)
+				var/human_type = pick(concrete_typesof(/mob/living/carbon/human/normal))
+				new human_type(pick_landmark(LANDMARK_PESTSTART))
+			while(TRUE)
+				var/mob/living/carbon/human/normal/human = pick(by_type[/mob/living/carbon/human])
+				human.update_clothing()
+				if (prob(40))
+					sleep(0.1 SECONDS)
 /*
 /client/proc/icon_print_test()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
@@ -791,7 +792,8 @@ body
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Reaction Structure"
 	set desc = "Checks the current reaction structure."
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/T = "<h1>Reaction Structure</h1><hr>"
 	for(var/reagent in total_chem_reactions)
 		T += "<h3>[reagent]</h3>"
@@ -805,7 +807,8 @@ body
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Reagents Cache"
 	set desc = "Check which things are in the reaction cache."
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/T = "<h1>Reagents Cache</h1><hr><table border=1><tr><td><B><center>ID</center></B></td><td><B><center>Name</center></B></td><td><B><center>Type</center></B></td>"
 	for(var/reagent in reagents_cache)
 		var/datum/reagent/R = reagents_cache[reagent]
@@ -834,14 +837,15 @@ body
 	return replacetext(showCoords(x,y,z), "%admin_ref%", "\ref[src.holder]")
 
 /client/proc/print_instance(var/atom/theinstance)
+	var/varedit_link = "<a href='byond://?src=\ref[src];Refresh=\ref[theinstance]'>[theinstance] \ref[theinstance]</a>"
 	if (isarea(theinstance))
 		var/turf/T = locate(/turf) in theinstance
 		if (!T)
-			boutput(usr, "<span class='notice'>[theinstance] (no turfs in area).</span>")
+			boutput(usr, SPAN_NOTICE("[varedit_link] (no turfs in area)."))
 		else
-			boutput(usr, "<span class='notice'>[theinstance] including [showMyCoords(T.x, T.y, T.z)].</span>")
+			boutput(usr, SPAN_NOTICE("[varedit_link] including [showMyCoords(T.x, T.y, T.z)]."))
 	else if (isturf(theinstance))
-		boutput(usr, "<span class='notice'>[theinstance] at [showMyCoords(theinstance.x, theinstance.y, theinstance.z)].</span>")
+		boutput(usr, SPAN_NOTICE("[varedit_link] at [showMyCoords(theinstance.x, theinstance.y, theinstance.z)]."))
 	else
 		var/turf/T = get_turf(theinstance)
 		var/in_text = ""
@@ -849,41 +853,37 @@ body
 		while (Q && Q != T)
 			in_text += " in [Q]"
 			Q = Q.loc
-		boutput(usr, "<span class='notice'>[theinstance][in_text] at [showMyCoords(T.x, T.y, T.z)]</span>")
+		boutput(usr, SPAN_NOTICE("[varedit_link][in_text] at [isnull(T) ? "null" : showMyCoords(T.x, T.y, T.z)]"))
 
 /client/proc/find_one_of(var/typename as text)
 	SET_ADMIN_CAT(ADMIN_CAT_ATOM)
 	set name = "Find One"
 	set desc = "Show the location of one instance of type."
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/thetype = get_one_match(typename, /atom, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
 	if (thetype)
-		var/atom/theinstance = locate(thetype) in world
+		var/atom/theinstance = find_first_by_type(thetype)
 		if (!theinstance)
-			boutput(usr, "<span class='alert'>Cannot locate an instance of [thetype].</span>")
+			boutput(usr, SPAN_ALERT("Cannot locate an instance of [thetype]."))
 			return
-		boutput(usr, "<span class='notice'><b>Found instance of [thetype]:</b></span>")
+		boutput(usr, SPAN_NOTICE("<b>Found instance of [thetype]:</b>"))
 		print_instance(theinstance)
 	else
-		boutput(usr, "<span class='alert'>No type matches for [typename].</span>")
+		boutput(usr, SPAN_ALERT("No type matches for [typename]."))
 		return
 
 /client/proc/find_all_of(var/typename as text)
 	SET_ADMIN_CAT(ADMIN_CAT_ATOM)
 	set name = "Find All"
 	set desc = "Show the location of all instances of a type. Performance warning!!"
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/thetype = get_one_match(typename, /atom, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
 	if (thetype)
-		var/counter = 0
-		boutput(usr, "<span class='notice'><b>All instances of [thetype]: </b></span>")
-		for (var/atom/theinstance in world)
-			LAGCHECK(LAG_LOW)
-			if (!istype(theinstance, thetype))
-				continue
-			counter++
-			print_instance(theinstance)
-		boutput(usr, "<span class='notice'>Found [counter] instances total.</span>")
+		boutput(usr, SPAN_NOTICE("<b>All instances of [thetype]: </b>"))
+		var/list/all_instances = find_all_by_type(thetype, PROC_REF(print_instance), src)
+		boutput(usr, SPAN_NOTICE("Found [length(all_instances)] instances total."))
 	else
 		boutput(usr, "No type matches for [typename].")
 		return
@@ -893,29 +893,25 @@ body
 	set name = "Find Thing"
 	set desc = "Show the location of an atom by name."
 	set popup_menu = 0
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if (!A)
 		return
 
-	boutput(usr, "<span class='notice'><b>Located [A] ([A.type]): </b></span>")
+	boutput(usr, SPAN_NOTICE("<b>Located [A] ([A.type]): </b>"))
 	print_instance(A)
 
 /client/proc/count_all_of(var/typename as text)
 	SET_ADMIN_CAT(ADMIN_CAT_ATOM)
 	set name = "Count All"
 	set desc = "Returns the number of all instances of a type that exist."
-
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	var/thetype = get_one_match(typename, /atom, use_concrete_types = FALSE, only_admin_spawnable = FALSE)
 	if (thetype)
-		var/counter = 0
-		for (var/atom/theinstance in world)
-			LAGCHECK(LAG_LOW)
-			if (!istype(theinstance, thetype))
-				continue
-			counter++
-		boutput(usr, "<span class='notice'>There are <b>[counter]</b> instances total of [thetype].</span>")
+		boutput(usr, SPAN_NOTICE("There are <b>[length(find_all_by_type(thetype))]</b> instances total of [thetype]."))
 	else
-		boutput(usr, "<span class='alert'><b>No type matches for [typename].</b></span>")
+		boutput(usr, SPAN_ALERT("<b>No type matches for [typename].</b>"))
 		return
 
 /client/proc/set_admin_level()
@@ -923,7 +919,8 @@ body
 	set name = "Change Admin Level"
 	set desc = "Allows you to change your admin level at will for testing. Does not change your available verbs."
 	set popup_menu = 0
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	var/new_level = input(src, null, "Choose New Rank", "Coder") as anything in null|list("Host", "Coder", "Shit Guy", "Primary Admin", "Admin", "Secondary Admin", "Mod", "Babby")
 	if (!new_level)
@@ -947,70 +944,6 @@ body
 		if ("Babby")
 			src.holder.level = LEVEL_BABBY
 
-var/global/debug_camera_paths = 0
-/client/proc/show_camera_paths()
-	set name = "Toggle camera connections"
-	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
-
-	if (!debug_camera_paths && alert(src, "DO YOU REALLY WANT TO TURN THIS ON? THE SERVER WILL SHIT ITSELF AND DIE DO NOT DO IT ON THE LIVE SERVERS THANKS", "Confirmation", "Yes", "No") == "No")
-		return
-
-	debug_camera_paths = !(debug_camera_paths)
-	if (debug_camera_paths)
-		display_camera_paths()
-	else
-		remove_camera_paths()
-
-	message_admins("[key_name(usr)] [debug_camera_paths ? "displayed" : "hid"] all camera connections!")
-	logTheThing("admin", usr, null, "[debug_camera_paths ? "displayed" : "hid"] all camera connections!")
-	logTheThing("diary", usr, null, "[debug_camera_paths ? "displayed" : "hid"] all camera connections!", "admin")
-
-proc/display_camera_paths()
-	remove_camera_paths() //Clean up any old ones laying around before displaying this
-	for_by_tcl(C, /obj/machinery/camera)
-		if (C.c_north)
-			camera_path_list.Add(particleMaster.SpawnSystem(new /datum/particleSystem/mechanic(C.loc, C.c_north.loc)))
-
-		if (C.c_east)
-			camera_path_list.Add(particleMaster.SpawnSystem(new /datum/particleSystem/mechanic(C.loc, C.c_east.loc)))
-
-		if (C.c_south)
-			camera_path_list.Add(particleMaster.SpawnSystem(new /datum/particleSystem/mechanic(C.loc, C.c_south.loc)))
-		if (C.c_west)
-			camera_path_list.Add(particleMaster.SpawnSystem(new /datum/particleSystem/mechanic(C.loc, C.c_west.loc)))
-
-/*
-/client/proc/remove_camera_paths_verb()
-	set name = "Hide camera connections"
-	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
-	remove_camera_paths()
-*/
-
-/proc/remove_camera_paths()
-	for (var/datum/particleSystem/mechanic/M in camera_path_list)
-		M.Die()
-	camera_path_list.Cut()
-
-/client/proc/toggle_camera_network_reciprocity()
-	set name = "Toggle Camnet Reciprocity"
-	set desc = "Toggle AI camera connection behaviour, off to select each node based on the individual camera, on to force cameras to reciprocate the connection"
-	SET_ADMIN_CAT(ADMIN_CAT_SERVER_TOGGLES)
-	admin_only
-
-	camera_network_reciprocity = !camera_network_reciprocity
-	boutput(usr, "<span class='notice'>Toggled camera network reciprocity [camera_network_reciprocity ? "on" : "off"]</span>")
-	logTheThing("admin", usr, null, "toggled camera network reciprocity [camera_network_reciprocity ? "on" : "off"]")
-	logTheThing("diary", usr, null, "toggled camera network reciprocity [camera_network_reciprocity ? "on" : "off"]", "admin")
-	message_admins("[key_name(usr)] toggled camera network reciprocity [camera_network_reciprocity ? "on" : "off"]")
-
-	//Force a complete rebuild
-	disconnect_camera_network()
-	build_camera_network()
-
-	if(camera_path_list.len > 0) //Refresh the display
-		display_camera_paths()
 
 /* Wire note: View Runtimes supercedes this in a different way
 /client/proc/show_runtime_window()
@@ -1026,31 +959,34 @@ proc/display_camera_paths()
 	set desc = "Randomizes how you look (if you are a human)"
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if (!ishuman(src.mob))
-		return boutput(usr, "<span class='alert'>Error: client mob is invalid type or does not exist</span>")
+		return boutput(usr, SPAN_ALERT("Error: client mob is invalid type or does not exist"))
 	randomize_look(src.mob)
-	logTheThing("admin", usr, null, "randomized their appearance")
-	logTheThing("diary", usr, null, "randomized their appearance", "admin")
+	logTheThing(LOG_ADMIN, usr, "randomized their appearance")
+	logTheThing(LOG_DIARY, usr, "randomized their appearance", "admin")
 
 /client/proc/cmd_randomize_handwriting()
 	set name = "Randomize Handwriting"
 	set desc = "Randomizes how you write on paper."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if (src.mob && src.mob.mind)
 		src.mob.mind.handwriting = pick(handwriting_styles)
-		boutput(usr, "<span class='notice'>Handwriting style is now: [src.mob.mind.handwriting]</span>")
-		logTheThing("admin", usr, null, "randomized their handwriting style: [src.mob.mind.handwriting]")
-		logTheThing("diary", usr, null, "randomized their handwriting style: [src.mob.mind.handwriting]", "admin")
+		boutput(usr, SPAN_NOTICE("Handwriting style is now: [src.mob.mind.handwriting]"))
+		logTheThing(LOG_ADMIN, usr, "randomized their handwriting style: [src.mob.mind.handwriting]")
+		logTheThing(LOG_DIARY, usr, "randomized their handwriting style: [src.mob.mind.handwriting]", "admin")
 
 #ifdef MACHINE_PROCESSING_DEBUG
 /client/proc/cmd_display_detailed_machine_stats()
 	set name = "Machine stats"
 	set desc = "Displays the statistics for how machines are processed."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	var/output = ""
 	for(var/T in detailed_machine_timings)
@@ -1103,29 +1039,14 @@ proc/display_camera_paths()
 	set name = "Machine Power stats"
 	set desc = "Displays the statistics for how much power machines are using."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
-	var/output = ""
-	var/apc_data = ""
+	if(holder)
+		var/datum/power_usage_viewer/E = new(src.mob)
+		E.ui_interact(mob)
 
-	for(var/area/A as() in detailed_machine_power_prev)
-		if(A.area_apc)
-			apc_data = "<B>[A.area_apc.lastused_total]</B>      EQP:[A.area_apc.lastused_equip] LGT:[A.area_apc.lastused_light] ENV:[A.area_apc.lastused_environ]"
-			for(var/obj/machinery/AM as() in A.machines)
-				if(AM.power_usage)
-					if(!detailed_machine_power_prev[A][AM]) detailed_machine_power_prev[A][AM] = list()
-					detailed_machine_power_prev[A][AM] += "([-AM.power_usage])"
-		else
-			apc_data = "<i>NO APC</i>"
-		output += "<B><a href='byond://?src=\ref[src];Vars=\ref[A]'>[A]</a></B> [apc_data]<BR/>"
-		for(var/M in detailed_machine_power_prev[A])
-			output += "&middot; <a href='byond://?src=\ref[src];Vars=\ref[M]'>[M]</a> (<a href='byond://?src=\ref[src];JumpToThing=\ref[M]'>JMP</a>) :"
-			for(var/P in detailed_machine_power_prev[A][M])
-				output += "[P] "
-			output += "<BR/>"
-		output += "<BR/>"
-	src.Browse(output, "window=power_data;size=600x500")
-
+	return
 #endif
 
 #ifdef QUEUE_STAT_DEBUG
@@ -1133,7 +1054,8 @@ proc/display_camera_paths()
 	set name = "Queue stats"
 	set desc = "Displays the statistics for how queue stuff is processed."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	var/output = ""
 	for(var/T in queue_stat_list)
@@ -1187,19 +1109,20 @@ proc/display_camera_paths()
 	set name = "Upload Custom HUD Style"
 	set desc = "Adds a dmi to the global list of available huds, for every player to use."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	var/icon/new_style = input("Please choose a new icon file to upload", "Upload Icon") as null|icon
 	if (!isicon(new_style))
 		return
 	var/new_style_name = input("Please enter a new name for your HUD", "Enter Name") as null|text
 	if (!new_style_name)
-		boutput(src, "<span class='alert'>Cannot create a HUD with no name![prob(5) ? " It's not a horse!" : null]</span>") // c:
+		boutput(src, SPAN_ALERT("Cannot create a HUD with no name![prob(5) ? " It's not a horse!" : null]")) // c:
 		return
 	if (alert("Create: \"[new_style_name]\" with icon [new_style]?", "Confirmation", "Yes", "No") == "Yes")
 		hud_style_selection[new_style_name] = new_style
-		logTheThing("admin", usr, null, "added a new HUD style with the name \"[new_style_name]\"")
-		logTheThing("diary", usr, null, "added a new HUD style with the name \"[new_style_name]\"", "admin")
+		logTheThing(LOG_ADMIN, usr, "added a new HUD style with the name \"[new_style_name]\"")
+		logTheThing(LOG_DIARY, usr, "added a new HUD style with the name \"[new_style_name]\"", "admin")
 		message_admins("[key_name(usr)] added a new HUD style with the name \"[new_style_name]\"")
 
 
@@ -1207,16 +1130,17 @@ proc/display_camera_paths()
 	set name = "Random Color Matrix Test"
 	set desc = "Animates the client to a randomised color matrix"
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if(!islist(usr.client.color))
-		usr.client.color = list(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)
+		src.set_color()
 
 	var/list/newColorMatrix = generate_random_value_list(2, 20)
+	src.animate_color(newColorMatrix)
 
-	animate(usr.client, color=newColorMatrix, time=5, easing=SINE_EASING)
 	var/matrixTable = "<table>"
-	var/isBigMatrix = (newColorMatrix.len == 20)
+	var/isBigMatrix = (length(newColorMatrix) == 20)
 	var/rows = isBigMatrix ? 5 : 4
 	for(var/row=1, row<=rows, row++)
 		matrixTable += "<tr>"
@@ -1234,122 +1158,78 @@ proc/display_camera_paths()
 		. += rand_deci(-range,range,0,9)
 
 
-/client/proc/test_mass_flock_convert()
-	set name = "Test Mass Flock Convert"
-	set desc = "Don't fucking use this EVER"
+/client/proc/test_mass_flock_convert(force as num|null, radius as num|null, fancy as num|null)
+	set name = "Mass Flock Convert"
+	set desc = "Convert a part of the area to flock"
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
-	if(alert("This will IRREVERSIBLY FUCK UP THE STATION and might be laggy, do not use this live. Are you sure?","Misclick Prevention","Yes","No") == "Yes")
-		logTheThing("admin", usr, null, "started a mass flocktile conversion at [showCoords(usr.x, usr.y, usr.z)]")
-		logTheThing("diary", usr, null, "started a mass flocktile conversion at [showCoords(usr.x, usr.y, usr.z)]", "admin")
-		message_admins("[key_name(usr)] started a mass flocktile conversion at [showCoords(usr.x, usr.y, usr.z)]")
-		mass_flock_convert_turf(get_turf(usr))
+	if(isnull(force))
+		force = tgui_alert(src, "Force convert unsimulated too?", "Force?", list("Yes", "No")) == "Yes"
+	if(isnull(radius))
+		radius = tgui_input_number(src, "Tile radius:", "Tile radius", 300, max_value=300, min_value=0)
+	if(isnull(radius) || radius <= 0)
+		return
+	if(isnull(fancy))
+		fancy = tgui_alert(src, "Recolor misc stuff?", "Fancy?", list("Yes", "No")) == "Yes"
+
+	if(radius > 15 && tgui_alert(src, "This will IRREVERSIBLY FUCK UP the current zlevel and might be laggy, do not use this live with such a high radius. Are you sure?","Misclick Prevention",list("Yes","No")) != "Yes")
+		return
+
+	logTheThing(LOG_ADMIN, usr, "started a mass flocktile conversion at [log_loc(usr)] with [radius] radius and force=[force]")
+	logTheThing(LOG_DIARY, usr, "started a mass flocktile conversion at [log_loc(usr)] with [radius] radius and force=[force]", "admin")
+	message_admins("[key_name(usr)] started a mass flocktile conversion at [log_loc(usr)] with [radius] radius and force=[force]")
+	mass_flock_convert_turf(get_turf(usr), null, radius=radius, force=force, fancy=fancy)
 
 var/datum/flock/testflock
 /client/proc/test_flock_panel()
 	set name = "Test Flock Panel"
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if(isnull(testflock))
 		testflock = new()
 
-	var/chui/window/flockpanel/panel = testflock.panel
-	panel.Subscribe(usr.client)
+	testflock.ui_interact(usr, testflock.flockpanel)
 
 /client/proc/clear_string_cache()
 	set name = "Clear String Cache"
 	set desc = "Invalidates/clears the string cache to allow for files to be reloaded."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if(alert("Really clear the string cache?","Invalidate String Cache","OK","Cancel") == "OK")
 		var/length = length(string_cache)
 		string_cache = new
-		logTheThing("admin", usr, null, "cleared the string cache, clearing [length] existing list(s).")
-		logTheThing("diary", usr, null, "cleared the string cache, clearing [length] existing list(s).", "admin")
+		logTheThing(LOG_ADMIN, usr, "cleared the string cache, clearing [length] existing list(s).")
+		logTheThing(LOG_DIARY, usr, "cleared the string cache, clearing [length] existing list(s).", "admin")
 		boutput(src, "String cache invalidated. [length] list(s) cleared.")
-
-/client/proc/edit_color_matrix()
-	set name = "Edit Color Matrix"
-	set desc = "A little more control over the VFX"
-	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
-
-	if(!istype(thething))
-		thething = new
-	thething.edit(src)
-
 
 /client/proc/temporary_deadmin_self()
 	set name = "Temp. Deadmin Self"
 	set desc = "Deadmin you're own self. Temporarily."
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if(src.holder)
 		var/seconds = input("How many seconds would you like to be deadminned?", "Temporary Deadmin", 60) as num
 		boutput(src, "<B><I>You have been deadminned for [seconds] seconds.</I></B>")
-		src.holder.dispose()
-		src.holder = null
-		src.clear_admin_verbs()
-		src.update_admins(null)
-		SPAWN_DBG(seconds * 10)
+		src.clear_admin()
+		SPAWN(seconds * 10)
 			src.init_admin()
 			boutput(src, "<B><I>Your adminnery has returned.</I></B>")
-
-
-/var/datum/debugthing/thething
-
-/datum/debugthing
-
-	proc/edit(var/client/user)
-		var/editor = grabResource("html/admin/color_matrix.html")
-		user.Browse(editor, "window=colormatrix;can_close=1")
-		SPAWN_DBG(1 SECOND)
-			callJsFunc(usr, "setRef", list("\ref[src]")) //This is shit but without it, it calls the JS before the window is open and doesn't work.
-
-	Topic(href, href_list)
-		if(!islist(usr.client.color))
-			usr.client.color = list(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)
-
-		// as somepotato pointed out this form is very insecure, so let's do some serverside verification that we got what we wanted
-		var/sanitised = sanitize(strip_html(href_list["matrix"]))
-		var/list/matrixStrings = splittext(sanitised, ",")
-		// we are expecting 12 strings, so abort if we don't have that many
-		if(matrixStrings.len != 20)
-			return
-
-		var/list/matrix = list()
-		for(var/i=1, i<=matrixStrings.len, i++)
-			var/num = text2num(matrixStrings[i])
-			if(isnum(num))
-				matrix += num
-		if(href_list["everyone"] == "y")
-
-			if(href_list["animate"] == "y")
-				for(var/client/c)
-					animate(c, color=matrix, time=5, easing=SINE_EASING)
-			else
-				for(var/client/c)
-					c.color = matrix
-		else
-			if(href_list["animate"] == "y")
-				animate(usr.client, color=matrix, time=5, easing=SINE_EASING)
-			else
-				usr.client.color = matrix
-
-	proc/callJsFunc(var/client, var/funcName, var/list/params)
-		var/paramsJS = list2params(params)
-		client << output(paramsJS,"colormatrix.browser:[funcName]")
-		return
 
 #ifdef ENABLE_SPAWN_DEBUG
 /client/proc/spawn_dbg()
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Spawn"
 	set desc = "Displays all the spawns that've happened so far or dies trying"
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if(src.holder)
 		if(!src.mob)
 			return
@@ -1371,19 +1251,45 @@ var/datum/flock/testflock
 	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
 	set name = "Debug Spawn"
 	set desc = "Displays all the spawns that've happened so far or dies trying"
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 	if(src.holder)
 		if(!src.mob)
 			return
 		var/fname = "spawn_dbg.json"
-		if (fexists(fname))
-			fdel(fname)
-		text2file(json_encode(list("spawn" = detailed_spawn_dbg)), fname)
+		rustg_file_write(json_encode(list("spawn" = detailed_spawn_dbg)), fname)
 		var/tmp_file = file(fname)
 		usr << ftp(tmp_file)
 		fdel(fname)
 #endif
 
-/proc/debugAddComponent(var/datum/target = null)
+/client/proc/debugAddElement(datum/target)
+	var/partial_type = global.tgui_input_text(usr, "Part of element path:", "Add Element") || "/"
+	var/element_type = global.get_one_match(partial_type, /datum/element)
+	if (!element_type)
+		return
+
+	var/typeinfo/datum/element/typeinfo = global.get_type_typeinfo(element_type)
+	var/list/arguments = src.get_proccall_arglist(typeinfo.initialization_args)
+	arguments.Insert(1, element_type)
+
+	target._AddElement(arguments)
+	boutput(usr, SPAN_NOTICE("Added [element_type] to [target]."))
+
+/client/proc/debugRemoveElement(datum/target)
+	var/list/de = target.datum_elements
+	if (!de)
+		boutput(usr, SPAN_NOTICE("No elements present on [target]."))
+		return
+
+	var/id = global.tgui_input_list(usr, "Select an element to remove:", "Remove Element", de)
+	if (!id)
+		return
+
+	target.RemoveElement(DCS._elements_by_id[id])
+	boutput(usr, SPAN_NOTICE("Removed [id] from [target]."))
+
+/client/proc/debugAddComponent(var/datum/target = null)
 	var/pathpart = input("Part of component path.", "Part of component path.", "") as null|text
 	if(!pathpart)
 		pathpart = "/"
@@ -1393,17 +1299,17 @@ var/datum/flock/testflock
 
 	var/typeinfo/datum/component/TI = get_type_typeinfo(comptype)
 
-	var/list/listargs = get_proccall_arglist(TI.initialization_args)
+	var/list/listargs = src.get_proccall_arglist(TI.initialization_args)
 
 	var/returnval = target._AddComponent(list(comptype) + listargs)
 
 
-	boutput(usr, "<span class='notice'>Returned: [!isnull(returnval) ? returnval : "null"]</span>")
+	boutput(usr, SPAN_NOTICE("Returned: [!isnull(returnval) ? returnval : "null"]"))
 
-/proc/debugRemoveComponent(var/datum/target = null)
+/client/proc/debugRemoveComponent(var/datum/target = null)
 	var/list/dc = target.datum_components
 	if(!dc)
-		boutput(usr, "<span class='notice'>No components present on [target].</span>")
+		boutput(usr, SPAN_NOTICE("No components present on [target]."))
 		return
 
 	var/list/comps = dc[/datum/component]
@@ -1416,7 +1322,91 @@ var/datum/flock/testflock
 		return // user cancelled
 
 	selection.RemoveComponent()
-	boutput(usr, "<span class='notice'>Removed [selection] from [target].</span>")
+	boutput(usr, SPAN_NOTICE("Removed [selection] from [target]."))
+
+/client/proc/delete_profiling_logs()
+	set desc = "Delete all saved profiling data, I hope you know what you're doing."
+	set name = "Delete profiling logs"
+	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+
+	if(input(usr, "Type in: 'delete profiling logs' to confirm:", "Confirmation of prof. logs deletion") != "delete profiling logs")
+		boutput(usr, "Deletion of profiling logs aborted.")
+		return
+	fdel("data/logs/profiling/")
+	logTheThing(LOG_ADMIN, usr, "deleted profiling logs.")
+	logTheThing(LOG_DIARY, usr, "deleted profiling logs.")
+	message_admins("[key_name(usr)] deleted profiling logs.")
+	ircbot.export_async("admin_debug", list("key"=usr.ckey, "msg"="deleted profiling logs for this server."))
+
+/client/proc/cause_lag(a as num, b as num)
+	set desc = "Loops a times b times over some trivial statement."
+	set name = "cause lag"
+	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+
+	if(alert("Are you sure you want to cause lag?","Why would you do this?","Yes","No") != "Yes")
+		return
+
+	logTheThing(LOG_ADMIN, usr, "decided to cause lag with parameters of [a] and [b]")
+
+	var/x = 0
+	boutput(src, "lag start [world.time] [TIME] (x=[x])")
+	for(var/i in 1 to a)
+		for(var/j in 1 to b)
+			x++
+	boutput(usr, "lag end [world.time] [TIME] (x=[x])")
+
+/client/proc/persistent_lag(cpu_usage as num)
+	set desc = "Makes it so lag is at least the set number."
+	set name = "persistent lag"
+	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+
+	if(alert("Are you sure you want to set persistent lag to [cpu_usage]?","Why would you do this?","Yes","No") != "Yes")
+		return
+
+	logTheThing(LOG_ADMIN, usr, "decided to set persistent lag to [cpu_usage]%.")
+
+	var/static/target_lag = null
+	target_lag = cpu_usage
+	while(target_lag > 0)
+		var/last_tick = world.time
+		while(world.tick_usage < target_lag)
+			;
+		while(world.time == last_tick)
+			sleep(0.001)
+
+/client/proc/list_adminteract_buttons()
+	SET_ADMIN_CAT(ADMIN_CAT_DEBUG)
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+
+	var/list/lines = list("<html><head><title>Admin Interact Buttons</title></head><body>")
+	for(var/type in typesof(/typeinfo/atom))
+		var/typeinfo/atom/typeinfo = get_singleton(type)
+		var/list/procpath/proc_paths = typeinfo.admin_procs
+		var/typeinfo/atom/parent_typeinfo = get_singleton(type2parent(typeinfo))
+		if(istype(parent_typeinfo))
+			proc_paths = proc_paths - parent_typeinfo.admin_procs // remove inherited procs
+			// also note that we do NOT want -= here because that would edit the list in the typeinfo
+		if(length(proc_paths))
+			var/name = copytext("[typeinfo]", 10)
+			lines += "<b>[name]</b><ul>"
+			for(var/procpath/proc_path as anything in proc_paths)
+				var/proc_name = proc_path.name
+				if (!proc_name)
+					var/split_list = splittext("[proc_path]", "/")
+					proc_name = split_list[length(split_list)]
+				lines += "<li>[proc_name]</li>"
+			lines += "</ul>"
+
+	lines += "</body></html>"
+	src.Browse(lines.Join(), "window=adminteract_buttons;size=300x800")
+
 
 #undef ARG_INFO_NAME
 #undef ARG_INFO_TYPE

@@ -8,15 +8,33 @@
 
 		if (human_owner)
 			var/eyes_blinded = 0
+			var/gforce_to_use = human_owner.gforce
 
 			if (!isdead(human_owner))
 				if (!human_owner.sight_check(1))
 					eyes_blinded |= EYEBLIND_L
 					eyes_blinded |= EYEBLIND_R
 				else
-					if (!human_owner.get_organ("left_eye"))
+					var/obj/item/organ/eye/left_eye = null
+					var/obj/item/organ/eye/right_eye = null
+					if (isskeleton(src.human_owner)) // get organs from the head, wherever it may be
+						var/datum/mutantrace/skeleton/skele = src.human_owner.mutantrace
+						if (skele.head_tracker) // use the linked head if it exists
+							left_eye = skele.head_tracker.left_eye
+							right_eye = skele.head_tracker.right_eye
+							gforce_to_use = skele.head_tracker.gforce
+						else
+							left_eye = human_owner.get_organ("left_eye")
+							right_eye = human_owner.get_organ("right_eye")
+					else // get organs normally
+						left_eye = human_owner.get_organ("left_eye")
+						right_eye = human_owner.get_organ("right_eye")
+					if (!left_eye || !left_eye.provides_sight)
 						eyes_blinded |= EYEBLIND_L
-					if (!human_owner.get_organ("right_eye"))
+					if (!right_eye || !right_eye.provides_sight)
+						eyes_blinded |= EYEBLIND_R
+					if (gforce_to_use >= GFORCE_MOB_BLINDNESS_THRESHOLD)
+						eyes_blinded |= EYEBLIND_L
 						eyes_blinded |= EYEBLIND_R
 					if (istype(human_owner.glasses))
 						if (human_owner.glasses.block_eye)

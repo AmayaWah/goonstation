@@ -15,8 +15,7 @@
 	w_class = W_CLASS_TINY
 	burn_point = 220
 	burn_output = 900
-	burn_possible = 2
-	health = 10
+	burn_possible = TRUE
 	///what style of card sprite are we using?
 	var/card_style
 	///number of cards in a full deck (used for reference when updating stack size)
@@ -34,7 +33,7 @@
 	contextLayout = new /datum/contextLayout/instrumental(16)
 	var/list/datum/contextAction/cardActions
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		..()
 		set_dir(NORTH) //makes sure cards are always upright in the inventory (unless tapped or reversed - see later)
 
@@ -42,7 +41,7 @@
 	attack_self(mob/user as mob)
 		flip() //uno reverse O.O
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if(istype(W,/obj/item/playing_card)) //if a card is hit by a card, open the context menu for the player to decide what happens.
 			if(loc != user)
 				update_card_actions(TRUE)
@@ -85,8 +84,10 @@
 		else
 			..()
 
-	MouseDrop(var/atom/target as obj|mob) //r o t a t e
+	mouse_drop(var/atom/target as obj|mob) //r o t a t e
 		if(!istype(target,/obj/item/card_group))
+			if (is_incapacitated(usr) || !usr.can_use_hands() || !can_reach(usr, src) || usr.sleeping || (target && target.event_handler_flags & NO_MOUSEDROP_QOL))
+				return
 			tap_or_reverse(usr)
 		else
 			..()
@@ -127,7 +128,7 @@
 		stored_info = list(name,desc,icon_state)
 
 	proc/flip()
-		tooltip_rebuild = 1 //makes sure the card tooltips get updated everytime
+		tooltip_rebuild = TRUE //makes sure the card tooltips get updated everytime
 		if(!facedown)
 			name = "playing card"
 			desc = "A face-down card."
@@ -251,7 +252,7 @@
 						icon_state = "stg-m-[icon_state_num]"
 					if("their")
 						icon_state_num = rand(1,NUMBER_N)
-						icon_state = "stg-N-[icon_state_num]"
+						icon_state = "stg-n-[icon_state_num]"
 			else
 				name = chosen_card_type.card_name
 				var/gender = rand(1,3)
@@ -264,7 +265,7 @@
 						icon_state = "stg-m-[icon_state_num]"
 					if(3)
 						icon_state_num = rand(1,NUMBER_N)
-						icon_state = "stg-N-[icon_state_num]"
+						icon_state = "stg-n-[icon_state_num]"
 		if(chosen_card_type.LVL)
 			name = "LVL [chosen_card_type.LVL] [name]"
 		var/atk
@@ -326,6 +327,7 @@
 		UpdateOverlays(image(icon,"stg-foil"),"foil")
 		foiled = TRUE
 		name = "Foil [name]"
+		src.update_stored_info()
 
 /obj/item/playing_card/expensive //(¬‿¬)
 	desc = "Tap this card and sacrifice one of yourselves to win the game."
@@ -340,26 +342,31 @@
 		name = "[pick(prefix1)] [pick(prefix2)] [pick(names)]"
 		update_stored_info()
 
-	MouseDrop(var/atom/target as obj|mob)
+	mouse_drop(var/atom/target as obj|mob)
 		..()
 		if(tapped)
 			var/mob/user = usr
 			user.deathConfetti()
 			playsound(user.loc, 'sound/musical_instruments/Bikehorn_1.ogg', 50)
-			user.visible_message("<span class='combat'><b>[uppertext(user.name)] WINS THE GAME!</b></span>")
+			user.visible_message(SPAN_COMBAT("<b>[uppertext(user.name)] WINS THE GAME!</b>"))
 			if(!foiled)
+				logTheThing(LOG_COMBAT, user, "was instantly braindeath killed by [src] at [log_loc(src)].")
 				user.take_brain_damage(1000)
 			else
+				logTheThing(LOG_COMBAT, user, "was partygibbed by [src] at [log_loc(src)].")
 				user.partygib(1)
 
-/obj/item/card_group //since "playing_card"s are singular cards, card_groups handling groups of playing_cards in the form of either a deck or hand
+ABSTRACT_TYPE(/obj/item/card_group)
+/// since "playing_card"s are singular cards, card_groups handling groups of playing_cards in the form of either a deck or hand
+/obj/item/card_group
 	name = "deck of cards"
 	icon = 'icons/obj/items/playing_card.dmi'
+	icon_state = "plain_deck_4"
 	dir = NORTH
 	w_class = W_CLASS_TINY
 	burn_point = 220
 	burn_output = 900
-	burn_possible = 2
+	burn_possible = TRUE
 	health = 10
 	inventory_counter_enabled = 1
 	/// same function as playing_card card name
@@ -375,16 +382,16 @@
 	var/list/datum/contextAction/cardActions
 	var/list/stored_cards = list()
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if(!is_hand && (isturf(src.loc) || src.loc == user)) //handling the player interacting with a deck of cards with an empty hand
-			update_card_actions("empty")
+			update_card_actions(user, "empty")
 			user.showContextActions(cardActions, src)
 		else
 			..()
 
 	attack_self(mob/user as mob)
 		if(is_hand) //attack_self with hand to pull up the menu
-			update_card_actions("handself")
+			update_card_actions(user, "handself")
 			user.showContextActions(cardActions, src)
 		else //attack_self with deck to shuffle
 			if (length(stored_cards) < 11)
@@ -393,7 +400,7 @@
 				riffle_shuffle(stored_cards)
 			user.visible_message("<b>[user.name]</b> shuffles the [src.name].")
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if(istype(W, /obj/item/playing_card)) //adding a card to a hand will automatically place it in the hand, while adding a card to a deck will allow the player to decide where it goes
 			if(is_hand)
 				var/obj/item/playing_card/card = W
@@ -404,13 +411,13 @@
 				add_to_group(card)
 				user.visible_message("<b>[user.name]</b> adds a card to [his_or_her(user)] [src.name]")
 			else
-				update_card_actions("card")
+				update_card_actions(user, "card")
 				user.showContextActions(cardActions, src)
 			update_group_sprite()
 		else if(istype(W,/obj/item/card_group)) //adding a hand to a deck is similar to adding a card to a deck, whereas adding a deck plops it on top
 			var/obj/item/card_group/group = W
 			if(group.is_hand && !is_hand)
-				update_card_actions("group")
+				update_card_actions(user, "group")
 				user.showContextActions(cardActions, src)
 			else
 				top_or_bottom(user,group,"top",1)
@@ -428,7 +435,7 @@
 			..()
 
 	special_desc(dist, mob/user) //handles the special chat output for examining hands and decks!
-		if(is_hand && in_interact_range(src,user))
+		if(is_hand && dist == 0)
 			hand_examine(user,"self")
 		else
 			..()
@@ -437,7 +444,7 @@
 	MouseDrop_T(atom/movable/O as mob|obj, mob/user as mob) //handles piling cards into a deck or hand
 		if(istype(O,/obj/item/playing_card))
 			user.visible_message("[user.name] starts scooping cards into the [src.name]...")
-			SPAWN_DBG(0.2 SECONDS)
+			SPAWN(0.2 SECONDS)
 				for(var/obj/item/playing_card/card in range(1, user))
 					if(card.card_style != card_style)
 						continue
@@ -538,7 +545,7 @@
 			group.card_style = FB.card_style
 			group.card_name = FB.card_name
 
-	proc/update_card_actions(var/hitby) //generates card actions based on which interaction is causing the list to be updated
+	proc/update_card_actions(mob/user, var/hitby) //generates card actions based on which interaction is causing the list to be updated
 		cardActions = list()
 
 		//card to deck
@@ -549,7 +556,7 @@
 		//empty to deck
 		else if(hitby == "empty") //reordered this a bit to prevent overdrawing and have the correct actions avaliable
 			cardActions += new /datum/contextAction/card/pickup
-			if(!(usr.find_in_hand(/obj/item/card_group)) || length(usr.contents.Find(/obj/item/card_group)) < max_hand_size)
+			if(!(user.find_in_hand(/obj/item/card_group)) || length(user.contents.Find(/obj/item/card_group)) < max_hand_size)
 				cardActions += new /datum/contextAction/card/draw
 				cardActions += new /datum/contextAction/card/draw_facedown
 				cardActions += new /datum/contextAction/card/draw_multiple
@@ -829,6 +836,7 @@
 	card_style = "tarot"
 	total_cards = 78
 	card_name = "tarot"
+	icon_state = "tarot_deck_4"
 
 	New()
 		..()
@@ -897,6 +905,7 @@
 	card_style = "hanafuda"
 	total_cards = 48
 	card_name = "hanafuda"
+	icon_state = "hanafuda_deck_4"
 
 	New()
 		..()
@@ -988,10 +997,22 @@
 	card_style = "stg"
 	total_cards = 40
 	card_name = "Spacemen the Griffening"
+	icon_state = "stg-deck-4"
 
 	New()
 		..()
 		build_stg(1)
+
+/obj/item/card_group/stg_booster
+	desc = "A bunch of Spacemen the Griffening cards."
+	card_style = "stg"
+	total_cards = 10
+	card_name = "Spacemen the Griffening"
+	icon_state = "stg-deck-2"
+
+	New()
+		..()
+		build_stg(0)
 
 //Clow
 //--//
@@ -1000,6 +1021,7 @@
 	card_style = "clow"
 	total_cards = 52
 	card_name = "Clow"
+	icon_state = "clow_deck_4"
 
 	New()
 		..()
@@ -1007,7 +1029,7 @@
 			var/obj/item/playing_card/card = new /obj/item/playing_card(src)
 			stored_cards += card
 			card.icon_state = "clow-1-1"
-			card.name = "Clow Card"
+			card.name = "Clow Card #[i]"
 			update_card_information(card)
 			card.update_stored_info()
 		update_group_sprite()
@@ -1023,7 +1045,7 @@
 	w_class = W_CLASS_TINY
 	burn_point = 220
 	burn_output = 900
-	burn_possible = 2
+	burn_possible = TRUE
 	health = 10
 	var/obj/item/card_group/stored_deck
 	var/box_style = "white"
@@ -1041,7 +1063,7 @@
 		else
 			icon_state = "[box_style]-box"
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if((loc == user) && (icon_state == "[box_style]-box-open"))
 			user.put_in_hand_or_drop(stored_deck)
 			icon_state = "[box_style]-box-empty"
@@ -1049,7 +1071,7 @@
 		else
 			..()
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if(!stored_deck && istype(W,/obj/item/card_group))
 			user.u_equip(W)
 			W.set_loc(src)
@@ -1120,14 +1142,13 @@
 		if(icon_state == "stg-box")
 			user.show_text("You try to tear the packaging, but it's too strong! You'll need something to cut it...","red")
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if((icon_state == "stg-box") && (istool(W,TOOL_CUTTING) || istool(W,TOOL_SNIPPING)))
 			if(loc != user)
 				user.show_text("You need to hold the box if you want enough leverage to rip it to pieces!","red")
 				return
 			else //dropping cards here means the user doesnt have to go through the entire action to get them
 				actions.start(new /datum/action/bar/private/stg_tear(user,src),user)
-				ClearAllOverlays() //is all good now :D
 		else
 			..()
 
@@ -1148,7 +1169,7 @@
 
 	onStart()
 		..()
-		user.visible_message("<span class='alert'><b>[user.name]</b> [pick(messages)]</span>")
+		user.visible_message(SPAN_ALERT("<b>[user.name]</b> [pick(messages)]"))
 
 	onUpdate()
 		..()
@@ -1161,7 +1182,7 @@
 	onEnd()
 		..()
 		if(card_box.icon_state == "stg-box")
-			user.visible_message("<span class='green'><b>[user.name]</b> has thoroughly mutilated the StG Preconstructed Deck Box and retrieves the cards from inside.</span>")
+			user.visible_message(SPAN_SUCCESS("<b>[user.name]</b> has thoroughly mutilated the StG Preconstructed Deck Box and retrieves the cards from inside."))
 			card_box.icon_state = "stg-box-torn"
 			user.put_in_hand_or_drop(card_box.stored_deck)
 			var/obj/decal/cleanable/generic/decal = make_cleanable(/obj/decal/cleanable/generic,get_turf(user.loc))
@@ -1177,18 +1198,13 @@
 
 	New()
 		..()
-		stored_deck = new /obj/item/card_group(src)
-		stored_deck.desc = "A bunch of Spacemen the Griffening cards."
-		stored_deck.total_cards = 40
-		stored_deck.card_style = "stg"
-		stored_deck.card_name = "Spacemen the Griffening"
-		stored_deck.build_stg()
+		stored_deck = new /obj/item/card_group/stg_booster(src)
 
 	attack_self(mob/user as mob)
 		if(icon_state == "stg-booster")
 			icon_state = "stg-booster-open"
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if(icon_state == "stg-booster-open")
 			icon_state = "stg-booster-empty"
 			user.put_in_hand_or_drop(stored_deck)
@@ -1216,7 +1232,7 @@ proc/riffle_shuffle(list/deck)
 
 	// Markovian model of the shuffle
 	var/currentStack = rand() > 0.5
-	while(D1.len > 0 && D2.len > 0)
+	while(length(D1) > 0 && length(D2) > 0)
 		var/item
 
 		if(currentStack)

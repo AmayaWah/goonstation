@@ -8,6 +8,10 @@
 /obj/item/roboupgrade/repairpack/upgrade_activate(var/mob/living/silicon/robot/user as mob)
 	if (!user)
 		return
+	if(..())
+		return
 	for (var/obj/item/parts/robot_parts/RP in user.contents)
 		RP.ropart_mend_damage(100, 100)
-	boutput(user, "<span class='notice'>All components repaired!</span>")
+	health_update_queue |= user
+	user.update_appearance()
+	boutput(user, SPAN_NOTICE("All components repaired!"))

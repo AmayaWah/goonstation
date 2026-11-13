@@ -230,7 +230,7 @@
 
 	name = "railway vehicle"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	var/road_rage_force = 40
 
 	New()
@@ -302,7 +302,7 @@
 					if (O == src || istype(O, /obj/railway) || !O.density)
 						continue
 					if (O.anchored && !magically_destructive)
-						visible_message("<span class='alert'>[src] bumps against [O].</span>")
+						visible_message(SPAN_ALERT("[src] bumps against [O]."))
 						moving_dir = 0
 						on_end_path()
 						return
@@ -327,24 +327,24 @@
 		var/turf/dest_t = dest
 		if (from_t == dest_t)
 			return
-		if (get_dist(from_t, dest_t) > 1)
+		if (BOUNDS_DIST(from_t, dest_t) > 0)
 			return
 		if (istype(from_t) && istype(dest_t))
 			var/knock_dir = get_dir(from_t, dest_t)
 			for (var/mob/living/M in dest_t)
 				M.TakeDamageAccountArmor("chest", src.road_rage_force, 0)
-				M.visible_message("<span class='alert'><b>[M] was hit by [src]!</b></span>", "<span class='alert'><b>You were hit by [src]!</b></span>")
-				playsound(src.loc, "sound/impact_sounds/Generic_Hit_Heavy_1.ogg", 40, 1)
+				M.visible_message(SPAN_ALERT("<b>[M] was hit by [src]!</b>"), SPAN_ALERT("<b>You were hit by [src]!</b>"))
+				playsound(src.loc, 'sound/impact_sounds/Generic_Hit_Heavy_1.ogg', 40, 1)
 				M.throw_at(get_edge_target_turf(M, knock_dir), 10, 2)
 			for (var/obj/O in dest_t)
 				if (O == src || istype(O, /obj/railway) || !O.density)
 					continue
-				playsound(src.loc, "sound/impact_sounds/Generic_Hit_Heavy_1.ogg", 40, 1)
+				playsound(src.loc, 'sound/impact_sounds/Generic_Hit_Heavy_1.ogg', 40, 1)
 				if (O.anchored && magically_destructive)
-					visible_message("<span class='alert'><b>[src] crashes into [O].</b></span>")
+					visible_message(SPAN_ALERT("<b>[src] crashes into [O].</b>"))
 					qdel(O)
 				else if (!O.anchored)
-					visible_message("<span class='alert'><b>[O] was hit by [src]!</b></span>")
+					visible_message(SPAN_ALERT("<b>[O] was hit by [src]!</b>"))
 					O.throw_at(get_edge_target_turf(O, knock_dir), 10, 2)
 
 
@@ -379,12 +379,140 @@
 		var/dump_angle = 90
 
 		on_trigger()
-			if (contents.len > 0)
+			if (length(contents) > 0)
 				var/dump_dir = turn(dir, dump_angle)
 				var/turf/T = get_step(loc, dump_dir)
 				for (var/atom/movable/AM in src)
-					visible_message("<span class='notice'><b>[src] dumps out [AM].</b></span>")
+					visible_message(SPAN_NOTICE("<b>[src] dumps out [AM].</b>"))
 					AM.set_loc(T)
 
 		on_end_path()
 			qdel(src)
+
+	flatbed
+		icon = 'icons/obj/large/64x48.dmi'
+		icon_state = "car-platform"
+		bound_width = 64
+		plane = -100
+
+		/// icon file for the train car contents
+		var/contents_icon = 'icons/obj/large/64x48.dmi'
+		/// icon state for the train car contents
+		var/contents_icon_state = null
+		/// pixel_x for the contents overlay
+		var/contents_pixel_x = 0
+		/// pixel_y for the contents overlay
+		var/contents_pixel_y = 0
+		/// If TRUE, overlays a caution frame above the contents
+		var/has_caution_frame = FALSE
+
+		New()
+			..()
+			if (src.contents_icon_state)
+				var/image/contents_overlay = src.SafeGetOverlayImage("contents_overlay", contents_icon, contents_icon_state, src.layer+0.1, contents_pixel_x, contents_pixel_y)
+				src.UpdateOverlays(contents_overlay, "contents_overlay")
+			if (src.has_caution_frame)
+				var/image/frame_overlay = src.SafeGetOverlayImage("frame_overlay", 'icons/obj/large/64x48.dmi', "frame-caution", src.layer+0.2)
+				src.UpdateOverlays(frame_overlay, "frame_overlay")
+
+
+		update_icon(...)
+			. = ..()
+			if (src.contents_icon_state)
+				var/image/contents_overlay = src.SafeGetOverlayImage("contents_overlay", contents_icon, contents_icon_state, src.layer+0.1, contents_pixel_x, contents_pixel_y)
+				src.UpdateOverlays(contents_overlay, "contents_overlay")
+			else
+				src.ClearSpecificOverlays(FALSE, "contents_overlay")
+			if (src.has_caution_frame)
+				var/image/frame_overlay = src.SafeGetOverlayImage("frame_overlay", 'icons/obj/large/64x48.dmi', "frame-caution", src.layer+0.2)
+				src.UpdateOverlays(frame_overlay, "frame_overlay")
+			else
+				src.ClearSpecificOverlays(FALSE, "frame_overlay")
+		lunar_cab
+
+			contents_icon_state = "cab-engineer"
+
+			name = "lunar tram engine"
+			desc = "The La Caille Model 2006 LunaTram. A staple of lunar transit."
+
+		passenger
+			contents_icon_state = "car-passenger-middle"
+
+			start
+				contents_icon_state = "car-passenger-start"
+
+			end
+				contents_icon_state = "car-passenger-end"
+
+		container
+			contents_icon_state = "car-container-green"
+
+			red
+				contents_icon_state = "car-container-red"
+				name = "Hafgan container"
+
+			blue
+				contents_icon_state = "car-container-blue"
+
+			tanker
+				contents_icon_state = "car-tanker"
+				has_caution_frame = TRUE
+
+			barrels
+				contents_icon_state = "car-barrels"
+
+			mail
+				contents_icon_state = "car-mailcrates"
+
+			woodcrates
+				contents_icon_state = "car-woodcrates"
+
+			nt
+				contents_icon_state = "car-nt"
+
+			cyborgs
+				contents_icon_state = "car-cyborgs"
+
+			rtgs
+				contents_icon_state = "car-rtgs"
+
+			thruster
+				contents_icon_state = "car-thruster"
+
+			nuclear
+				contents_icon_state = "car-nukes"
+				has_caution_frame = TRUE
+
+			industrial
+				contents_icon_state = "car-industrial"
+
+			crime
+				contents_icon_state = "car-crime"
+
+			military
+				contents_icon_state = "car-military"
+
+			warhead
+				contents_icon_state = "car-warhead"
+
+			firebarrel
+				contents_icon_state = "car-fire"
+
+			howitzer
+				icon_state = "car-platform-green"
+				contents_icon_state = "car-howitzer"
+
+
+/obj/decoration/railyard
+
+	schedule
+		icon = 'icons/obj/large/64x32.dmi'
+		icon_state = "schedule_board"
+
+	signal
+		icon = 'icons/obj/railway.dmi'
+		icon_state = "signal-stop"
+
+		pole
+			icon = 'icons/obj/large/32x64.dmi'
+			icon_state = "signal-pole-stop"

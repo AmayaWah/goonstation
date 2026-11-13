@@ -20,6 +20,7 @@
 		BE.stability_loss = 0
 		BE.name = "Stabilized " + BE.name
 		BE.altered = 1
+		BE.holder.calculateStability()
 
 /datum/dna_chromosome/anti_mutadone
 	name = "Reinforcer"
@@ -45,7 +46,7 @@
 
 /datum/dna_chromosome/reclaimer
 	name = "Weakener"
-	desc = "Makes a gene reclaimable and doubles the amount of materials you get from reclaiming it."
+	desc = "Makes a gene easier to reclaim and doubles the amount of materials you get from reclaiming it."
 
 	check_apply(datum/bioEffect/BE)
 		if(!istype(BE))

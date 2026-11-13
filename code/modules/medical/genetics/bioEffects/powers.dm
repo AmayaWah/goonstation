@@ -1,9 +1,7 @@
+ABSTRACT_TYPE(/datum/bioEffect/power)
 /datum/bioEffect/power
-	name = "Cryokinesis"
-	desc = "Allows the subject to control ice and cold."
-	id = "cryokinesis"
-	msgGain = "You notice a strange cold tingle in your fingertips."
-	msgLose = "Your fingers feel warmer."
+	name = "parent_power"
+	id = "power_parent_do_not_use"
 	effectType = EFFECT_TYPE_POWER
 	cooldown = 600
 	probability = 66
@@ -11,9 +9,8 @@
 	blockGaps = 2
 	stability_loss = 10
 	var/using = 0
-	var/safety = 0
-	var/ability_path = /datum/targetable/geneticsAbility/cryokinesis
-	var/datum/targetable/geneticsAbility/ability = /datum/targetable/geneticsAbility/cryokinesis
+	var/ability_path = null
+	var/datum/targetable/geneticsAbility/ability = null
 
 	New()
 		..()
@@ -22,89 +19,106 @@
 	disposing()
 		src.owner = null
 		if (ability)
-			ability.dispose()
 			ability.owner = null
+			qdel(ability)
 		src.ability = null
 		..()
 
 	OnAdd()
 		..()
-		if (ishuman(owner))
-			check_ability_owner()
-			var/mob/living/carbon/human/H = owner
-			H.hud.update_ability_hotbar()
-		return
+		check_ability_owner()
 
 	OnRemove()
 		..()
-		if (ishuman(owner))
-			var/mob/living/carbon/human/H = owner
-			if (H.hud)
-				H.hud.update_ability_hotbar()
-		return
+		if (src.ability)
+			src.ability.holder.removeAbilityInstance(src.ability)
 
 	proc/check_ability_owner()
 		if (ispath(ability_path))
-			var/datum/targetable/geneticsAbility/AB = new ability_path(src)
+			var/datum/targetable/geneticsAbility/AB = src.owner?.abilityHolder?.addAbility(src.ability_path)
+			if (!AB)
+				return
 			ability = AB
+			AB.cooldown = src.cooldown
 			AB.linked_power = src
 			icon = AB.icon
 			icon_state = AB.icon_state
 			AB.owner = src.owner
+			src.owner.abilityHolder.updateButtons() //have to manually update because the cooldown is stored on the bioeffect
+
+	//varedit support for cooldowns
+	onVarChanged(variable, oldval, newval)
+		. = ..()
+		if (variable == "cooldown" && istype(src.ability))
+			src.ability.cooldown = newval
+			src.ability.holder?.updateButtons()
+
+/datum/bioEffect/power/cryokinesis
+	name = "Cryokinesis"
+	desc = "Allows the subject to control ice and cold."
+	id = "cryokinesis"
+	icon_state = "cryokinesis"
+	msgGain = "You notice a strange cold tingle in your fingertips."
+	msgLose = "Your fingers feel warmer."
+	effectType = EFFECT_TYPE_POWER
+	cooldown = 600
+	probability = 66
+	blockCount = 3
+	blockGaps = 2
+	stability_loss = 10
+	ability_path = /datum/targetable/geneticsAbility/cryokinesis
 
 /datum/targetable/geneticsAbility/cryokinesis
 	name = "Cryokinesis"
 	desc = "Exert control over cold and ice."
 	icon_state = "cryokinesis"
-	targeted = 1
-	target_anything = 1
+	targeted = TRUE
+	target_anything = TRUE
 
-	cast(atom/target)
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
+		src.owner.visible_message(SPAN_ALERT("<b>[src.owner]</b> points at [target]!"))
+		playsound(src.owner.loc, 'sound/effects/bamf.ogg', 50, 0)
+		particleMaster.SpawnSystem(new /datum/particleSystem/tele_wand(get_turf(src.owner),"8x8snowflake","#88FFFF"))
+
+		if (misfire) cast_mis(target)
+		return cast_reg(target)
+
+	proc/cast_reg(atom/target)
 		var/turf/T = get_turf(target)
 
-		target.visible_message("<span class='alert'><b>[owner]</b> points at [target]!</span>")
-		playsound(target.loc, "sound/effects/bamf.ogg", 50, 0)
-		particleMaster.SpawnSystem(new /datum/particleSystem/tele_wand(get_turf(target),"8x8snowflake","#88FFFF"))
-
 		var/obj/decal/icefloor/B
-		for (var/turf/TF in range(linked_power.power - 1,T))
+		for (var/turf/TF in range(src.linked_power.power - 1,T))
 			B = new /obj/decal/icefloor(TF)
-			SPAWN_DBG(80 SECONDS)
+			SPAWN(80 SECONDS)
 				B.dispose()
 
 		for (var/mob/living/L in T.contents)
-			if (L == owner && linked_power.safety)
+			if (L == src.owner && src.linked_power.safety)
 				continue
-			boutput(L, "<span class='notice'>You are struck by a burst of ice cold air!</span>")
+			boutput(L, SPAN_NOTICE("You are struck by a burst of ice cold air!"))
 			if(L.getStatusDuration("burning"))
 				L.delStatus("burning")
 			L.bodytemperature = 100
-			if (linked_power.power > 1)
+			if (src.linked_power.power > 1)
 				new /obj/icecube(get_turf(L), L)
 
-		return
+		return CAST_ATTEMPT_SUCCESS
 
-	cast_misfire(atom/target)
-		if (..())
-			return 1
-
-		owner.visible_message("<span class='alert'><b>[owner]</b> points at [target]!</span>")
-		playsound(owner.loc, "sound/effects/bamf.ogg", 50, 0)
-		particleMaster.SpawnSystem(new /datum/particleSystem/tele_wand(get_turf(owner),"8x8snowflake","#88FFFF"))
-
-		if (!linked_power.safety)
-			boutput(owner, "<span class='alert'>Your cryokinesis misfires and freezes you!</span>")
-			if(owner.getStatusDuration("burning"))
-				owner.delStatus("burning")
-			owner.bodytemperature = 100
-			new /obj/icecube(get_turf(owner), owner)
+	proc/cast_mis(atom/target)
+		if (!src.linked_power.safety)
+			boutput(src.owner, SPAN_ALERT("Your cryokinesis misfires and freezes you!"))
+			if(src.owner.getStatusDuration("burning"))
+				src.owner.delStatus("burning")
+			src.owner.bodytemperature = 100
+			new /obj/icecube(get_turf(src.owner), src.owner)
 		else
-			boutput(owner, "<span class='alert'>Your cryokinesis misfires!</span>")
-			if(owner.getStatusDuration("burning"))
-				owner.delStatus("burning")
+			boutput(src.owner, SPAN_ALERT("Your cryokinesis misfires!"))
+			if(src.owner.getStatusDuration("burning"))
+				src.owner.delStatus("burning")
+		return CAST_ATTEMPT_SUCCESS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -114,6 +128,7 @@
 	name = "Matter Eater"
 	desc = "Allows the subject to eat just about anything without harm."
 	id = "mattereater"
+	icon_state = "mattereater"
 	msgGain = "You feel hungry."
 	msgLose = "You don't feel quite so hungry anymore."
 	cooldown = 300
@@ -122,126 +137,125 @@
 	blockGaps = 2
 	stability_loss = 5
 	ability_path = /datum/targetable/geneticsAbility/mattereater
-	var/target_path = "/obj/item/"
+	var/target_path = /obj/item
 
 /datum/targetable/geneticsAbility/mattereater
 	name = "Matter Eater"
 	desc = "Eat just about anything!"
 	icon_state = "mattereater"
-	targeted = 0
-	var/using = 0
+	targeted = FALSE
+	needs_hands = FALSE
+	var/using = FALSE
 
-	cast()
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
-		if (using)
-			return 1
-		using = 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		if (src.using)
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		src.using = TRUE
 
-		var/datum/bioEffect/power/mattereater/ME = linked_power
-		var/base_path = text2path("[ME.target_path]")
-		if (!ispath(base_path))
-			base_path = /obj/item/
-		var/list/items = get_filtered_atoms_in_touch_range(owner,base_path)
-		if (ismob(owner.loc) || istype(owner.loc,/obj/))
-			for (var/atom/A in owner.loc.contents)
-				if (istype(A,ME.target_path))
+		var/datum/bioEffect/power/mattereater/mattereater = linked_power
+		var/list/items = get_filtered_atoms_in_touch_range(src.owner, mattereater.target_path) - src.owner.organHolder?.stomach?.stomach_contents
+		if (ismob(src.owner.loc) || istype(src.owner.loc, /obj/))
+			for (var/atom/A in src.owner.loc.contents)
+				if (istype(A, mattereater.target_path))
 					items += A
 
-		if (linked_power.power > 1)
-			items += get_filtered_atoms_in_touch_range(owner, /obj/the_server_ingame_whoa)
-			//So people can still get the meat ending
-
-		if (!items.len)
-			boutput(usr, "/red You can't find anything nearby to eat.")
-			using = 0
-			return
-
-		var/obj/the_item = input("Which item do you want to eat?","Matter Eater") as null|obj in items
-		if (!the_item || (!istype(the_item, /obj/the_server_ingame_whoa) && the_item.anchored))
-			using = 0
-			return 1
-
-		var/area/cur_area = get_area(owner)
-		var/turf/cur_turf = get_turf(owner)
-		if (isrestrictedz(cur_turf.z) && !cur_area.may_eat_here_in_restricted_z && (!owner.client || !owner.client.holder))
-			owner.show_text("<span class='alert'>Man, this place really did a number on your appetite. You can't bring yourself to eat anything here.</span>")
-			using = 0
-			return 1
-
-		if (istype(the_item, /obj/the_server_ingame_whoa))
-			var/obj/the_server_ingame_whoa/the_server = the_item
-			the_server.eaten(owner)
-			using = 0
-			return
-		owner.visible_message("<span class='alert'>[owner] eats [the_item].</span>")
-		playsound(owner.loc, "sound/items/eatfood.ogg", 50, 0)
-
-		qdel(the_item)
-
-		if (ishuman(owner))
-			for(var/A in owner.organs)
-				var/obj/item/affecting = null
-				if (!owner.organs[A])    continue
-				affecting = owner.organs[A]
-				if (!isitem(affecting))
-					continue
-				affecting.heal_damage(4, 0)
-			owner.UpdateDamageIcon()
-
-		using = 0
-		return
-
-
-
-	cast_misfire()
-		if (..())
-			return 1
-		if (using)
-			return 1
-		using = 1
-
-		var/datum/bioEffect/power/mattereater/ME = linked_power
-		var/base_path = text2path("[ME.target_path]")
-		if (!ispath(base_path))
-			base_path = /obj/item/
-		var/list/items = get_filtered_atoms_in_touch_range(owner,base_path)
-		if (ismob(owner.loc) || istype(owner.loc,/obj/))
-			for (var/atom/A in owner.loc.contents)
-				if (istype(A,ME.target_path))
-					items += A
+		for(var/obj/item/item as anything in items) // augh body bags
+			if(istype(item, /obj/item/body_bag) && item.w_class >= W_CLASS_BULKY)
+				items -= item
+			if(istype(item, /obj/item/gang_loot))
+				items -= item
 
 		if (linked_power.power > 1)
-			items += get_filtered_atoms_in_touch_range(owner, /obj/the_server_ingame_whoa)
+			items += get_filtered_atoms_in_touch_range(src.owner, /obj/the_server_ingame_whoa)
 			//So people can still get the meat ending
 
-		if (!items.len)
-			boutput(usr, "/red You can't find anything nearby to eat.")
-			using = 0
-			return
+		if (!length(items))
+			boutput(usr, SPAN_ALERT("You can't find anything nearby to eat."))
+			src.using = FALSE
+			return CAST_ATTEMPT_SUCCESS
 
-		var/obj/the_item = input("Which item do you want to eat?","Matter Eater") as null|obj in items
-		if (!the_item)
-			using = 0
-			return 1
+		var/obj/the_object = tgui_input_list(src.owner, "Which item do you want to eat?", "Matter Eater", items)
+		if (!the_object || (!istype(the_object, /obj/the_server_ingame_whoa) && the_object.anchored))
+			src.using = FALSE
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		var/area/cur_area = get_area(owner)
-		var/turf/cur_turf = get_turf(owner)
-		if (isrestrictedz(cur_turf.z) && !cur_area.may_eat_here_in_restricted_z && (!owner.client || !owner.client.holder))
-			owner.show_text("<span class='alert'>Man, this place really did a number on your appetite. You can't bring yourself to eat anything here.</span>")
-			using = 0
-			return 1
+		if (!(the_object in get_filtered_atoms_in_touch_range(src.owner, mattereater.target_path)) && !istype(the_object, /obj/the_server_ingame_whoa))
+			src.owner.show_text(SPAN_ALERT("Man, that thing is long gone, far away, just let it go."))
+			src.using = FALSE
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		if (istype(the_item, /obj/the_server_ingame_whoa))
-			var/obj/the_server_ingame_whoa/the_server = the_item
-			the_server.eaten(owner)
-			using = 0
-			return
-		owner.visible_message("<span class='alert'>[owner] tries to swallow [the_item] whole and nearly chokes on it.</span>")
-		playsound(owner.loc, "sound/items/eatfood.ogg", 50, 0)
-		playsound(owner.loc, "sound/misc/meat_plop.ogg", 50, 0)
-		using = 0
-		return
+		var/area/cur_area = get_area(src.owner)
+		var/turf/cur_turf = get_turf(src.owner)
+		if (isrestrictedz(cur_turf.z) && !cur_area.may_eat_here_in_restricted_z && (!src.owner.client || !src.owner.client.holder))
+			src.owner.show_text(SPAN_ALERT("Man, this place really did a number on your appetite. You can't bring yourself to eat anything here."))
+			src.using = FALSE
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+
+		if (misfire)
+			owner.visible_message(SPAN_ALERT("[owner] tries to swallow [the_object] whole and nearly chokes on it."))
+			playsound(owner.loc, 'sound/items/eatfood.ogg', 50, 0)
+			playsound(owner.loc, 'sound/misc/meat_plop.ogg', 50, 0)
+			src.using = 0
+
+		if (istype(the_object, /obj/the_server_ingame_whoa))
+			var/obj/the_server_ingame_whoa/the_server = the_object
+			the_server.eaten(src.owner)
+			src.using = FALSE
+			return CAST_ATTEMPT_SUCCESS
+		if (istype(the_object, /obj/item/implant))
+			var/obj/item/implant/implant = the_object
+			if (implant.owner)
+				implant.on_remove(implant.owner)
+		var/hunger_restored = 0
+		if (ishuman(src.owner) && isitem(the_object))
+			var/obj/item/the_item = the_object
+			hunger_restored = (the_item.w_class + 1) * 5 // +1 so tiny items still give a small boost
+
+		if (!QDELETED(the_object))
+			// Finally, ensure that the item is deleted regardless of what it is
+			var/obj/item/I = the_object
+			var/eaten = I.Eat(src.owner, src.owner, TRUE)
+			if (eaten == EAT_CANCELLED)
+				src.using = FALSE
+				return CAST_ATTEMPT_FAIL_CAST_FAILURE
+			if(eaten) //eating can return false to indicate it failed
+				I.storage?.hide_hud(src.owner)
+				// Organs and body parts have special behaviors we need to account for
+				if (!handle_organs(the_object))
+					handle_parts(the_object)
+			else //Eat() handles qdel, visible message and sound playing, so only do that when we don't have Eat()
+				src.owner.visible_message(SPAN_ALERT("[src.owner] eats [the_object]."))
+				playsound(src.owner.loc, 'sound/items/eatfood.ogg', 50, FALSE)
+				qdel(the_object)
+			logTheThing(LOG_COMBAT, src.owner, "uses Matter Eater to eat [log_object(the_object)] at [log_loc(src.owner)].")
+
+		// Restore a little hunger, and heal our organs
+		if (hunger_restored)
+			var/mob/living/carbon/human/H = src.owner
+			H.sims?.affectMotive("Hunger", hunger_restored)
+			src.owner.HealDamage("All", 5, 0)
+			src.owner.UpdateDamageIcon()
+		src.using = FALSE
+		return CAST_ATTEMPT_SUCCESS
+
+	proc/handle_organs(var/obj/item/organ/object)
+		if (!istype(object) || !ishuman(src.owner))
+			return FALSE
+		var/mob/living/carbon/human/H = src.owner
+		if (object.donor)
+			H.organHolder.drop_organ(object,H) //hide it inside self so it doesn't hang around until the eating is finished
+			return TRUE
+		return FALSE
+
+	proc/handle_parts(var/obj/item/parts/object)
+		if (!istype(object) || !ishuman(src.owner))
+			return FALSE
+		var/mob/living/carbon/human/H = src.owner
+		object.delete()
+		H.hud.update_hands()
+		return TRUE
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -251,9 +265,10 @@
 	name = "Jumpy"
 	desc = "Allows the subject to leap great distances."
 	id = "jumpy"
+	icon_state = "jumpy"
 	msgGain = "Your leg muscles feel taut and strong."
 	msgLose = "Your leg muscles shrink back to normal."
-	cooldown = 30
+	cooldown = 100
 	probability = 99
 	blockCount = 4
 	blockGaps = 2
@@ -272,119 +287,383 @@
 	can_make_injector = 0
 	reclaim_fail = 100
 
+	OnAdd()
+		. = ..()
+		ability?.doCooldown()
+
 /datum/targetable/geneticsAbility/jumpy
 	name = "Jumpy"
 	desc = "Take a big leap forward."
 	icon_state = "jumpy"
-	targeted = 0
+	needs_hands = FALSE
+	targeted = FALSE
 
-	cast()
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (ismob(owner.loc))
-			boutput(usr, "<span class='alert'>You can't jump right now!</span>")
-			return 1
-
-		//store both x and y as transforms mid jump can cause unwanted pixel offsetting
-		var/original_x_offset = owner.pixel_x
-		var/original_y_offset = owner.pixel_y
-		var/jump_tiles = 10 * linked_power.power
-		var/pixel_move = 8 * linked_power.power
-		var/sleep_time = 1 / linked_power.power
+			boutput(usr, SPAN_ALERT("You can't jump right now!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (istype(owner.loc,/turf/))
-			usr.visible_message("<span class='alert'><b>[owner]</b> takes a huge leap!</span>")
-			playsound(owner.loc, "sound/impact_sounds/Generic_Shove_1.ogg", 50, 1)
-			var/prevLayer = owner.layer
-			owner.layer = EFFECTS_LAYER_BASE
+			if (owner.traction == TRACTION_NONE && !owner.has_grip())
+				boutput(usr, SPAN_ALERT("Your leg muscles tense, but there's nothing to push off of!"))
+				return CAST_ATTEMPT_FAIL_CAST_FAILURE
+			do_jump(misfire)
 
-			SPAWN_DBG(0)
-				for(var/i=0, i < jump_tiles, i++)
-					step(owner, owner.dir)
-					if(i < jump_tiles / 2)
-						owner.pixel_y += pixel_move
-					else
-						owner.pixel_y -= pixel_move
-					sleep(sleep_time)
-
-				owner.pixel_x = original_x_offset
-				owner.pixel_y = original_y_offset
-				owner.layer = prevLayer
-
-		if (istype(owner.loc,/obj/))
+		else if (istype(owner.loc,/obj/))
 			var/obj/container = owner.loc
-			boutput(owner, "<span class='alert'>You leap and slam your head against the inside of [container]! Ouch!</span>")
-			owner.changeStatus("paralysis", 5 SECONDS)
-			owner.changeStatus("weakened", 5 SECONDS)
-			container.visible_message("<span class='alert'><b>[owner.loc]</b> emits a loud thump and rattles a bit.</span>")
-			playsound(owner.loc, "sound/impact_sounds/Metal_Hit_Heavy_1.ogg", 50, 1)
-			SPAWN_DBG(0)
-				var/wiggle = 6
-				while(wiggle > 0)
-					wiggle--
-					container.pixel_x = rand(-3,3)
-					container.pixel_y = rand(-3,3)
-					sleep(0.1 SECONDS)
-				container.pixel_x = 0
-				container.pixel_y = 0
+			boutput(owner, SPAN_ALERT("You leap and slam your head against the inside of [container]! Ouch!"))
+			owner.changeStatus("unconscious", 5 SECONDS)
+			owner.changeStatus("knockdown", 5 SECONDS)
+			container.visible_message(SPAN_ALERT("<b>[owner.loc]</b> emits a loud thump and rattles a bit."))
+			playsound(container, 'sound/impact_sounds/Metal_Hit_Heavy_1.ogg', 50, TRUE)
+			animate_storage_thump(container)
 
-		return
+		return CAST_ATTEMPT_SUCCESS
 
-	cast_misfire()
+	proc/do_jump(misfire)
+
+		var/jump_tiles = 10 * src.linked_power.power
+		var/pixel_move = 8 * src.linked_power.power
+		var/sleep_time = 1 / src.linked_power.power
+
+		usr.visible_message(SPAN_ALERT("<b>[src.owner]</b> takes a huge leap!"))
+		playsound(src.owner.loc, 'sound/impact_sounds/Generic_Shove_1.ogg', 50, 1)
+		var/prevLayer = src.owner.layer
+		src.owner.layer = EFFECTS_LAYER_BASE
+		if(misfire)
+			playsound(src.owner.loc, 'sound/impact_sounds/Wood_Hit_1.ogg', 50, 1)
+			usr.visible_message(SPAN_ALERT("<b>[src.owner]</b> leaps far too high and comes crashing down hard!"))
+			src.owner.changeStatus("knockdown", 10 SECONDS)
+			src.owner.changeStatus("stunned", 5 SECONDS)
+		animate(src.owner,
+			pixel_y = pixel_move * jump_tiles / 2,
+			time = sleep_time * jump_tiles / 2,
+			easing = EASE_OUT | CIRCULAR_EASING,
+			flags = ANIMATION_RELATIVE | ANIMATION_PARALLEL)
+		animate(
+			pixel_y = -pixel_move * jump_tiles / 2,
+			time = sleep_time * jump_tiles / 2,
+			easing = EASE_IN | CIRCULAR_EASING,
+			flags = ANIMATION_RELATIVE)
+
+		SPAWN(0)
+			for(var/i=0, i < jump_tiles, i++)
+				step(src.owner, src.owner.dir)
+				sleep(sleep_time)
+			src.owner.layer = prevLayer
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/datum/bioEffect/power/stickytongue
+	name = "Sticky Tongue"
+	desc = "Pull an object towards you with your tongue!"
+	id = "stickytongue"
+	icon_state = "sticky_tongue"
+	msgGain = "You feel like catching flies."
+	msgLose = "you tongue fall out"
+	cooldown = 100
+	probability = 66
+	blockCount = 3
+	blockGaps = 2
+	stability_loss = 10
+	ability_path = /datum/targetable/geneticsAbility/stickytongue
+	var/target_path = /obj/item
+
+/datum/projectile/special/tongue // do i really want this here
+	name = "tongue"
+	max_range = 4
+	dissipation_rate = 0
+	projectile_speed = 32
+	icon_state = ""
+	damage = 0
+	hit_ground_chance = 0
+	smashes_glasses = FALSE
+	shot_sound = 'sound/impact_sounds/Slimy_Hit_3.ogg'
+	shot_volume = 40
+
+	on_launch(obj/projectile/P)
+		..()
+		if (!("owner" in P.special_data))
+			P.die()
+			return
+		P.special_data["target_turf"] = get_turf(P.targets[1])
+		var/mob/owner = P.special_data["owner"]
+		owner.AddComponent(/datum/component/cord, P, base_offset_x = 0, base_offset_y = P.special_data["head_offset"], range=INFINITY, cord_line = "tongue", cord_cap = "tongue_end", behind_parent = TRUE)
+
+	on_hit(atom/hit, direction, obj/projectile/P)
+		if (istype(hit, /mob/living/critter/small_animal))
+			var/mob/living/critter/small_animal/cool_bug = hit
+			if (cool_bug.edible_insect)
+				src.do_throw(cool_bug, P.special_data["owner"])
+
+	//Figure out which turf in our crossing list contains the target
+	post_setup(obj/projectile/P)
+		//the target is out of range, so retarget at the furthest crossing turf *in* our range
+		if (GET_DIST(P.targets[1], P.special_data["owner"]) > src.max_range)
+			if (length(P.crossing) >= src.max_range)
+				P.special_data["target_turf"] = P.crossing[src.max_range]
+			else
+				P.special_data["target_turf"] = P.crossing[length(P.crossing)]
+		//the target is in range, figure out where we need to stop to hit it
+		var/i = 0
+		for (var/turf/T in P.crossing)
+			i++
+			if (T == get_turf(P.targets[1]))
+				P.special_data["end_index"] = i
+				return
+		P.special_data["end_index"] = INFINITY
+
+	//Die when we reach that turf
+	tick(obj/projectile/P)
+		if (P.curr_t >= P.special_data["end_index"])
+			P.die()
+
+	on_end(var/obj/projectile/P)
+		if (!("owner" in P.special_data)) // somehow the projectile data got removed?
+			return ..()
+
+		var/mob/tongue_owner = P.special_data["owner"]
+		//Leave it for a little bit so it can be seen
+		SPAWN(2 DECI SECONDS)
+			tongue_owner.RemoveComponentsOfType(/datum/component/cord)
+
+		var/atom/target_object = P.targets[1]
+		// make sure everyone's still here
+		if (!istype(target_object) || QDELETED(target_object) || !istype(tongue_owner) || QDELETED(tongue_owner))
+			return ..()
+		var/dist = GET_DIST(tongue_owner, target_object)
+		// we got to the end
+		if (P.curr_t >= P.special_data["end_index"] && get_turf(target_object) == P.special_data["target_turf"])
+			// P.set_loc(P.special_data["target_turf"])
+			if (isitem(target_object) && dist <= src.max_range)
+				src.do_throw(target_object, tongue_owner)
+		..()
+
+	proc/do_throw(atom/movable/prize, mob/tongue_owner)
+		prize.visible_message(SPAN_NOTICE("The tongue sticks to [prize] and reels it back!"))
+		playsound(prize, 'sound/impact_sounds/Generic_Snap_1.ogg', 40, TRUE)
+		var/component_type = /datum/component/throw_eat
+		if (isfrog(tongue_owner) || !ishuman(tongue_owner))
+			component_type = /datum/component/throw_eat/insects
+		prize.AddComponent(component_type, tongue_owner)
+		prize.throw_at(tongue_owner, 10, min(0.5, GET_DIST(tongue_owner, prize)))
+
+/datum/targetable/geneticsAbility/stickytongue
+	name = "Sticky Tongue"
+	desc = "Pull an object towards you with your tongue!"
+	icon_state = "sticky_tongue"
+	cooldown = 10 SECONDS
+	needs_hands = FALSE
+	targeted = 1
+	target_anything = 1
+
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		var/head_offset = 0
+		if (ishuman(holder.owner))
+			var/mob/living/carbon/human/H = holder.owner
+			head_offset = 8
+			if (H.mutantrace)
+				head_offset += H.mutantrace.head_offset
+		var/obj/projectile/proj = initialize_projectile_pixel_spread(holder.owner, new/datum/projectile/special/tongue, get_turf(target), poy = head_offset)
 
-		if (ismob(owner.loc))
-			boutput(usr, "<span class='alert'>You can't jump right now!</span>")
-			return 1
+		src.owner.set_dir(get_dir_accurate(owner, target))
 
-		//store both x and y as transforms mid jump can cause unwanted pixel offsetting
-		var/original_x_offset = owner.pixel_x
-		var/original_y_offset = owner.pixel_y
-		var/jump_tiles = 10 * linked_power.power
-		var/pixel_move = 8 * linked_power.power
-		var/sleep_time = 0.5 / linked_power.power
+		if (ishuman(holder.owner))
+			var/mob/living/carbon/human/H = owner
+			if (!H.organHolder.head)
+				boutput(holder.owner, SPAN_ALERT("You don't have a head!"))
+				return CAST_ATTEMPT_FAIL_NO_COOLDOWN
+			var/obj/item/I
+			if (istype(H.wear_mask) && H.wear_mask.c_flags & COVERSMOUTH)
+				I = H.wear_mask
+			else if (istype(H.head) && H.head.c_flags & COVERSMOUTH)
+				I = H.head
+			if (istype(I)) // or it might go
+				holder.owner.visible_message(SPAN_COMBAT("[holder.owner]'s tongue is blocked by the [I.name]!"),\
+				SPAN_COMBAT("<b>Your tongue sticks to the [I.name]!"))
+				return CAST_ATTEMPT_FAIL_DO_COOLDOWN
 
-		if (istype(owner.loc,/turf/))
-			usr.visible_message("<span class='alert'><b>[owner]</b> leaps far too high and comes crashing down hard!</span>")
-			playsound(owner.loc, "sound/impact_sounds/Generic_Shove_1.ogg", 50, 1)
-			playsound(owner.loc, "sound/impact_sounds/Wood_Hit_1.ogg", 50, 1)
-			var/prevLayer = owner.layer
-			owner.layer = EFFECTS_LAYER_BASE
-			owner.changeStatus("weakened", 10 SECONDS)
-			owner.changeStatus("stunned", 5 SECONDS)
+		proj.special_data["owner"] = holder.owner
+		proj.special_data["head_offset"] = head_offset
+		proj.targets = list(target)
 
-			SPAWN_DBG(0)
-				for(var/i=0, i < jump_tiles, i++)
-					if(i < jump_tiles / 2)
-						owner.pixel_y += pixel_move
-					else
-						owner.pixel_y -= pixel_move
-					sleep(sleep_time)
+		proj.launch()
+		holder.owner.setStatus("slowed", 2 SECONDS)
 
-				owner.pixel_x = original_x_offset
-				owner.pixel_y = original_y_offset
-				owner.layer = prevLayer
+		if (misfire)
+			cast_mis(target)
 
-		if (istype(owner.loc,/obj/))
-			var/obj/container = owner.loc
-			boutput(owner, "<span class='alert'>You leap and slam your head against the inside of [container]! Ouch!</span>")
-			owner.changeStatus("paralysis", 5 SECONDS)
-			owner.changeStatus("weakened", 5 SECONDS)
-			container.visible_message("<span class='alert'><b>[owner.loc]</b> emits a loud thump and rattles a bit.</span>")
-			playsound(owner.loc, "sound/impact_sounds/Metal_Hit_Heavy_1.ogg", 50, 1)
-			SPAWN_DBG(0)
-				var/wiggle = 6
-				while(wiggle > 0)
-					wiggle--
-					container.pixel_x = rand(-3,3)
-					container.pixel_y = rand(-3,3)
-					sleep(0.1 SECONDS)
-				container.pixel_x = 0
-				container.pixel_y = 0
+	proc/cast_mis(atom/target)
+		boutput(src.owner, SPAN_ALERT("Your tongue misses the object and smacks you in the face!"))
+		return CAST_ATTEMPT_SUCCESS
 
-		return
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/datum/bioEffect/power/xray
+	name = "X-Ray Vision"
+	desc = "Enhances the subject's optic nerves, allowing them to see on x-ray wavelengths."
+	id = "xray"
+	effectType = EFFECT_TYPE_POWER
+	probability = 33
+	blockCount = 3
+	blockGaps = 5
+	reclaim_mats = 40
+	msgGain = "You suddenly seem to be able to see through everything."
+	msgLose = "Your vision fades back to normal."
+	lockProb = 40
+	lockedGaps = 1
+	lockedDiff = 3
+	lockedChars = list("G","C","A","T")
+	lockedTries = 8
+	stability_loss = 20
+	degrade_to = "bad_eyesight"
+	icon_state  = "eye"
+	effect_group = "vision"
+	cooldown = 30 SECONDS
+	ability_path = /datum/targetable/geneticsAbility/xray
+	/// How wide is the arc swept by the vision cone (degrees)
+	var/arc_width = 30
+
+	onPowerChange(oldval, newval)
+		if (newval)
+			src.arc_width = 60
+		else
+			src.arc_width = 30
+
+/datum/targetable/geneticsAbility/xray
+	name = "X-Ray Vision"
+	desc = "See through walls!"
+	icon_state = "eye"
+	/// The blackout images currently obscuring the owner's vision
+	var/list/image/images = list()
+	/// The mutable appearance we use to quickly copy over the blackout images
+	var/mutable_appearance/blackout_ma = null
+
+	New(datum/abilityHolder/holder)
+		. = ..()
+		//tech 100% stolen from AI static code
+		src.blackout_ma = new(image('icons/misc/static.dmi', icon_state = "static"))
+		src.blackout_ma.plane = PLANE_HUD
+		src.blackout_ma.layer = 102 // fucking action bars are 101 guh????????
+		src.blackout_ma.color = "#000000"
+		src.blackout_ma.appearance_flags = TILE_BOUND | KEEP_APART | RESET_TRANSFORM | RESET_ALPHA | RESET_COLOR | PIXEL_SCALE
+		src.blackout_ma.name = " "
+
+	proc/blackout_turf(turf/T)
+		var/image/blackout = new //https://www.youtube.com/watch?v=jAClFRUer38
+		blackout.appearance = src.blackout_ma
+		blackout.loc = T
+		blackout.override = TRUE
+		src.images += blackout
+		src.holder.owner.client.images += blackout
+
+	///Returns true if a turf blocks xray vision in some way
+	proc/blocks_xray(turf/T)
+		if (T.density && HAS_ATOM_PROPERTY(T, PROP_ATOM_NEVER_RADIOACTIVE))
+			return TRUE
+		for (var/obj/O in T)
+			if (O.density && HAS_ATOM_PROPERTY(O, PROP_ATOM_NEVER_RADIOACTIVE))
+				return TRUE
+		return FALSE
+
+	cast_genetics(atom/target, misfire)
+		if (..())
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		if (!src.holder.owner.client || length(src.images))
+			return CAST_ATTEMPT_FAIL_NO_COOLDOWN
+
+		var/image/eye_overlay = image('icons/effects/genetics.dmi', "xray")
+		eye_overlay.plane = PLANE_SELFILLUM
+		src.owner.AddOverlays(eye_overlay, "xray_eyes")
+
+		var/datum/bioEffect/power/xray/parent_bioeffect = src.linked_power
+
+		//tech mildly stolen from robustlight code
+		var/center_angle = arctan(target.x - src.holder.owner.x, target.y - src.holder.owner.y)
+		var/min_angle = center_angle - parent_bioeffect.arc_width / 2
+		var/max_angle = center_angle + parent_bioeffect.arc_width / 2
+
+		src.owner.set_dir(get_dir_accurate(src.owner, target))
+		src.owner.visible_message(SPAN_ALERT("[src.owner]'s eyes emit a weak blue glow."))
+
+		APPLY_ATOM_PROPERTY(src.owner, PROP_MOB_XRAYVISION, "xray_gene")
+		APPLY_ATOM_PROPERTY(src.owner, PROP_MOB_CANTMOVE, "xray_gene")
+		APPLY_ATOM_PROPERTY(src.owner, PROP_MOB_CANTTURN, "xray_gene")
+
+		var/turf/owner_turf = get_turf(src.holder.owner)
+		//oouuughHHH, see AI static code
+		var/v_width = 12
+		var/v_height = 9
+		var/list/turf/turfs_in_view = block(owner_turf.x - v_width, owner_turf.y - v_height, owner_turf.z, owner_turf.x + v_width, owner_turf.y + v_height, owner_turf.z)
+		var/list/turf/unblocked_turfs = list()
+		var/list/turf/blocked_turfs = list()
+		for (var/turf/T in turfs_in_view)
+			//in our vision cone?
+			if (angle_inbetween(arctan(T.x - src.holder.owner.x, T.y - src.holder.owner.y), min_angle, max_angle))
+				if (prob(5))
+					T.AddComponent(/datum/component/radioactive, 20, TRUE, FALSE, 0)
+				unblocked_turfs += T
+				continue
+			src.blackout_turf(T)
+			blocked_turfs += T
+
+		//batiline blocking! Not quite the most efficient way to implement this but not bad either
+		for (var/turf/unblocked_turf as anything in unblocked_turfs)
+			//we already blocked this one, don't bother raytracing
+			if (unblocked_turf in blocked_turfs)
+				continue
+			//turfs this raytrace has scanned so far
+			var/list/turf/scanned_turfs = list()
+			//now scan back down the raytrace towards the user
+			for (var/turf/scan_turf as anything in getline(unblocked_turf, src.owner))
+				if (src.blocks_xray(scan_turf))
+					//we found a blocker, now blackout all the rest of the raytrace because we know it'll be behind this blocker
+					for (var/turf/turf_to_block as anything in scanned_turfs)
+						if (turf_to_block in blocked_turfs)
+							continue
+						src.blackout_turf(turf_to_block)
+						blocked_turfs |= turf_to_block
+				scanned_turfs += scan_turf
+
+		//in case of forced movements, teleports, random gibbings etc.
+		RegisterSignal(src.holder.owner, COMSIG_MOVABLE_SET_LOC, PROC_REF(remove_effects))
+		//can't rely on still being attached to the holder
+		var/mob/user = src.holder.owner
+		SPAWN(3 SECONDS)
+			//effects have already been removed
+			if (!length(src.images))
+				return
+			//safety in case they disconnected in those three seconds
+			if (!user.client && !user.last_client)
+				RegisterSignal(user, COMSIG_MOB_LOGIN, PROC_REF(remove_effects))
+				return
+			src.remove_effects(user)
+
+	disposing()
+		if (!QDELETED(src.holder) && !QDELETED(src.holder.owner))
+			src.remove_effects(src.holder.owner)
+		. = ..()
+
+	proc/remove_effects(mob/user)
+		UnregisterSignal(user, COMSIG_MOVABLE_SET_LOC)
+		REMOVE_ATOM_PROPERTY(user, PROP_MOB_CANTMOVE, "xray_gene")
+		REMOVE_ATOM_PROPERTY(user, PROP_MOB_XRAYVISION, "xray_gene")
+		REMOVE_ATOM_PROPERTY(user, PROP_MOB_CANTTURN, "xray_gene")
+		user.ClearSpecificOverlays("xray_eyes")
+		var/client/client = user.client || user.last_client
+		for (var/image/blackout in images)
+			client.images -= blackout
+			src.images -= blackout
+		UnregisterSignal(user, COMSIG_MOB_LOGIN)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -394,6 +673,7 @@
 	name = "Polymorphism"
 	desc = "Enables the subject to reconfigure their appearance to mimic that of others."
 	id = "polymorphism"
+	icon_state = "polymorphism"
 	msgGain = "You don't feel entirely like yourself somehow."
 	msgLose = "You feel secure in your identity."
 	cooldown = 1800
@@ -407,76 +687,62 @@
 	name = "Polymorphism"
 	desc = "Mimic the appearance of others."
 	icon_state = "polymorphism"
-	targeted = 1
+	targeted = TRUE
 
-	cast(atom/target)
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		if (target == owner)
-			boutput(owner, "<span class='alert'>While \"be yourself\" is pretty good advice, that would be taking it a bit too literally.</span>")
-			return 1
-		if (get_dist(target,owner) > 1 && !owner.bioHolder.HasEffect("telekinesis"))
-			boutput(owner, "<span class='alert'>You must be within touching distance of [target] for this to work.</span>")
-			return 1
+		if (target == src.owner)
+			boutput(src.owner, SPAN_ALERT("While \"be yourself\" is pretty good advice, that would be taking it a bit too literally."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		if (BOUNDS_DIST(target, src.owner) > 0 && !src.owner.bioHolder.HasEffect("telekinesis"))
+			boutput(src.owner, SPAN_ALERT("You must be within touching distance of [target] for this to work."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (!ishuman(target))
-			boutput(owner, "<span class='alert'>[target] does not seem to be compatible with this ability.</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("[target] does not seem to be compatible with this ability."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 		var/mob/living/carbon/human/H = target
 		if (!H.bioHolder || H.mutantrace?.dna_mutagen_banned)
-			boutput(owner, "<span class='alert'>[target] does not seem to be compatible with this ability.</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("[target] does not seem to be compatible with this ability."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		if (!ishuman(owner))
-			boutput(owner, "<span class='alert'>Your body doesn't seem to be compatible with this ability.</span>")
-			return 1
+		if (!ishuman(src.owner))
+			boutput(src.owner, SPAN_ALERT("Your body doesn't seem to be compatible with this ability."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 		var/mob/living/carbon/human/H2= target
 		if (!H2.bioHolder || H2.mutantrace?.dna_mutagen_banned)
-			boutput(owner, "<span class='alert'>Your body doesn't seem to be compatible with this ability.</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("Your body doesn't seem to be compatible with this ability."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		playsound(owner.loc, "sound/impact_sounds/Slimy_Hit_4.ogg", 50, 1)
-		owner.visible_message("<span class='alert'><b>[owner]</b> touches [target], then begins to shifts and contort!</span>")
+		if (misfire)
+			playsound(src.owner.loc, 'sound/impact_sounds/Slimy_Hit_4.ogg', 50, 1)
+			src.owner.visible_message(SPAN_ALERT("<b>[src.owner]</b> touches [target]... and nothing happens. Huh."))
+			return CAST_ATTEMPT_SUCCESS
 
-		SPAWN_DBG(1 SECOND)
-			if(H && owner)
-				playsound(owner.loc, "sound/impact_sounds/Flesh_Break_2.ogg", 50, 1)
-				owner.bioHolder.CopyOther(H.bioHolder, copyAppearance = 1, copyPool = 0, copyEffectBlocks = 0, copyActiveEffects = 0)
-				owner.real_name = H.real_name
-				owner.name = H.name
-				if(owner.bioHolder?.mobAppearance?.mutant_race)
-					owner.set_mutantrace(owner.bioHolder.mobAppearance.mutant_race.type)
-				else
-					owner.set_mutantrace(null)
-				if(ishuman(owner))
-					var/mob/living/carbon/human/O = owner
-					O.update_colorful_parts()
-		return
+		playsound(src.owner.loc, 'sound/impact_sounds/Slimy_Hit_4.ogg', 50, 1)
+		src.owner.visible_message(SPAN_ALERT("<b>[src.owner]</b> touches [target], then begins to shifts and contort!"))
 
-	cast_misfire(atom/target)
-		if (..())
-			return 1
+		SPAWN(1 SECOND)
+			polymorph(H)
 
-		if (!ishuman(target))
-			boutput(owner, "<span class='alert'>[target] does not seem to be compatible with this ability.</span>")
-			return 1
-		if (target == owner)
-			boutput(owner, "<span class='alert'>While \"be yourself\" is pretty good advice, that would be taking it a bit too literally.</span>")
-			return 1
-		var/mob/living/carbon/human/H = target
-		if (!H.bioHolder)
-			boutput(owner, "<span class='alert'>[target] does not seem to be compatible with this ability.</span>")
-			return 1
+		return CAST_ATTEMPT_SUCCESS
 
-		if (get_dist(H,owner) > 1 && !owner.bioHolder.HasEffect("telekinesis"))
-			boutput(owner, "<span class='alert'>You must be within touching distance of [target] for this to work.</span>")
-			return 1
-
-		playsound(owner.loc, "sound/impact_sounds/Slimy_Hit_4.ogg", 50, 1)
-		owner.visible_message("<span class='alert'><b>[owner]</b> touches [target]... and nothing happens. Huh.</span>")
-
-		return
+	proc/polymorph(var/mob/living/carbon/human/target)
+		if(!target || !src.owner)
+			return
+		playsound(owner.loc, 'sound/impact_sounds/Flesh_Break_2.ogg', 50, 1)
+		src.owner.bioHolder.CopyOther(target.bioHolder, copyAppearance = 1, copyPool = 0, copyEffectBlocks = 0, copyActiveEffects = 0)
+		src.owner.real_name = target.real_name
+		src.owner.name = target.name
+		if(src.owner.bioHolder?.mobAppearance?.mutant_race)
+			src.owner.set_mutantrace(src.owner.bioHolder.mobAppearance.mutant_race.type)
+		else
+			src.owner.set_mutantrace(null)
+		if(ishuman(src.owner))
+			var/mob/living/carbon/human/O = src.owner
+			O.update_colorful_parts()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /*  / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / /  */
@@ -486,6 +752,7 @@
 	name = "Trichochromatic Shift"
 	desc = "Enables the subject to shift their hair color to a different region."
 	id = "colorshift"
+	icon_state = "tri_shift"
 	msgGain = "Your hair itches."
 	msgLose = "You feel more confident in your hair color."
 	cooldown = 600
@@ -498,40 +765,39 @@
 /datum/targetable/geneticsAbility/colorshift
 	name = "Trichochromatic Shift"
 	desc = "Swap the colors of your hair around."
-	icon_state = "polymorphism"
-	targeted = 0
+	icon_state = "tri_shift"
+	needs_hands = FALSE
+	targeted = FALSE
 
-	cast()
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		var/mob/living/carbon/human/H
 		if (ishuman(owner))
 			H = owner
 		else
-			boutput(H, "<span class='notice'>This only works on human hair!</span>")
+			boutput(H, SPAN_NOTICE("This only works on human hair!"))
 			return
 
-		if (istype(H.mutantrace, /datum/mutantrace/lizard))
-			boutput(H, "<span class='notice'>You don't have any hair!</span>")
-			return
-		else if (H.mutantrace?.override_hair && !istype(H.mutantrace, /datum/mutantrace/cow))
-			boutput(H, "<span class='notice'>Whatever hair you have isn't affected!</span>")
+		if (!HAS_FLAG(H.mutantrace.mutant_appearance_flags, HAS_HUMAN_HAIR) && !H.bioHolder.HasEffect("hair_growth"))
+			boutput(H, SPAN_NOTICE("You don't have any hair!"))
 			return
 
 		if (H.bioHolder?.mobAppearance)
 			var/datum/appearanceHolder/AHs = H.bioHolder.mobAppearance
 
-			var/col1 = AHs.customization_first_color
-			var/col2 = AHs.customization_second_color
-			var/col3 = AHs.customization_third_color
+			var/col1 = AHs.customizations["hair_bottom"].color
+			var/col2 = AHs.customizations["hair_middle"].color
+			var/col3 = AHs.customizations["hair_top"].color
 
-			AHs.customization_first_color = col3
-			AHs.customization_second_color = col1
-			AHs.customization_third_color = col2
+			AHs.customizations["hair_bottom"].color = col3
+			AHs.customizations["hair_middle"].color = col1
+			AHs.customizations["hair_top"].color = col2
 
-			H.visible_message("<span class='notice'><b>[H.name]</b>'s hair changes colors!</span>")
+			H.visible_message(SPAN_NOTICE("<b>[H.name]</b>'s hair changes colors!"))
 			H.update_colorful_parts()
+		return CAST_ATTEMPT_SUCCESS
 
 /* / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / */
 /* / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / / */
@@ -541,6 +807,7 @@
 	name = "Telepathy"
 	desc = "Allows the subject to project their thoughts into the minds of other organics."
 	id = "telepathy"
+	icon_state = "telepathy"
 	msgGain = "You can hear your own voice echoing in your mind."
 	msgLose = "Your mental voice fades away."
 	probability = 99
@@ -553,18 +820,26 @@
 	name = "Telepathy"
 	desc = "Transmit psychic messages to others."
 	icon_state = "telepathy"
-	targeted = 1
+	needs_hands = FALSE
+	targeted = TRUE
+	do_logs = FALSE //Handle logs ourselves
 
-	cast(atom/target)
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+
+		if (istype(target, /obj/item/reagent_containers/food/snacks/pancake))
+			dothepixelthing(target)
+			src.holder.owner.visible_message(SPAN_ALERT(SPAN_BOLD("[src.holder.owner] blows up the pancakes with their mind!")), SPAN_ALERT("You blow up the pancakes with your mind!"))
+			src.holder.owner.bioHolder?.RemoveEffect("telepathy")
+			return CAST_ATTEMPT_SUCCESS
 
 		var/mob/living/carbon/recipient = null
 		if (iscarbon(target))
 			recipient = target
 		else if (ismob(target) && !iscarbon(target))
-			boutput(owner, "<span class='alert'>You can't transmit to [target] as they are too different from you mentally!</span>")
-			return 1
+			boutput(owner, SPAN_ALERT("You can't transmit to [target] as they are too different from you mentally!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 		else
 			var/turf/T = get_turf(target)
 			for (var/mob/living/carbon/C in T.contents)
@@ -572,73 +847,42 @@
 				break
 
 		if (!recipient)
-			boutput(owner, "<span class='alert'>There's nobody there to transmit a message to.</span>")
-			return 1
+			boutput(owner, SPAN_ALERT("There's nobody there to transmit a message to."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (recipient.bioHolder.HasEffect("psy_resist"))
-			boutput(owner, "<span class='alert'>You can't contact [recipient.name]'s mind at all!</span>")
-			return 1
+			boutput(owner, SPAN_ALERT("You can't contact [recipient.name]'s mind at all!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+
+		if(isghostcritter(owner))
+			boutput(owner, SPAN_ALERT("You can't contact [recipient.name]'s mind with your spectral brain!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if(!recipient.client || recipient.stat)
-			boutput(recipient, "<span class='alert'>You can't seem to get through to [recipient.name] mentally.</span>")
-			return 1
+			boutput(owner, SPAN_ALERT("You can't seem to get through to [recipient.name] mentally."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		var/msg = copytext( adminscrub(input(usr, "Message to [recipient.name]:","Telepathy") as text), 1, MAX_MESSAGE_LEN)
 		if (!msg)
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 		phrase_log.log_phrase("telepathy", msg)
 
 		var/psyname = "A psychic voice"
 		if (recipient.bioHolder.HasOneOfTheseEffects("telepathy","empath"))
 			psyname = "[owner.name]"
 
+		if (misfire)
+			msg = uppertext(msg)
+			owner.visible_message(SPAN_ALERT("<b>[owner]</b> puts [his_or_her(owner)] fingers to [his_or_her(owner)] temples and stares at [target] really hard."))
+			owner.say(msg)
+			logTheThing(LOG_TELEPATHY, owner, "TELEPATHY misfire to [constructTarget(recipient,"telepathy")]: [msg]")
+
 		boutput(recipient, "<span style='color: #BD33D9'><b>[psyname]</b> echoes, \"<i>[msg]</i>\"</span>")
 		boutput(owner, "<span style='color: #BD33D9'>You echo \"<i>[msg]</i>\" to <b>[recipient.name]</b>.</span>")
 
-		logTheThing("telepathy", owner, recipient, "TELEPATHY to [constructTarget(recipient,"telepathy")]: [msg]")
+		logTheThing(LOG_TELEPATHY, owner, "TELEPATHY to [constructTarget(recipient,"telepathy")]: [msg]")
 
-		return
-
-	cast_misfire(atom/target)
-		if (..())
-			return 1
-
-		var/mob/living/carbon/recipient = null
-		if (iscarbon(target))
-			recipient = target
-		else if (ismob(target) && !iscarbon(target))
-			boutput(owner, "<span class='alert'>You can't transmit to [target] as they are too different from you mentally!</span>")
-			return 1
-		else
-			var/turf/T = get_turf(target)
-			for (var/mob/living/carbon/C in T.contents)
-				recipient = C
-				break
-
-		if (!recipient)
-			boutput(owner, "<span class='alert'>There's nobody there to transmit a message to.</span>")
-			return 1
-
-		if (recipient.bioHolder.HasEffect("psy_resist"))
-			boutput(owner, "<span class='alert'>You can't contact [recipient.name]'s mind at all!</span>")
-			return 1
-
-		if(!recipient.client || recipient.stat)
-			boutput(recipient, "<span class='alert'>You can't seem to get through to [recipient.name] mentally.</span>")
-			return 1
-
-		var/msg = copytext( adminscrub(input(usr, "Message to [recipient.name]:","Telepathy") as text), 1, MAX_MESSAGE_LEN)
-		if (!msg)
-			return 1
-		phrase_log.log_phrase("telepathy", msg)
-		msg = uppertext(msg)
-
-		owner.visible_message("<span class='alert'><b>[owner]</b> puts their fingers to their temples and stares at [target] really hard.</span>")
-		owner.say(msg)
-
-		logTheThing("telepathy", owner, recipient, "TELEPATHY misfire to [constructTarget(recipient,"telepathy")]: [msg]")
-
-		return
+		return CAST_ATTEMPT_SUCCESS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -648,6 +892,7 @@
 	name = "Empathic Thought"
 	desc = "The subject becomes able to read the minds of others for certain information."
 	id = "empath"
+	icon_state = "empath"
 	msgGain = "You suddenly notice more about others than you did before."
 	msgLose = "You no longer feel able to sense intentions."
 	probability = 99
@@ -660,18 +905,19 @@
 	name = "Mind Reader"
 	desc = "Read the minds of others for information."
 	icon_state = "empath"
-	targeted = 1
+	needs_hands = FALSE
+	targeted = TRUE
 
-	cast(atom/target)
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		var/mob/living/carbon/read = null
 		if (iscarbon(target))
 			read = target
 		else if (ismob(read) && !iscarbon(target))
-			boutput(owner, "<span class='alert'>You can't read the thoughts of [target] as they are too different from you mentally!</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("You can't read the thoughts of [target] as they are too different from you mentally!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 		else
 			var/turf/T = get_turf(target)
 			for (var/mob/living/carbon/C in T.contents)
@@ -679,26 +925,31 @@
 				break
 
 		if (!read)
-			boutput(owner, "<span class='alert'>There's nobody there to read the thoughts of.</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("There's nobody there to read the thoughts of."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (read.bioHolder.HasEffect("psy_resist"))
-			boutput(owner, "<span class='alert'>You can't see into [read.name]'s mind at all!</span>")
-			return 1
+			boutput(src.owner, SPAN_ALERT("You can't see into [read.name]'s mind at all!"))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
 		if (isdead(read))
-			boutput(owner, "<span class='alert'>[read.name] is dead and cannot have their mind read.</span>")
-			return
-		if (read.health < 0)
-			boutput(owner, "<span class='alert'>[read.name] is dying, and their thoughts are too scrambled to read.</span>")
-			return
+			boutput(src.owner, SPAN_ALERT("[read.name] is dead and cannot have [his_or_her(read)] mind read."))
+			return CAST_ATTEMPT_SUCCESS
 
-		boutput(usr, "<span class='notice'>Mind Reading of [read.name]:</b></span>")
+		if (misfire)
+			boutput(read, SPAN_ALERT("You sense <b>[src.owner]</b> trying and failing to read your mind!"))
+			boutput(src.owner, SPAN_ALERT("You are mentally overwhelmed by a huge barrage of worthless data!"))
+			src.owner.emote("scream")
+			src.owner.changeStatus("unconscious", 5 SECONDS)
+			src.owner.changeStatus("stunned", 7 SECONDS)
+			return CAST_ATTEMPT_SUCCESS
+
+		boutput(src.owner, SPAN_NOTICE("Mind Reading of [read.name]:</b>"))
 		var/pain_condition = read.health
 		// lower health means more pain
 		var/list/randomthoughts = list("what to have for lunch","the future","the past","money",
-		"their hair","what to do next","their job","space","amusing things","sad things",
-		"annoying things","happy things","something incoherent","something they did wrong")
+		"[his_or_her(read)] hair","what to do next","[his_or_her(read)] job","space","amusing things","sad things",
+		"annoying things","happy things","something incoherent","something [he_or_she(read)] did wrong")
 		var/thoughts = "thinking about [pick(randomthoughts)]"
 		if (read.getStatusDuration("burning"))
 			pain_condition -= 50
@@ -708,83 +959,75 @@
 
 		switch(pain_condition)
 			if (81 to INFINITY)
-				boutput(owner, "<span class='notice'><b>Condition</b>: [read.name] feels good.</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Condition</b>: [read.name] feels good."))
 			if (61 to 80)
-				boutput(owner, "<span class='notice'><b>Condition</b>: [read.name] is suffering mild pain.</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Condition</b>: [read.name] is suffering mild pain."))
 			if (41 to 60)
-				boutput(owner, "<span class='notice'><b>Condition</b>: [read.name] is suffering significant pain.</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Condition</b>: [read.name] is suffering significant pain."))
 			if (21 to 40)
-				boutput(owner, "<span class='notice'><b>Condition</b>: [read.name] is suffering severe pain.</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Condition</b>: [read.name] is suffering severe pain."))
 			else
-				boutput(owner, "<span class='notice'><b>Condition</b>: [read.name] is suffering excruciating pain.</span>")
-				thoughts = "haunted by their own mortality"
+				boutput(src.owner, SPAN_NOTICE("<b>Condition</b>: [read.name] is suffering excruciating pain."))
+				thoughts = "haunted by [his_or_her(read)] own mortality"
 
 		switch(read.a_intent)
 			if (INTENT_HELP)
-				boutput(owner, "<span class='notice'><b>Mood</b>: You sense benevolent thoughts from [read.name].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Mood</b>: You sense benevolent thoughts from [read.name]."))
 			if (INTENT_DISARM)
-				boutput(owner, "<span class='notice'><b>Mood</b>: You sense cautious thoughts from [read.name].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Mood</b>: You sense cautious thoughts from [read.name]."))
 			if (INTENT_GRAB)
-				boutput(owner, "<span class='notice'><b>Mood</b>: You sense hostile thoughts from [read.name].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Mood</b>: You sense hostile thoughts from [read.name]."))
 			if (INTENT_HARM)
-				boutput(owner, "<span class='notice'><b>Mood</b>: You sense cruel thoughts from [read.name].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Mood</b>: You sense cruel thoughts from [read.name]."))
 				for(var/mob/living/L in view(7,read))
 					if (L == read)
 						continue
 					thoughts = "thinking about punching [L.name]"
 					break
 			else
-				boutput(owner, "<span class='notice'><b>Mood</b>: You sense strange thoughts from [read.name].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Mood</b>: You sense strange thoughts from [read.name]."))
+
+		var/speech = steal_speech_text(read)
+		if (length(speech))
+			thoughts = "thinking about [speech]"
 
 		if (ishuman(target))
 			var/mob/living/carbon/human/H = read
 			if (H.pin)
-				boutput(owner, "<span class='notice'><b>Numbers</b>: You sense the number [H.pin] is important to [H.name].</span>")
-		boutput(owner, "<span class='notice'><b>Thoughts</b>: [read.name] is currently [thoughts].</span>")
+				boutput(src.owner, SPAN_NOTICE("<b>Numbers</b>: You sense the number [H.pin] is important to [H.name]."))
+		boutput(src.owner, SPAN_NOTICE("<b>Thoughts</b>: [read.name] is currently [thoughts]."))
 
 		if (read.bioHolder.HasEffect("empath"))
-			boutput(read, "<span class='alert'>You sense [owner.name] reading your mind.</span>")
+			boutput(read, SPAN_ALERT("You sense [src.owner.name] reading your mind."))
 		else if (read.traitHolder.hasTrait("training_chaplain"))
-			boutput(read, "<span class='alert'>You sense someone intruding upon your thoughts...</span>")
-		return
+			boutput(read, SPAN_ALERT("You sense someone intruding upon your thoughts..."))
 
-	cast_misfire(atom/target)
-		if (..())
-			return 1
+		return CAST_ATTEMPT_SUCCESS
 
-		var/mob/living/carbon/read = null
-		if (iscarbon(target))
-			read = target
-		else if (ismob(read) && !iscarbon(target))
-			boutput(owner, "<span class='alert'>You can't read the thoughts of [target] as they are too different from you mentally!</span>")
-			return 1
-		else
-			var/turf/T = get_turf(target)
-			for (var/mob/living/carbon/C in T.contents)
-				read = C
-				break
-
-		if (!read)
-			boutput(owner, "<span class='alert'>There's nobody there to read the thoughts of.</span>")
-			return 1
-
-		if (read.bioHolder.HasEffect("psy_resist"))
-			boutput(owner, "<span class='alert'>You can't see into [read.name]'s mind at all!</span>")
-			return 1
-
-		if (isdead(read))
-			boutput(owner, "<span class='alert'>[read.name] is dead and cannot have their mind read.</span>")
-			return
-		if (read.health < 0)
-			boutput(owner, "<span class='alert'>[read.name] is dying, and their thoughts are too scrambled to read.</span>")
-			return
-
-		boutput(read, "<span class='alert'>Somehow, you sense <b>[owner]</b> trying and failing to read your mind!</span>")
-		boutput(owner, "<span class='alert'>You are mentally overwhelmed by a huge barrage of worthless data!</span>")
-		owner.emote("scream")
-		owner.changeStatus("paralysis", 5 SECONDS)
-		owner.changeStatus("stunned", 7 SECONDS)
-		return
+	/// Mostly stolen from laspgasp() (thanks pali)
+	///
+	/// Grab whatever they're typing from the say/whisper/radio menu, or the command bar. Separate proc so we can return if the target client goes null
+	proc/steal_speech_text(mob/living/carbon/target)
+		var/client/target_client = target.client
+		if (isnull(target_client)) return
+		var/enteredtext = winget(target_client, "mainwindow.input", "text") // grab the text from the input bar
+		if (length(enteredtext) > 5 && copytext(enteredtext, 1, 6) == "say \"") // check if the player is trying to say something
+			enteredtext = copytext(enteredtext, 6, 0) // grab the text they were trying to say
+			enteredtext = "saying something like <i>\"[enteredtext]\"</i>, in an old-fashioned way."
+		if (!length(enteredtext))
+			for (var/window_type in list("say", "radiosay", "whisper"))
+				enteredtext = winget(target_client, "[window_type]window.say-input", "text")
+				if (isnull(target_client)) return
+				if (length(enteredtext))
+					switch(window_type)
+						if ("say")
+							enteredtext = "saying something like <i>\"[enteredtext]\"</i>"
+						if ("radiosay")
+							enteredtext = "saying something like <i>;\"[enteredtext]\"</i>"
+						if ("whisper")
+							enteredtext = "whispering something like <i>\"[enteredtext]\"</i>"
+					break
+		return enteredtext
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -794,6 +1037,7 @@
 	name = "Incendiary Mitochondria"
 	desc = "The subject becomes able to convert excess cellular energy into thermal energy."
 	id = "immolate"
+	icon_state = "immolate"
 	msgGain = "You suddenly feel rather hot."
 	msgLose = "You no longer feel uncomfortably hot."
 	cooldown = 600
@@ -807,34 +1051,34 @@
 	name = "Immolate"
 	desc = "Wreath yourself in burning flames."
 	icon_state = "immolate"
-	targeted = 0
+	needs_hands = FALSE
+	targeted = FALSE
 
-	cast()
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
 
-		playsound(owner.loc, "sound/effects/mag_fireballlaunch.ogg", 50, 0)
+		if (misfire)
+			return src.do_misfire()
+
+		playsound(src.owner.loc, 'sound/effects/mag_fireballlaunch.ogg', 50, 0)
 
 		if (linked_power.power > 1)
-			owner.visible_message("<span class='alert'><b>[owner.name]</b> erupts into a huge column of flames! Holy shit!</span>")
-			fireflash_sm(get_turf(owner), 3, 7000, 2000)
+			src.owner.visible_message(SPAN_ALERT("<b>[src.owner.name]</b> erupts into a huge column of flames! Holy shit!"))
+			fireflash_melting(get_turf(src.owner), 3, 7000, 2000, chemfire = CHEM_FIRE_RED)
 		else if (owner.is_heat_resistant())
-			owner.show_message("<span class='alert'>Your body emits an odd burnt odor but you somehow cannot bring yourself to heat up. Huh.</span>")
-			return
+			src.owner.show_message(SPAN_ALERT("Your body emits an odd burnt odor but you somehow cannot bring yourself to heat up. Huh."))
+			return CAST_ATTEMPT_SUCCESS
 		else
-			owner.visible_message("<span class='alert'><b>[owner.name]</b> suddenly bursts into flames!</span>")
-			owner.set_burning(100)
-		return
+			src.owner.visible_message(SPAN_ALERT("<b>[src.owner.name]</b> suddenly bursts into flames!"))
+			src.owner.set_burning(100)
+		return CAST_ATTEMPT_SUCCESS
 
-	cast_misfire()
-		if (..())
-			return 1
-
-		playsound(owner.loc, "sound/effects/bamf.ogg", 50, 0)
-		owner.show_message("<span class='alert'>You accidentally expunge all heat from your body. Whoops!</span>")
-		owner.bodytemperature = 0
-
-		return
+	proc/do_misfire()
+		playsound(src.owner.loc, 'sound/effects/bamf.ogg', 50, 0)
+		src.owner.show_message(SPAN_ALERT("You accidentally expunge all heat from your body. Whoops!"))
+		src.owner.bodytemperature = 0
+		return CAST_ATTEMPT_SUCCESS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -844,6 +1088,7 @@
 	name = "Self Biomass Manipulation"
 	desc = "The subject becomes able to transform the matter of their cells into a liquid state."
 	id = "melt"
+	icon_state = "melt"
 	msgGain = "You feel strange and jiggly."
 	msgLose = "You feel more solid."
 	cooldown = 1200
@@ -857,51 +1102,55 @@
 	name = "Dissolve"
 	desc = "Transform yourself into a liquid state."
 	icon_state = "melt"
-	targeted = 0
+	needs_hands = FALSE
+	targeted = FALSE
 
-	cast()
+	cast_genetics(atom/target, misfire)
 		if (..())
-			return 1
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		if (istype(src.owner.loc, /obj/dummy/spell_invis)) // stops biomass manipulation and dimension shift from messing with eachother.
+			boutput(src.owner, SPAN_ALERT("You can't seem to turn incorporeal here."))
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+		if (!spell_invisibility(owner, 1, 0, 0, 1))
+			return CAST_ATTEMPT_FAIL_DO_COOLDOWN
+		return misfire ? misfire() : regular()
 
-		if (spell_invisibility(owner, 1, 0, 0, 1) == 1)
-			if (!linked_power.safety)
-				// If unsynchronized, you don't get to keep anything you have on you.
-				// The original version of this power instead gibbed you instantly, which wasn't very fun,
-				// and ended up as a newbie trap ("This sounds fun! *dead* oh.")
-				// This way it's a nice tradeoff, and you can always just pick things back up
-				boutput(owner, "<span class='alert'>Everything you were carrying falls away as you dissolve!</span>")
-				owner.unequip_all()
+	proc/regular()
+		if (!linked_power.safety)
+			// If unsynchronized, you don't get to keep anything you have on you.
+			// The original version of this power instead gibbed you instantly, which wasn't very fun,
+			// and ended up as a newbie trap ("This sounds fun! *dead* oh.")
+			// This way it's a nice tradeoff, and you can always just pick things back up
+			boutput(src.owner, SPAN_ALERT("Everything you were carrying falls away as you dissolve!"))
+			logTheThing(LOG_COMBAT, src.owner, "dropped all their equipment from unsynchronized power [name] at [log_loc(src.owner)].")
+			src.owner.unequip_all()
 
-			spell_invisibility(owner, 50)
-			playsound(owner.loc, "sound/effects/mag_phase.ogg", 25, 1, -1)
+		spell_invisibility(src.owner, 50)
+		playsound(src.owner.loc, 'sound/effects/mag_phase.ogg', 25, 1, -1)
+		return CAST_ATTEMPT_SUCCESS
 
+	proc/misfire()
+		if (!linked_power.safety && ishuman(src.owner))
+			// If unsynchronized, you drop a random organ. Hope it's not one of the important ones!
+			var/list/possible_drops = list("heart", "left_lung","right_lung","left_kidney","right_kidney",
+				"liver","spleen","pancreas","stomach","intestines","appendix","butt")
+			var/obj/item/organ/O = src.owner.organHolder?.drop_organ(pick(possible_drops))
+			if (O)
+				logTheThing(LOG_COMBAT, src.owner, "dropped organ [O] due to misfire of unsynchronized power [name] at [log_loc(src.owner)].")
+				boutput(src.owner, SPAN_ALERT("You dissolve... mostly. Oops."))
+		else
+			// If synchronized, you drop a random item you were carrying.
+			// This is a pretty weak downside, but at the same time,
+			// to get here you've managed to synchronize it and paid the stability penalty.
+			// We can afford to be nice.
+			var/obj/item/I = src.owner.unequip_random()
+			if (I)
+				logTheThing(LOG_COMBAT, src.owner, "dropped item [I] due to misfire of unsynchronized Dissolve at [log_loc(src.owner)].")
+				boutput(src.owner, SPAN_ALERT("\The [I] you were carrying falls away as you dissolve!"))
 
-	cast_misfire()
-		if (..())
-			return 1
-
-		// Misfires still transform you, but bad things happen.
-
-		if (spell_invisibility(owner, 1, 0, 0, 1) == 1)
-			if (!linked_power.safety && ishuman(owner))
-				// If unsynchronized, you drop a random organ. Hope it's not one of the important ones!
-				var/list/possible_drops = list("heart", "left_lung","right_lung","left_kidney","right_kidney",
-					"liver","spleen","pancreas","stomach","intestines","appendix","butt")
-				var/obj/item/organ/O = owner.organHolder.drop_organ(pick(possible_drops))
-				if (O)
-					boutput(owner, "<span class='alert'>You dissolve... mostly. Oops.</span>")
-
-			else
-				// If synchronized, you drop a random item you were carrying.
-				// This is a pretty weak downside, but at the same time,
-				// to get here you've managed to synchronize it and paid the stability penalty.
-				// We can afford to be nice.
-				var/obj/item/I = owner.unequip_random()
-				if (I)
-					boutput(owner, "<span class='alert'>\The [I] you were carrying falls away as you dissolve!</span>")
-
-			spell_invisibility(owner, 50)
-			playsound(owner.loc, "sound/effects/mag_phase.ogg", 25, 1, -1)
+		spell_invisibility(src.owner, 50)
+		playsound(src.owner.loc, 'sound/effects/mag_phase.ogg', 25, 1, -1)
+		return CAST_ATTEMPT_SUCCESS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -911,6 +1160,7 @@
 	name = "High-Pressure Intestines"
 	desc = "Vastly increases the gas capacity of the subject's digestive tract."
 	id = "superfart"
+	icon_state = "superfart"
 	msgGain = "You feel bloated and gassy."
 	msgLose = "You no longer feel gassy. What a relief!"
 	cooldown = 900
@@ -925,6 +1175,7 @@
 	name = "Superfart"
 	desc = "Unleash a gigantic fart!"
 	icon_state = "superfart"
+	needs_hands = FALSE
 	targeted = 0
 
 	cast()
@@ -932,15 +1183,15 @@
 			return 1
 
 		if (!farting_allowed)
-			boutput(owner, "<span class='alert'>Farting is disabled.</span>")
+			boutput(owner, SPAN_ALERT("Farting is disabled."))
 			return 1
 		var/datum/bioEffect/power/superfart/SF = linked_power
 
 		if (SF.farting)
-			boutput(owner, "<span class='alert'>You're already farting! Be patient!</span>")
+			boutput(owner, SPAN_ALERT("You're already farting! Be patient!"))
 			return 1
 
-		owner.visible_message("<span class='alert'><b>[owner.name]</b> hunches down and grits their teeth!</span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner.name]</b> hunches down and grits [his_or_her(owner)] teeth!"))
 		SF.farting = 1
 		var/stun_time = 3 * linked_power.power
 		var/fart_range = 6 * linked_power.power
@@ -959,45 +1210,58 @@
 		sleep(3 SECONDS)
 		if (can_act(owner))
 			if(owner.reagents.has_reagent("anti_fart"))
-				owner.visible_message("<span class='alert'><b>[owner.name]</b> swells up. That can't be good.</span>")
-				boutput(owner, "<span class='alert'><b>Oh god.</b></span>")
+				owner.visible_message(SPAN_ALERT("<b>[owner.name]</b> swells up. That can't be good."))
+				boutput(owner, SPAN_ALERT("<b>Oh god.</b>"))
+				logTheThing(LOG_COMBAT, owner, "was gibbed by superfarting while containing anti_fart at [log_loc(owner)].")
 				indigestion_gib()
 				return 1
 
-			owner.visible_message("<span class='alert'><b>[owner.name]</b>[fart_string]</span>")
+			owner.visible_message(SPAN_ALERT("<b>[owner.name]</b>[fart_string]"))
 			while (sound_repeat > 0)
 				sound_repeat--
-				playsound(owner.loc, "sound/voice/farts/superfart.ogg", sound_volume, 1, channel=VOLUME_CHANNEL_EMOTE)
+				playsound(owner.loc, 'sound/voice/farts/superfart.ogg', sound_volume, 1, channel=VOLUME_CHANNEL_EMOTE)
 
 			for(var/mob/living/V in range(get_turf(owner),fart_range))
 				shake_camera(V,10,64)
 				if (V == owner)
 					continue
-				boutput(V, "<span class='alert'>You are sent flying!</span>")
 
-				V.changeStatus("weakened", stun_time SECONDS)
-				// why the hell was this set to 12 christ
-				while (throw_repeat > 0)
-					throw_repeat--
-					step_away(V,get_turf(owner),throw_speed)
+				V.changeStatus("knockdown", stun_time SECONDS)
+				if(!V.anchored)
+					boutput(V, SPAN_ALERT("You are sent flying!"))
+					// why the hell was this set to 12 christ
+					while (throw_repeat > 0)
+						throw_repeat--
+						step_away(V,get_turf(owner),throw_speed)
+				else
+					boutput(V, SPAN_ALERT("You are knocked down!"))
+
 			var/toxic = owner.bioHolder.HasEffect("toxic_farts")
 			if(toxic)
 				var/turf/fart_turf = get_turf(owner)
 				fart_turf.fluid_react_single("[toxic > 1 ?"very_":""]toxic_fart", toxic*2, airborne = 1)
 
+			if (owner.getStatusDuration("burning"))
+				fireflash(get_turf(owner), 3 * linked_power.power, chemfire = CHEM_FIRE_RED)
+
 			SF.farting = 0
 			if (linked_power.power > 1)
 				for (var/turf/T in range(owner,6))
 					animate_shake(T,5,rand(3,8),rand(3,8))
+
+			// Superfarted on the bible? Off to hell.
+			for (var/obj/item/bible/B in owner.loc)
+				if(gib_user)
+					owner.mind.damned = TRUE
+				else
+					owner.damn()
+				break
+
 			if (gib_user)
 				owner.gib()
 
-			// Superfarted on the bible? Off to hell.
-			for (var/obj/item/storage/bible/B in owner.loc)
-				owner.damn()
-				break
 		else
-			boutput(owner, "<span class='alert'>You were interrupted and couldn't fart! Rude!</span>")
+			boutput(owner, SPAN_ALERT("You were interrupted and couldn't fart! Rude!"))
 			SF.farting = 0
 			return 1
 
@@ -1005,16 +1269,16 @@
 
 	proc/indigestion_gib()
 		owner.emote("faint")
-		owner.setStatus("weakened", 20 SECONDS)
+		owner.setStatus("knockdown", 20 SECONDS)
 		owner.make_jittery(50)
 		sleep(1 SECOND)
 		owner.emote("scream")
-		playsound(owner.loc, "sound/impact_sounds/Flesh_Tear_1.ogg", 100, 1)
+		playsound(owner.loc, 'sound/impact_sounds/Flesh_Tear_1.ogg', 100, 1)
 		owner.TakeDamage("chest", 25, 0, 0, DAMAGE_BLUNT)
 		owner.make_jittery(250)
 		sleep(1 SECOND)
 		owner.emote("scream")
-		playsound(owner.loc, "sound/impact_sounds/Flesh_Tear_2.ogg", 100, 1)
+		playsound(owner.loc, 'sound/impact_sounds/Flesh_Tear_2.ogg', 100, 1)
 		owner.TakeDamage("chest", 25, 0, 0, DAMAGE_BLUNT)
 		owner.make_jittery(500)
 
@@ -1022,7 +1286,7 @@
 		var/scream_decrement = 0.25
 
 		while(scream_time > 0)
-			playsound(owner.loc, pick("sound/impact_sounds/Flesh_Break_1.ogg","sound/impact_sounds/Flesh_Tear_1.ogg","sound/impact_sounds/Flesh_Tear_2.ogg"), 100, 1)
+			playsound(owner.loc, pick('sound/impact_sounds/Flesh_Break_1.ogg','sound/impact_sounds/Flesh_Tear_1.ogg','sound/impact_sounds/Flesh_Tear_2.ogg'), 100, 1)
 			owner.emote("scream")
 			sleep(scream_time SECONDS)
 			scream_time -= scream_decrement
@@ -1058,6 +1322,7 @@
 	name = "Optic Energizer"
 	desc = "Imbues the subject's eyes with the potential to project concentrated thermal energy."
 	id = "eyebeams"
+	icon_state = "eyebeams"
 	msgGain = "Your eyes ache and burn."
 	msgLose = "Your eyes stop aching."
 	cooldown = 80
@@ -1073,15 +1338,16 @@
 	name = "Eyebeams"
 	desc = "Shoot lasers from your eyes."
 	icon_state = "eyebeams"
-	targeted = 1
-	target_anything = 1
-	needs_hands = 0
+	targeted = TRUE
+	target_anything = TRUE
+	needs_hands = FALSE
 
 	cast(atom/target)
 		if (..())
 			return 1
 
 		var/turf/T = get_turf(target)
+
 
 		var/datum/bioEffect/power/eyebeams/EB = linked_power
 		var/projectile_path = ispath(EB.projectile_path) ? EB.projectile_path : text2path(EB.projectile_path)
@@ -1092,15 +1358,32 @@
 		if (!ispath(projectile_path))
 			projectile_path = /datum/projectile/laser/eyebeams
 
-		owner.visible_message("<span class='alert'><b>[owner.name]</b> shoots eye beams!</span>")
+		if (!EB.stun_mode && ishuman(owner)) // remember to take off your headgear if you want to fire the laser
+			var/mob/living/carbon/human/H = owner
+			var/obj/item/I
+			if (istype(H.glasses) && H.glasses.c_flags & COVERSEYES)
+				I = H.glasses
+			else if (istype(H.wear_mask) && H.wear_mask.c_flags & COVERSEYES)
+				I = H.wear_mask
+			else if (istype(H.head) && H.head.c_flags & COVERSEYES)
+				I = H.head
+			else if (istype(H.wear_suit) && H.wear_suit.c_flags & COVERSEYES)
+				I = H.wear_suit
+			if (istype(I)) // or it might go
+				I.combust() // POOF
+				holder.owner.visible_message(SPAN_COMBAT("<b>[holder.owner]'s [I.name] catches on fire!</b>"),\
+				SPAN_COMBAT("<b>Your [I.name] catches on fire!</b> Maybe you should have taken it off first!"))
+				return
+
+		owner.visible_message(SPAN_ALERT("<b>[owner.name]</b> shoots eye beams!"))
 		var/datum/projectile/laser/eyebeams/PJ = new projectile_path
-		shoot_projectile_ST(owner, PJ, T)
+		shoot_projectile_ST_pixel_spread(owner, PJ, T)
 
 	cast_misfire(atom/target)
 		if (..())
 			return 1
 
-		owner.visible_message("<span class='alert'><b>[owner.name]'s</b> eyeballs catch on fire briefly!</span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner.name]'s</b> eyeballs catch on fire briefly!"))
 		if (ishuman(owner))
 			var/mob/living/carbon/human/H = owner
 			H.take_eye_damage(5)
@@ -1108,7 +1391,7 @@
 /datum/projectile/laser/eyebeams
 	name = "optic laser"
 	icon_state = "eyebeam"
-	power = 20
+	damage = 20
 	cost = 20
 	sname = "eye laser"
 	dissipation_delay = 5
@@ -1118,7 +1401,8 @@
 	color_blue = 1
 
 /datum/projectile/laser/eyebeams/stun
-	ks_ratio = 0.0
+	damage = 0
+	stun = 20
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1128,6 +1412,7 @@
 	name = "Adrenaline Rush"
 	desc = "Enables the user to voluntarily empty glands of stimulants. May be dangerous with repeated use."
 	id = "adrenaline"
+	icon_state = "adrenaline"
 	probability = 66
 	blockCount = 4
 	blockGaps = 4
@@ -1141,15 +1426,16 @@
 	name = "Adrenaline Rush"
 	desc = "Infuse your bloodstream with stimulants."
 	icon_state = "adrenaline"
-	targeted = 0
-	can_act_check = 0
+	targeted = FALSE
+	needs_hands = FALSE
+	can_act_check = FALSE
 
 	cast()
 		if (..())
 			return 1
 		var/multiplier = linked_power.power
 		if (owner.reagents)
-			boutput(owner, "<span class='notice'>You get pumped up!</span>")
+			boutput(owner, SPAN_NOTICE("You get pumped up!"))
 			owner.emote("scream")
 			owner.reagents.add_reagent("epinephrine",20 * multiplier)
 			owner.reagents.add_reagent("salicylic_acid",20 * multiplier)
@@ -1165,7 +1451,7 @@
 			return 1
 		var/multiplier = 4
 		if (owner.reagents)
-			boutput(owner, "<span class='alert'>You get pumped up! ...maybe a bit too pumped up! You feel kinda sick...</span>")
+			boutput(owner, SPAN_ALERT("You get pumped up! ...maybe a bit too pumped up! You feel kinda sick..."))
 			owner.emote("scream")
 			owner.reagents.add_reagent("epinephrine",20 * multiplier)
 			owner.reagents.add_reagent("salicylic_acid",20 * multiplier)
@@ -1180,10 +1466,111 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/datum/bioEffect/power/phagocytosis
+	name = "Eukaryotic Phagocytosis"
+	desc = "Allows the subject to absorb biological organs into their body."
+	icon_state = "phagocytosis"
+	id = "phagocytosis"
+	msgGain = "You feel your organs wobbling inside you."
+	msgLose = "Your organs no longer wobble when you move."
+	cooldown = 100
+	stability_loss = 5
+	ability_path = /datum/targetable/geneticsAbility/phagocytosis
+
+/datum/targetable/geneticsAbility/phagocytosis
+	name = "Eukaryotic Phagocytosis"
+	desc = "Replace an organic organ by absorbing a new one."
+	icon_state = "phagocytosis"
+	targeted = FALSE
+
+	cast_genetics(atom/target, misfire)
+		if(..())
+			return TRUE
+		if(!owner.organHolder)
+			return TRUE
+		var/obj/item/I = owner.equipped()
+		if(!I)
+			boutput(owner, SPAN_ALERT("You need to be holding an organ to absorb it!"))
+			return TRUE
+		return absorb_organ_setup(I, (linked_power.power > 1), misfire)
+
+	proc/absorb_organ_setup(var/obj/item/I, var/eject_old, var/misfire = FALSE)
+		if(!src.owner.organHolder)
+			return TRUE
+		if(iscritter(src.owner) && !istype(I, /obj/item/organ/brain))
+			// Critters only use brains currently
+			boutput(src.owner, SPAN_ALERT("You're not sure what to do with this organ."))
+			return TRUE
+
+		var/obj/item/current_organ = null
+		var/slot
+		if(istype(I, /obj/item/organ))
+			var/obj/item/organ/organ_new = I
+			slot = organ_new.organ_holder_name
+			if(istype(I, /obj/item/organ/eye))
+				if(I == src.owner.r_hand)
+					slot = "right_eye"
+				else
+					slot = "left_eye"
+			var/obj/item/organ/organ_old = owner.organHolder.get_organ(slot)
+			current_organ = organ_old
+			if(organ_new.robotic)
+				boutput(src.owner, SPAN_ALERT("You can't absorb cybernetics!"))
+				return TRUE
+			if(organ_old?.robotic)
+				boutput(src.owner, SPAN_ALERT("You try to absorb \the [I], but you can't get rid of your cybernetics!"))
+				return TRUE
+			if(slot == "head")
+				boutput(owner, SPAN_ALERT("You can't replace your own head like that!"))
+				return TRUE
+			if(slot == "tail")
+				boutput(owner, SPAN_ALERT("You can't replace your own tail like that!"))
+				return TRUE
+		else if(istype(I, /obj/item/clothing/head/butt))
+			boutput(owner, SPAN_ALERT("You can't replace your own butt like that!"))
+			return TRUE
+		else if(istype(I, /obj/item/skull))
+			slot = "skull"
+			current_organ = owner.organHolder.get_organ("skull")
+		else
+			boutput(owner, SPAN_ALERT("You can't absorb that!"))
+			return TRUE
+
+		if(current_organ && linked_power.power <= 1)
+			boutput(owner, SPAN_ALERT("You already have that organ!"))
+			return TRUE
+		if(slot == "brain")
+			var/accept = tgui_alert(src.owner, "Are you sure that you want to replace your brain with [I]?", "Replace brain?", list("Yes", "No")) == "Yes" && src.owner.equipped() == I
+			if(!accept)
+				return TRUE
+			logTheThing(LOG_COMBAT, src.owner, "replaces their brain with [I] using their Eukaryotic Phagocytosis ability.")
+		if(misfire)
+			var/obj/item/dropped_organ = src.owner.organHolder.drop_organ(slot)
+			if(isitem(dropped_organ) && !src.linked_power.safety)
+				src.owner.visible_message("[src.owner] tried to absorb the [I], but \the [dropped_organ] just falls out instead!")
+			else
+				boutput(src.owner, SPAN_ALERT("Your organs vibrate uncomfortably!"))
+			return
+		absorb_organ(I, slot)
+
+	proc/absorb_organ(var/obj/item/I, var/slot)
+		var/dropped_organ = src.owner.organHolder.drop_organ(slot)
+		if(isitem(dropped_organ))
+			src.owner.visible_message("\The [dropped_organ] falls out of [src.owner] and \the [I] is absorbed!")
+		else
+			src.owner.visible_message("\The [I] is absorbed into [src.owner]'s body!")
+		src.owner.u_equip(I)
+		src.owner.organHolder.receive_organ(I, slot)
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /datum/bioEffect/power/midas
 	name = "Midas Touch"
 	desc = "Allows the subject to transmute materials at will."
 	id = "midas"
+	icon_state = "midas"
 	msgGain = "Your fingers sparkle and gleam."
 	msgLose = "Your fingers return to normal."
 	cooldown = 300
@@ -1198,72 +1585,75 @@
 	name = "Midas Touch"
 	desc = "Transmute an object to gold by touching it."
 	icon_state = "midas"
-	targeted = 0
+	targeted = TRUE
+	target_anything = TRUE
+	target_in_inventory = TRUE
+	var/targetable_types = /obj/item
+	var/material_override
 
-	cast()
+	cast(atom/target)
 		if (..())
-			return 1
-		if(linked_power.using)
-			return 1
+			return TRUE
+		return src.transmute_target(target, src.get_default_material_id())
 
-		var/base_path = /obj/item/
-		if (linked_power.power > 1)
-			base_path = /obj/
+	cast_misfire(atom/target)
+		if (..())
+			return TRUE
+		return src.transmute_target(target, "flesh")
 
-		var/list/items = get_filtered_atoms_in_touch_range(owner,base_path)
-		if (!items.len)
-			boutput(usr, "/red You can't find anything nearby to touch.")
-			return 1
-
-		linked_power.using = 1
-		var/obj/the_item = input("Which item do you want to transmute?","Midas Touch") as null|obj in items
-		if (!the_item)
-			last_cast = 0
-			linked_power.using = 0
-			return 1
-
-		if (!linked_power)
-			owner.visible_message("[owner] touches [the_item].")
-		else
-			if (istype(linked_power,/datum/bioEffect/power/midas))
-				var/datum/bioEffect/power/midas/linked = linked_power
-				owner.visible_message("<span class='alert'>[owner] touches [the_item], turning it to [linked.transmute_material]!</span>")
-				the_item.setMaterial(getMaterial(linked.transmute_material))
-			else
-				owner.visible_message("<span class='alert'>[owner] touches [the_item], turning it to gold!</span>")
-				the_item.setMaterial(getMaterial("gold"))
-		linked_power.using = 0
+	logCast(atom/target)
 		return
 
-	cast_misfire()
-		if (..())
-			return 1
-		if(linked_power.using)
-			return 1
+	proc/get_default_material_id()
+		if(src.material_override)
+			return src.material_override
+		if(src.linked_power)
+			var/datum/bioEffect/power/midas/linked = linked_power
+			return linked.transmute_material
+		return "gold"
 
-		var/base_path = /obj/item/
-		if (linked_power.power > 1)
-			base_path = /obj/
-
-		var/list/items = get_filtered_atoms_in_touch_range(owner,base_path)
-		if (!items.len)
-			boutput(usr, "/red You can't find anything nearby to touch.")
+	proc/transmute_target(atom/target, material_id)
+		if(BOUNDS_DIST(target, owner) > 0 && !owner.bioHolder.HasEffect("telekinesis"))
+			boutput(owner, SPAN_ALERT("You are too far from [target] to do that!"))
 			return 1
-
-		linked_power.using = 1
-		var/obj/the_item = input("Which item do you want to transmute?","Midas Touch") as null|obj in items
-		if (!the_item)
-			last_cast = 0
-			linked_power.using = 0
+		if(linked_power?.power > 1 && (src.targetable_types == /obj/item))
+			src.targetable_types = /obj
+		if(!istype(target, src.targetable_types))
+			boutput(owner, SPAN_ALERT("You cannot transmute [target]!"))
 			return 1
+		if(isitem(target))
+			var/obj/item/the_item = target
+			if(the_item.amount > 1)
+				var/obj/item/split_item = the_item.split_stack(1)
+				split_item.set_loc(get_turf(the_item))
+				target = split_item
+		logTheThing(LOG_COMBAT, owner, "uses [name] to transmute [log_object(target)] into [material_id] at [log_loc(owner)].")
+		src.owner.visible_message(SPAN_ALERT("[src.owner] touches [target], turning it to [material_id]!"))
+		target.setMaterial(getMaterial(material_id))
 
-		if (!linked_power)
-			owner.visible_message("[owner] touches [the_item].")
-		else
-			owner.visible_message("<span class='alert'>[owner] touches [the_item], turning it to flesh!</span>")
-			the_item.setMaterial(getMaterial("flesh"))
-		linked_power.using = 0
-		return
+/datum/bioEffect/power/midas/pickle
+	name = "Pickle Touch"
+	id = "pickle"
+	desc = "Allows the subject to induce spontaneous pickling at will."
+	msgGain = "You suddenly smell vinegar."
+	msgLose = "You feel less well preserved."
+	transmute_material = "pickle"
+	power = 2
+	occur_in_genepools = 0
+	probability = 0
+	scanner_visibility = 0
+	can_research = 0
+	can_make_injector = 0
+	can_copy = 0
+	can_reclaim = 0
+	can_scramble = 0
+	curable_by_mutadone = 0
+	ability_path = /datum/targetable/geneticsAbility/midas/pickle
+
+/datum/targetable/geneticsAbility/midas/pickle
+	name = "Pickle Touch"
+	desc = "Instantly pickle an object"
+	icon_state = "pickle"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1275,6 +1665,7 @@
 	name = "Healing Touch"
 	desc = "Allows the subject to heal the wounds of others with a touch."
 	id = "healing_touch"
+	icon_state = "healingtouch"
 	msgGain = "Your hands radiate a comforting aura."
 	msgLose = "The aura around your hands dissipates."
 	cooldown = 900
@@ -1286,27 +1677,27 @@
 	name = "Healing Touch"
 	desc = "Soothe the wounds of others."
 	icon_state = "healingtouch"
-	targeted = 1
+	targeted = TRUE
 
 	cast(atom/target)
 		if (..())
 			return 1
 
-		if (get_dist(target,owner) > 1 && !owner.bioHolder.HasEffect("telekinesis"))
-			boutput(usr, "<span class='alert'>You need to be closer to do that.</span>")
+		if (BOUNDS_DIST(target, owner) > 0 && !owner.bioHolder.HasEffect("telekinesis"))
+			boutput(usr, SPAN_ALERT("You need to be closer to do that."))
 			return 1
 
 		if (!iscarbon(target))
-			boutput(usr, "<span class='alert'>This power won't work on that!</span>")
+			boutput(usr, SPAN_ALERT("This power won't work on that!"))
 			return 1
 
 		if (target == owner)
-			boutput(usr, "<span class='alert'>This power doesn't work when you touch yourself. Weirdo.</span>")
+			boutput(usr, SPAN_ALERT("This power doesn't work when you touch yourself. Weirdo."))
 			return 1
 
 		var/mob/living/carbon/C = target
-		owner.visible_message("<span class='alert'><b>[owner] touches [C], enveloping them in a soft glow!</b></span>")
-		boutput(C, "<span class='notice'>You feel your pain fading away.</span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner] touches [C], enveloping [him_or_her(C)] in a soft glow!</b>"))
+		boutput(C, SPAN_NOTICE("You feel your pain fading away."))
 		var/amount_to_heal = 25 * linked_power.power
 		C.HealDamage("All", amount_to_heal, amount_to_heal)
 		C.take_toxin_damage(0 - amount_to_heal)
@@ -1318,22 +1709,22 @@
 		if (..())
 			return 1
 
-		if (get_dist(target,owner) > 1 && !owner.bioHolder.HasEffect("telekinesis"))
-			boutput(usr, "<span class='alert'>You need to be closer to do that.</span>")
+		if (BOUNDS_DIST(target, owner) > 0 && !owner.bioHolder.HasEffect("telekinesis"))
+			boutput(usr, SPAN_ALERT("You need to be closer to do that."))
 			return 1
 
 		if (!iscarbon(target))
-			boutput(usr, "<span class='alert'>This power won't work on that!</span>")
+			boutput(usr, SPAN_ALERT("This power won't work on that!"))
 			return 1
 
 		if (target == owner)
-			boutput(usr, "<span class='alert'>This power doesn't work when you touch yourself. Weirdo.</span>")
+			boutput(usr, SPAN_ALERT("This power doesn't work when you touch yourself. Weirdo."))
 			return 1
 
 		var/mob/living/carbon/C = target
-		owner.visible_message("<span class='alert'><b>[owner] touches [C], enveloping them in a bright glow!</b></span>")
-		boutput(C, "<span class='notice'>Your pain fades away rapidly.</span>")
-		boutput(owner, "<span class='alert'>You use too much life energy and hurt yourself!</span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner] touches [C], enveloping [him_or_her(C)] in a bright glow!</b>"))
+		boutput(C, SPAN_NOTICE("Your pain fades away rapidly."))
+		boutput(owner, SPAN_ALERT("You use too much life energy and hurt yourself!"))
 		var/amount_to_heal = 25 * linked_power.power
 		C.HealDamage("All", amount_to_heal, amount_to_heal)
 		owner.TakeDamage("All", amount_to_heal, amount_to_heal)
@@ -1354,21 +1745,22 @@
 	name = "Dimension Shift"
 	desc = "Phase out and hide in another dimension."
 	id = "dimension_shift"
+	icon_state = "dimensionshift"
 	msgGain = "You can see a faint blue light."
 	msgLose = "The blue light fades away."
 	cooldown = 900
 	occur_in_genepools = 0
 	stability_loss = 15
 	ability_path = /datum/targetable/geneticsAbility/dimension_shift
-	var/active = 0
-	var/processing = 0
+	var/active = FALSE
+	var/processing = FALSE
 	var/atom/last_loc = null
 	acceptable_in_mutini = 0
 
 	OnRemove()
 		..()
 		if(active)
-			processing = 1
+			processing = TRUE
 			var/obj/dummy/spell_invis/invis_object
 			if (istype(owner.loc,/obj/dummy/spell_invis/))
 				invis_object = owner.loc
@@ -1377,73 +1769,72 @@
 				qdel(invis_object)
 			last_loc = null
 
-			owner.visible_message("<span class='alert'><b>[owner] appears in a burst of blue light!</b></span>")
-			playsound(owner.loc, "sound/effects/ghost2.ogg", 50, 0)
-			SPAWN_DBG(0.7 SECONDS)
+			owner.visible_message(SPAN_ALERT("<b>[owner] appears in a burst of blue light!</b>"))
+			playsound(owner.loc, 'sound/effects/ghost2.ogg', 50, 0)
+			SPAWN(0.7 SECONDS)
 				animate(owner, alpha = 255, time = 5, easing = LINEAR_EASING)
 				animate(color = "#FFFFFF", time = 5, easing = LINEAR_EASING)
-				active = 0
-			processing = 0
+				active = FALSE
+				processing = FALSE
 		return
 
 /datum/targetable/geneticsAbility/dimension_shift
 	name = "Dimension Shift"
 	desc = "Hide in another dimension to avoid hazards."
 	icon_state = "dimensionshift"
-	targeted = 0
-	cooldown = 900
-	has_misfire = 0
+	targeted = FALSE
+	cooldown = 90 SECONDS
+	has_misfire = FALSE
 
 	cast()
 		if (..())
-			return 1
+			return TRUE
 
 		if (!istype(linked_power,/datum/bioEffect/power/dimension_shift))
-			return 1
+			return TRUE
 		var/datum/bioEffect/power/dimension_shift/P = linked_power
-
 		if (!istype(owner.loc,/turf/) && !istype(owner.loc,/obj/dummy/spell_invis/))
-			boutput(owner, "<span class='alert'>That won't work here.</span>")
-			return 1
-
+			boutput(owner, SPAN_ALERT("That won't work here."))
+			return TRUE
 		if (P.processing)
-			return 1
+			return TRUE
 
-		P.processing = 1
+		P.processing = TRUE
 
 		if (!P.active)
-			P.active = 1
-			P.last_loc = owner.loc
+			if (istype(owner.loc, /obj/dummy/spell_invis/)) // check for if theres a spell_invis object we havent placed (from biomass manipulation)
+				// before this, dimension shift and biomass manipulation resulted in strange behavior, including being sent to nullspace.
+				boutput(owner, SPAN_ALERT("That won't work here."))
+				P.processing = FALSE
+				return TRUE
+			P.active = TRUE
+			P.last_loc = get_turf(owner)
 			owner.canmove = 0
 			owner.restrain_time = TIME + 0.7 SECONDS
-			owner.visible_message("<span class='alert'><b>[owner] vanishes in a burst of blue light!</b></span>")
-			playsound(owner.loc, "sound/effects/ghost2.ogg", 50, 0)
+			owner.visible_message(SPAN_ALERT("<b>[owner] vanishes in a burst of blue light!</b>"))
+			playsound(owner.loc, 'sound/effects/ghost2.ogg', 50, 0)
 			animate(owner, color = "#0000FF", time = 5, easing = LINEAR_EASING)
 			animate(alpha = 0, time = 5, easing = LINEAR_EASING)
-			SPAWN_DBG(0.7 SECONDS)
+			SPAWN(0.7 SECONDS)
 				owner.canmove = 1
 				owner.restrain_time = 0
-				var/obj/dummy/spell_invis/invis_object = new /obj/dummy/spell_invis(get_turf(owner))
+				var/obj/dummy/spell_invis/dimshift/invis_object = new /obj/dummy/spell_invis/dimshift(get_turf(owner), owner, P)
 				invis_object.canmove = 0
 				owner.set_loc(invis_object)
-			P.processing = 0
-			return 1
+				P.processing = FALSE
+			return TRUE
 		else
 			var/obj/dummy/spell_invis/invis_object
 			if (istype(owner.loc,/obj/dummy/spell_invis/))
 				invis_object = owner.loc
-			owner.set_loc(P.last_loc)
+			if (isnull(P.last_loc))
+				owner.set_loc(get_turf(owner)) // better safe than sorry.
+			else // now it wont nullspace you if things go wrong.
+				owner.set_loc(P.last_loc)
 			if (invis_object)
 				qdel(invis_object)
 			P.last_loc = null
 
-			owner.visible_message("<span class='alert'><b>[owner] appears in a burst of blue light!</b></span>")
-			playsound(owner.loc, "sound/effects/ghost2.ogg", 50, 0)
-			SPAWN_DBG(0.7 SECONDS)
-				animate(owner, alpha = 255, time = 5, easing = LINEAR_EASING)
-				animate(color = "#FFFFFF", time = 5, easing = LINEAR_EASING)
-				P.active = 0
-			P.processing = 0
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1453,6 +1844,7 @@
 	name = "Photokinesis"
 	desc = "Allows the subject to create a source of light."
 	id = "photokinesis"
+	icon_state = "photokinesis"
 	msgGain = "Everything seems too dark!"
 	msgLose = "It's too bright!"
 	cooldown = 600
@@ -1473,8 +1865,8 @@
 	name = "Photokinesis"
 	desc = "Create a strong source of light."
 	icon_state = "photokinesis"
-	targeted = 1
-	has_misfire = 0
+	targeted = TRUE
+	has_misfire = FALSE
 
 	cast(atom/target)
 		if (..())
@@ -1484,8 +1876,8 @@
 		var/datum/bioEffect/power/photokinesis/P = linked_power
 
 		var/turf/T = get_turf(target)
-		owner.visible_message("<span class='alert'><b>[owner]</b> raises [his_or_her(owner)] hands into the air!</span>")
-		playsound(owner.loc, "sound/voice/heavenly.ogg", 50, 0)
+		owner.visible_message(SPAN_ALERT("<b>[owner]</b> raises [his_or_her(owner)] hands into the air!"))
+		playsound(owner.loc, 'sound/voice/heavenly.ogg', 50, 0)
 		var/strength = 1 + 6 * linked_power.power
 		var/time = 300 * linked_power.power
 		new /obj/photokinesis_light(T,P.red,P.green,P.blue,strength,time)
@@ -1494,7 +1886,7 @@
 	name = ""
 	desc = ""
 	density = 0
-	anchored = 1
+	anchored = ANCHORED
 	mouse_opacity = 0
 	icon = null
 	icon_state = null
@@ -1509,7 +1901,7 @@
 		light.enable()
 
 		if (isnum(time))
-			SPAWN_DBG(time)
+			SPAWN(time)
 				qdel(src)
 
 	disposing()
@@ -1523,6 +1915,7 @@
 	name = "Erebokinesis"
 	desc = "Allows the subject to snuff out all light in an area."
 	id = "erebokinesis"
+	icon_state = "erebokinesis"
 	msgGain = "Everything seems too bright!"
 	msgLose = "It's too dark!"
 	cooldown = 600
@@ -1541,8 +1934,8 @@
 	name = "Erebokinesis"
 	desc = "Create a field of darkness."
 	icon_state = "erebokinesis"
-	targeted = 1
-	has_misfire = 0
+	targeted = TRUE
+	has_misfire = FALSE
 
 	cast(atom/target)
 		if (..())
@@ -1556,8 +1949,8 @@
 		field_time *= P.power
 
 		var/turf/T = get_turf(target)
-		owner.visible_message("<span class='alert'><b>[owner]</b> raises [his_or_her(owner)] hands into the air!</span>")
-		playsound(owner.loc, "sound/voice/chanting.ogg", 50, 0)
+		owner.visible_message(SPAN_ALERT("<b>[owner]</b> raises [his_or_her(owner)] hands into the air!"))
+		playsound(owner.loc, 'sound/voice/chanting.ogg', 50, 0)
 		new /obj/overlay/darkness_field(T, field_time, radius = 0.5 + field_size, max_alpha = 250)
 		new /obj/overlay/darkness_field{plane = PLANE_SELFILLUM}(T, field_time, radius = 0.5 + field_size, max_alpha = 250)
 
@@ -1569,6 +1962,7 @@
 	name = "Fire Breath"
 	desc = "Allows the subject to exhale fire."
 	id = "fire_breath"
+	icon_state = "firebreath"
 	msgGain = "Your throat is burning!"
 	msgLose = "Your throat feels a lot better now."
 	cooldown = 600
@@ -1582,7 +1976,7 @@
 	name = "Fire Breath"
 	desc = "Huff and puff, and burn their house down!"
 	icon_state = "firebreath"
-	targeted = 1
+	targeted = TRUE
 
 	cast(atom/target)
 		if (..())
@@ -1593,8 +1987,8 @@
 		var/datum/bioEffect/power/fire_breath/FB = linked_power
 		var/range = FB.range * FB.power
 		var/temp = FB.temperature * FB.power ** 2
-		owner.visible_message("<span class='alert'><b>[owner] breathes fire!</b></span>")
-		playsound(owner.loc, "sound/effects/mag_fireballlaunch.ogg", 50, 0)
+		owner.visible_message(SPAN_ALERT("<b>[owner] breathes fire!</b>"))
+		playsound(owner.loc, 'sound/effects/mag_fireballlaunch.ogg', 50, 0)
 		var/turf/currentturf
 		var/turf/previousturf
 		for(var/turf/F in affected_turfs)
@@ -1606,16 +2000,16 @@
 				break
 			if (F == get_turf(owner))
 				continue
-			if (get_dist(owner,F) > range)
+			if (GET_DIST(owner,F) > range)
 				continue
-			tfireflash(F,0.5,temp)
+			fireflash(F,0.5,temp, chemfire = CHEM_FIRE_RED)
 
 	cast_misfire(atom/target)
 		if (..())
 			return 1
 
-		owner.visible_message("<span class='alert'><b>[owner] manages to set themselves on fire!</b></span>")
-		playsound(owner.loc, "sound/effects/mag_fireballlaunch.ogg", 50, 0)
+		owner.visible_message(SPAN_ALERT("<b>[owner] manages to set [himself_or_herself(owner)] on fire!</b>"))
+		playsound(owner.loc, 'sound/effects/mag_fireballlaunch.ogg', 50, 0)
 		owner.set_burning(100)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1626,6 +2020,7 @@
 	name = "Brown Note"
 	desc = "Allows the subject to emit noises that can cause involuntary flatus in others."
 	id = "brown_note"
+	icon_state = "brownnote"
 	msgGain = "You feel mischievous!"
 	msgLose = "You want to behave yourself again."
 	cooldown = 150
@@ -1638,19 +2033,20 @@
 	name = "Brown Note"
 	desc = "Mess with others using the power of sound!"
 	icon_state = "brownnote"
-	targeted = 0
+	needs_hands = FALSE
+	targeted = FALSE
 
 	cast()
 		if (..())
 			return 1
-		owner.visible_message("<span class='alert'><b>[owner.name] makes a weird noise!</b></span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner.name] makes a weird noise!</b>"))
 		playsound(owner.loc, 'sound/musical_instruments/WeirdHorn_0.ogg', 50, 0)
 		var/count = 0
 		for (var/mob/living/L in range(7,owner))
 			if (L.hearing_check(1))
 				if(count++ > (4 + src.linked_power.power * 3)) break
-				if(locate(/obj/item/storage/bible) in get_turf(L))
-					owner.visible_message("<span class='alert'><b>A mysterious force smites [owner.name] for inciting blasphemy!</b></span>")
+				if(locate(/obj/item/bible) in get_turf(L))
+					owner.visible_message(SPAN_ALERT("<b>A mysterious force smites [owner.name] for inciting blasphemy!</b>"))
 					owner.gib()
 				else
 					L.emote("fart")
@@ -1658,7 +2054,7 @@
 	cast_misfire()
 		if (..())
 			return 1
-		owner.visible_message("<span class='alert'><b>[owner.name] makes a really weird noise!</b></span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner.name] makes a really weird noise!</b>"))
 		playsound(owner.loc, pick(soundCache), 50, 0)
 
 
@@ -1670,6 +2066,7 @@
 	name = "Telekinetic Pull"
 	desc = "Allows the subject to influence physical objects through utilizing latent powers in their mind."
 	id = "telekinesis_drag"
+	icon_state = "tkp"
 	effectType = EFFECT_TYPE_POWER
 	probability = 8
 	blockCount = 5
@@ -1681,23 +2078,22 @@
 	ability_path = /datum/targetable/geneticsAbility/telekinesis
 
 	OnMobDraw()
-		if (disposed)
+		if (..())
 			return
 		if (ishuman(owner))
 			overlay_image = image("icon" = 'icons/effects/genetics.dmi', "icon_state" = "telekinesishead", layer = MOB_LAYER)
-		return
 
 	OnAdd()
-		..()
+		. = ..()
 		if (ishuman(owner))
 			var/mob/living/carbon/human/H = owner
 			H.set_body_icon_dirty()
 
 	OnRemove()
-		..()
 		if (ishuman(owner))
 			var/mob/living/carbon/human/H = owner
 			H.set_body_icon_dirty()
+		. = ..()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1707,6 +2103,7 @@
 	name = "Telekinesis"
 	desc = "Allows the subject to influence physical objects through utilizing latent powers in their mind."
 	id = "telekinesis_command"
+	icon_state  = "tk"
 	effectType = EFFECT_TYPE_POWER
 	probability = 8
 	blockCount = 5
@@ -1722,9 +2119,10 @@
 	name = "Telekinetic Throw"
 	icon_state = "tk"
 	desc = "Command a few objects to hurl themselves at the target location."
-	targeted = 1
-	target_anything = 1
-	cooldown = 200
+	targeted = TRUE
+	target_anything = TRUE
+	needs_hands = FALSE
+	cooldown = 20 SECONDS
 
 	cast(atom/T)
 		var/list/thrown = list()
@@ -1733,7 +2131,8 @@
 
 		modifier *= linked_power.power
 
-		owner.visible_message("<span class='alert'><b>[owner.name]</b> makes a gesture at [T.name]!</span>")
+		. = ..()
+		owner.visible_message(SPAN_ALERT("<b>[owner.name]</b> makes a gesture at [T.name]!"))
 
 		for (var/obj/O in view(7, owner))
 			if (!O.anchored && isturf(O.loc))
@@ -1741,7 +2140,7 @@
 					current_prob *= modifier // very steep. probably grabs 3 or 4 objects per cast -- much less effective than revenant command
 					thrown += O
 					animate_float(O)
-		SPAWN_DBG(1 SECOND)
+		SPAWN(1 SECOND)
 			for (var/obj/O in thrown)
 				O.throw_at(T, 32, 2)
 
@@ -1754,7 +2153,7 @@
 
 		modifier *= linked_power.power
 
-		owner.visible_message("<span class='alert'><b>[owner.name]</b> makes a gesture at [T.name]!</span>")
+		owner.visible_message(SPAN_ALERT("<b>[owner.name]</b> makes a gesture at [T.name]!"))
 
 		for (var/obj/O in view(7, owner))
 			if (!O.anchored && isturf(O.loc))
@@ -1762,7 +2161,7 @@
 					current_prob *= modifier // very steep. probably grabs 3 or 4 objects per cast -- much less effective than revenant command
 					thrown += O
 					animate_float(O)
-		SPAWN_DBG(1 SECOND)
+		SPAWN(1 SECOND)
 			for (var/obj/O in thrown)
 				O.throw_at(owner, 32, 2)
 
@@ -1776,6 +2175,7 @@
 	name = "Cloak of Darkness"
 	desc = "Enables the subject to bend low levels of light around themselves, creating a cloaking effect."
 	id = "cloak_of_darkness"
+	icon_state = "darkcloak"
 	effectType = EFFECT_TYPE_POWER
 	isBad = 0
 	probability = 33
@@ -1799,13 +2199,14 @@
 
 		var/mob/living/L = owner
 		if (which_way == 1)
-			APPLY_MOB_PROPERTY(src.owner, PROP_INVISIBILITY, src, INVIS_INFRA)
+			APPLY_ATOM_PROPERTY(src.owner, PROP_MOB_INVISIBILITY_CLOAK, src, INVIS_MESON)
 			L.UpdateOverlays(overlay_image, id)
 		else
-			REMOVE_MOB_PROPERTY(src.owner, PROP_INVISIBILITY, src)
+			REMOVE_ATOM_PROPERTY(src.owner, PROP_MOB_INVISIBILITY_CLOAK, src)
 			L.UpdateOverlays(null, id)
 
 	OnAdd()
+		active = 0
 		if (ishuman(owner))
 			overlay_image = image("icon" = 'icons/effects/genetics.dmi', "icon_state" = "aurapulse", layer = MOB_LIMB_LAYER)
 			overlay_image.color = "#333333"
@@ -1818,39 +2219,38 @@
 		return
 
 	OnLife(var/mult)
-		if(..()) return
-		if (isliving(owner))
-			var/mob/living/L = owner
-			var/turf/T = get_turf(L)
+		if(..())
+			return
+		if (!src.active)
+			return
+		if (!isliving(owner))
+			return
 
-			if (T && isturf(T))
-				var/area/A = get_area(T)
-				if (istype(T, /turf/space) || (A && (istype(A, /area/shuttle/) || istype(A, /area/shuttle_transit_space) || A.name == "Space" || A.name == "Ocean")))
-					src.cloak_decloak(2)
+		var/mob/living/L = owner
+		var/turf/T = get_turf(L)
 
-				else
-					if (T.RL_GetBrightness() < 0.2 && can_act(owner) && src.active)
-						src.cloak_decloak(1)
-					else
-						src.cloak_decloak(2)
-			else
-				src.cloak_decloak(2)
-		return
+		if (!isturf(T) || T.is_lit())
+			src.cloak_decloak(2)
+		else if (can_act(src.owner))
+			src.cloak_decloak(1)
 
 /datum/targetable/geneticsAbility/darkcloak
 	name = "Cloak of Darkness"
 	icon_state = "darkcloak"
 	desc = "Activate or deactivate your cloak of darkness."
-	targeted = 0
+	targeted = FALSE
 	cooldown = 0
-	can_act_check = 0
-	has_misfire = 0
+	can_act_check = FALSE
+	has_misfire = FALSE
+	do_logs = FALSE
 
 	cast(atom/T)
 		var/datum/bioEffect/power/darkcloak/DC = linked_power
+		. = ..()
 		if (DC.active)
 			boutput(usr, "You stop using your cloak of darkness.")
 			DC.active = 0
+			DC.cloak_decloak(2)
 		else
 			boutput(usr, "You start using your cloak of darkness.")
 			DC.active = 1
@@ -1864,6 +2264,7 @@
 	name = "Chameleon"
 	desc = "The subject becomes able to subtly alter light patterns to become invisible, as long as they remain still."
 	id = "chameleon"
+	icon_state = "chameleon"
 	effectType = EFFECT_TYPE_POWER
 	probability = 33
 	blockCount = 3
@@ -1882,6 +2283,7 @@
 	ability_path = /datum/targetable/geneticsAbility/chameleon
 
 	OnAdd()
+		active = 0
 		if (ishuman(owner))
 			overlay_image = image("icon" = 'icons/effects/genetics.dmi', "icon_state" = "aurapulse", layer = MOB_LIMB_LAYER)
 		..()
@@ -1892,7 +2294,7 @@
 		if (isliving(owner))
 			var/mob/living/L = owner
 			L.UpdateOverlays(null, id)
-			REMOVE_MOB_PROPERTY(src.owner, PROP_INVISIBILITY, src)
+			REMOVE_ATOM_PROPERTY(src.owner, PROP_MOB_INVISIBILITY_CLOAK, src)
 		if (src.active)
 			src.UnregisterSignal(owner, list(COMSIG_MOVABLE_MOVED, COMSIG_MOB_ATTACKED_PRE))
 		return
@@ -1904,26 +2306,28 @@
 			var/mob/living/L = owner
 			if (TIME - last_moved >= 3 SECONDS && can_act(owner))
 				L.UpdateOverlays(overlay_image, id)
-				APPLY_MOB_PROPERTY(src.owner, PROP_INVISIBILITY, src, INVIS_INFRA)
+				APPLY_ATOM_PROPERTY(src.owner, PROP_MOB_INVISIBILITY_CLOAK, src, INVIS_MESON)
 
 	proc/decloak()
 		if(isliving(owner))
 			var/mob/living/L = owner
 			last_moved = TIME
 			L.UpdateOverlays(null, id)
-			REMOVE_MOB_PROPERTY(src.owner, PROP_INVISIBILITY, src)
+			REMOVE_ATOM_PROPERTY(src.owner, PROP_MOB_INVISIBILITY_CLOAK, src)
 
 /datum/targetable/geneticsAbility/chameleon
 	name = "Chameleon"
 	icon_state = "chameleon"
 	desc = "Activate or deactivate your chameleon cloak."
-	targeted = 0
-	cooldown = 0
-	can_act_check = 0
-	has_misfire = 0
+	targeted = FALSE
+	cooldown = FALSE
+	can_act_check = FALSE
+	has_misfire = FALSE
+	do_logs = FALSE
 
 	cast(atom/T)
 		var/datum/bioEffect/power/chameleon/CH = linked_power
+		. = ..()
 		if (CH.active)
 			boutput(usr, "You stop using your chameleon cloaking.")
 			CH.active = 0
@@ -1933,7 +2337,7 @@
 			boutput(usr, "You start using your chameleon cloaking.")
 			CH.last_moved = TIME
 			CH.active = 1
-			CH.RegisterSignal(owner, list(COMSIG_MOVABLE_MOVED, COMSIG_MOB_ATTACKED_PRE), /datum/bioEffect/power/chameleon/proc/decloak)
+			CH.RegisterSignals(owner, list(COMSIG_MOVABLE_MOVED, COMSIG_MOB_ATTACKED_PRE), /datum/bioEffect/power/chameleon/proc/decloak)
 		return 0
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1944,37 +2348,51 @@
 	name = "Mass Emesis"
 	desc = "Allows the subject to expel chemicals via the mouth."
 	id = "bigpuke"
+	icon_state = "bigpuke"
 	msgGain = "You feel sick."
 	msgLose = "You feel much better!"
-	cooldown = 300
-	occur_in_genepools = 0
+	cooldown = 30 SECONDS
+	occur_in_genepools = FALSE
 	stability_loss = 10
 	ability_path = /datum/targetable/geneticsAbility/bigpuke
 	var/range = 3
+
+	onPowerChange(oldval, newval)
+		. = ..()
+		var/datum/targetable/geneticsAbility/bigpuke/our_gene = src.ability
+		if(ismob(owner))
+			if(oldval > 1)
+				our_gene.puke_reagents = list("vomit" = 20)
+			if(newval > 1)
+				our_gene.puke_reagents = list("vomit" = 40)
 
 /datum/targetable/geneticsAbility/bigpuke
 	name = "Mass Emesis"
 	desc = "BLAAAAAAAARFGHHHHHGHH"
 	icon_state = "bigpuke"
-	targeted = 1
-	has_misfire = 0
+	targeted = TRUE
+	has_misfire = FALSE
+	needs_hands = FALSE
+	var/puke_reagents = list("vomit" = 20)
 
 	cast(atom/target)
 		if (..())
 			return 1
 
 		var/turf/T = get_turf(target)
-		var/list/affected_turfs = getline(owner, T)
+		var/list/line_turfs = getline(owner, T)
+		var/list/affected_turfs = list()
 		var/datum/bioEffect/power/bigpuke/BP = linked_power
 		var/range = BP.range
 		range *= BP.power
-		owner.visible_message("<span class='alert'><b>[owner] horfs up a huge stream of puke!</b></span>")
-		logTheThing("combat", owner, target, "power-pukes [log_reagents(owner)] at [log_loc(owner)].")
-		playsound(owner.loc, "sound/misc/meat_plop.ogg", 50, 0)
-		owner.reagents.add_reagent("vomit",20)
+		owner.visible_message(SPAN_ALERT("<b>[owner] horfs up a huge stream of puke!</b>"))
+		logTheThing(LOG_COMBAT, owner, "power-pukes [log_reagents(owner)] at [log_loc(owner)].")
+		playsound(owner.loc, 'sound/misc/meat_plop.ogg', 50, 0)
+		for (var/reagent_id in puke_reagents)
+			owner.reagents.add_reagent(reagent_id, puke_reagents[reagent_id])
 		var/turf/currentturf
 		var/turf/previousturf
-		for(var/turf/F in affected_turfs)
+		for(var/turf/F in line_turfs)
 			previousturf = currentturf
 			currentturf = F
 			if(currentturf.density || istype(currentturf, /turf/space))
@@ -1983,62 +2401,28 @@
 				break
 			if (F == get_turf(owner))
 				continue
-			if (get_dist(owner,F) > range)
+			if (GET_DIST(owner,F) > range)
 				continue
-			owner.reagents.reaction(F,TOUCH)
+			affected_turfs += F
+		for(var/turf/F in affected_turfs)
+			owner.reagents.reaction(F,TOUCH, owner.reagents.total_volume/length(affected_turfs))
 			for(var/mob/living/L in F.contents)
-				owner.reagents.reaction(L,TOUCH)
+				owner.reagents.reaction(L,TOUCH, owner.reagents.total_volume/length(affected_turfs))
 			for(var/obj/O in F.contents)
-				owner.reagents.reaction(O,TOUCH)
+				owner.reagents.reaction(O,TOUCH, owner.reagents.total_volume/length(affected_turfs))
 		owner.reagents.clear_reagents()
+		SEND_SIGNAL(owner, COMSIG_MOB_VOMIT, 10)
 		return 0
 
 /datum/bioEffect/power/bigpuke/acidpuke
 	name = "Acidic Mass Emesis"
 	id = "acid_bigpuke"
 	ability_path = /datum/targetable/geneticsAbility/bigpuke/acid
-	cooldown = 350
+	cooldown = 35 SECONDS
 
 /datum/targetable/geneticsAbility/bigpuke/acid
 	name = "Acidic Mass Emesis"
-	desc = "BLAAAAAAAARFGHHHHHGHH"
-	icon_state = "bigpuke"
-	targeted = 1
-	has_misfire = 0
-
-	cast(atom/target)
-		if (..())
-			return 1
-
-		var/turf/T = get_turf(target)
-		var/list/affected_turfs = getline(owner, T)
-		var/range = 3
-		owner.visible_message("<span class='alert'><b>[owner] horfs up a huge stream of acidic puke!</b></span>")
-		logTheThing("combat", owner, target, "power-pukes [log_reagents(owner)] at [log_loc(owner)].")
-		playsound(owner.loc, "sound/misc/meat_plop.ogg", 50, 0)
-		owner.reagents.add_reagent("gvomit",20)
-		owner.reagents.add_reagent("pacid",10)
-		owner.reagents.add_reagent("radium",5)
-		var/turf/currentturf
-		var/turf/previousturf
-		for(var/turf/F in affected_turfs)
-			previousturf = currentturf
-			currentturf = F
-			if(currentturf.density || istype(currentturf, /turf/space))
-				break
-			if(previousturf && LinkBlocked(previousturf, currentturf))
-				break
-			if (F == get_turf(owner))
-				continue
-			if (get_dist(owner,F) > range)
-				continue
-			owner.reagents.reaction(F,TOUCH)
-			for(var/mob/living/L in F.contents)
-				owner.reagents.reaction(L,TOUCH)
-			for(var/obj/O in F.contents)
-				owner.reagents.reaction(O,TOUCH)
-		owner.reagents.clear_reagents()
-		return 0
+	puke_reagents = list("vomit" = 20, "gvomit" = 20, "pacid" = 10, "radium" = 5)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2047,6 +2431,7 @@
 	name = "Ink Glands"
 	desc = "Allows the subject to expel modified melanin."
 	id = "inkglands"
+	icon_state = "ink"
 	msgGain = "You feel artistic."
 	msgLose = "You don't really feel artistic anymore."
 	cooldown = 0
@@ -2063,36 +2448,42 @@
 	name = "Ink Glands"
 	desc = "Spray colorful ink onto an object."
 	icon_state = "ink"
-	targeted = 0
-	has_misfire = 0
+	targeted = FALSE
+	has_misfire = FALSE
+	needs_hands = FALSE
 
-	cast()
+	cast(atom/target)
 		if (..())
 			return 1
 
+		var/obj/the_object = target
 		var/base_path = /obj
 		var/list/items = get_filtered_atoms_in_touch_range(owner,base_path)
-		if (!items.len)
-			boutput(usr, "/red You can't find anything nearby to spray ink on.")
-			return 1
+		if(!the_object)
+			if (!items.len)
+				boutput(usr, "/red You can't find anything nearby to spray ink on.")
+				return 1
 
-		var/obj/the_item = input("Which item do you want to color?","Ink Glands") as null|obj in items
-		if (!the_item)
-			last_cast = 0
+			the_object = input("Which item do you want to color?","Ink Glands") as null|obj in items
+			if (!the_object)
+				last_cast = 0
+				return 1
+		if (!(the_object in items))
 			return 1
 
 		var/datum/bioEffect/power/ink/I = linked_power
 		if (!linked_power)
-			owner.visible_message("[owner] spits on [the_item]. Gross.")
+			owner.visible_message("[owner] spits on [the_object]. Gross.")
 		else
-			owner.visible_message("<span class='alert'>[owner] sprays ink onto [the_item]!</span>")
-			the_item.color = I.color
+			owner.visible_message(SPAN_ALERT("[owner] sprays ink onto [the_object]!"))
+			the_object.color = I.color
 		return 0
 
 /datum/bioEffect/power/shoot_limb
-	name = "Vestigal Ballistics"
+	name = "Vestigial Ballistics"
 	desc = "Allows the subject to expel one of their limbs with considerable force."
 	id = "shoot_limb"
+	icon_state = "shoot_limb"
 	msgGain = "You feel intense pressure in your hip and shoulder joints."
 	msgLose = "You joints feel much better!"
 	cooldown = 600
@@ -2109,6 +2500,9 @@
 
 	OnLife(var/mult)
 		..()
+		if(src.safety && src.stability_loss)
+			src.stability_loss = 0
+			src.holder.calculateStability()
 
 		if (count < ticks_to_explode)
 			count += mult
@@ -2128,27 +2522,27 @@
 					if (T)
 						if (ability.cast(T))
 							return //no limbs left, no text!!!
-						boutput(owner, "<span class='alert'>The pressure in one of your joints built up too high! One of your limbs flew off!</span>")
-						owner.changeStatus("weakened", 4 SECONDS)
+						boutput(owner, SPAN_ALERT("The pressure in one of your joints built up too high! One of your limbs flew off!"))
+						owner.changeStatus("knockdown", 4 SECONDS)
 						return
 				while (do_count < 5)
 
 
 /datum/targetable/geneticsAbility/shoot_limb
-	name = "Vestigal Ballistics"
+	name = "Vestigial Ballistics"
 	desc = "OOOOWWWWWW!!!!!!!!"
 	icon_state = "shoot_limb"
-	targeted = 1
+	targeted = TRUE
+	needs_hands = FALSE //hehe
 	var/range = 9
 	var/throw_power = 1
 	var/limb_force = 20
 
 	proc/hit_callback(var/datum/thrown_thing/thr)
 		for(var/mob/living/carbon/hit in get_turf(thr.thing))
-			hit.changeStatus("weakened", 15 SECONDS)
-			hit.changeStatus("stunned", 5 SECONDS)
+			hit.changeStatus("knockdown", 5 SECONDS)
+			hit.force_laydown_standup()
 			break
-		return 0
 
 	cast(atom/target)
 		if (..())
@@ -2169,19 +2563,24 @@
 				thrown_limb = H.limbs.r_arm.remove(0)
 			else
 				return 1
-			SPAWN_DBG(1 DECI SECOND)
+			SPAWN(1 DECI SECOND)
 				if (istype(thrown_limb))
 					//double power if the ability is empowered (doesn't really do anything, but w/e)
 					var/tmp_force = thrown_limb.throwforce
 					thrown_limb.throwforce = limb_force* (throw_power+1)	//double damage if empowered
-					var/callback = (SL?.stun_mode) ? /datum/targetable/geneticsAbility/shoot_limb/proc/hit_callback : null
+					var/datum/callback/callback = (SL?.stun_mode) ? CALLBACK(src, PROC_REF(hit_callback)) : null
 					thrown_limb.throw_at(target, range, throw_power * (linked_power.power), end_throw_callback=callback)
 					//without snychronizer, you take damage and bleed on usage of the power
 					if (!linked_power.safety)
 						new thrown_limb.streak_decal(owner.loc)
 						var/damage = rand(5,15)
+						var/do_bleed = TRUE
+						if(thrown_limb.kind_of_limb & LIMB_SKELLY)
+							damage /= 2.5
+							do_bleed = FALSE
 						random_brute_damage(H, damage)
-						take_bleeding_damage(H, null, damage)
+						if(do_bleed)
+							take_bleeding_damage(H, null, damage)
 						if(prob(60)) owner.emote("scream")
 
 						//reset the time until the ability spontaniously fires
@@ -2189,11 +2588,126 @@
 						if (istype(pwr))
 							pwr.count = 0
 
-					owner.visible_message("<span class='alert'><b>[thrown_limb][linked_power.power > 1 ? " violently " : " "]bursts off of its socket and flies towards [target]!</b></span>")
-					logTheThing("combat", owner, target, "shoot_limb [!linked_power.safety ? "Accidently" : ""] at [ismob(target)].")
-					SPAWN_DBG(1 SECOND)
+					owner.visible_message(SPAN_ALERT("<b>[thrown_limb][linked_power.power > 1 ? " violently " : " "]bursts off of its socket and flies towards [target]!</b>"))
+					logTheThing(LOG_COMBAT, owner, "shoot_limb [!linked_power.safety ? "Accidently" : ""] at [ismob(target)].")
+					SPAWN(1 SECOND)
 						if (thrown_limb)
 							thrown_limb.throwforce = tmp_force
+
+
+/datum/bioEffect/power/ghost_walk
+	name = "Spectral Ascent"
+	desc = "Allows the subject to become a ghost for a short duration, leaving their body to return."
+	id = "ghost_walk"
+	icon_state = "ghost_ascend"
+	occur_in_genepools = 0 // Only from the genes of a boss mob.
+	probability = 0
+	msgGain = "You feel like your soul is more flexible."
+	msgLose = "Your soul feels anchored again."
+	stability_loss = 20
+	blockCount = 4
+	blockGaps = 5
+	lockProb = 40
+	lockedGaps = 1
+	lockedDiff = 3
+	lockedChars = list("G","C","A","T")
+	lockedTries = 8
+	ability_path = /datum/targetable/geneticsAbility/ghost_walk
+
+/datum/targetable/geneticsAbility/ghost_walk
+	name = "Spectral Ascent"
+	desc = "Temporarily become a ghost to survey your surrondings."
+	icon_state = "ghost_ascend"
+	needs_hands = FALSE
+	targeted = FALSE
+
+	cast()
+		if (..())
+			return 1
+
+		if (ishuman(owner))
+			owner.changeStatus("ghost_walk_effect", 30 SECONDS)
+
+/datum/targetable/gimmick/ghost_walk_return // Return ability, on the ghost
+	name = "Spectral Anchor"
+	desc = "Return to your body."
+	icon = 'icons/mob/genetics_powers.dmi'
+	icon_state = "ghost_ascend"
+	targeted = FALSE
+	var/datum/statusEffect/art_curse/displaced_soul/gene/GeneBuff
+
+	cast()
+		if (..())
+			return 1
+
+		if (istype(holder.owner, /mob/living/intangible/art_curser_displaced_soul/gene))
+			GeneBuff = holder.owner.hasStatus("ghost_walk_soul")
+			boutput(holder.owner, "You return to your body!")
+			GeneBuff.original_body.delStatus("ghost_walk_effect")
+
+
+ABSTRACT_TYPE(/datum/bioEffect/power/critter)
+/datum/bioEffect/power/critter
+	id = "critter_do_not_use"
+
+/datum/bioEffect/power/critter/peck
+	name = "Aviornis Rostriformis"
+	desc = "Generates a hardened keratin area between the mouth and nose."
+	id = "beak_peck"
+	msgGain = "You feel your mouth and nose become more difficult to move."
+	msgLose = "You feel your face return to normal."
+	cooldown = 10 SECONDS
+	occur_in_genepools = 0
+	stability_loss = 15
+	ability_path = /datum/targetable/geneticsAbility/wrapper/peck
+	var/color = "#888888"
+
+/datum/targetable/geneticsAbility/wrapper/peck
+	wrapped_ability = /datum/targetable/critter/peck
+	start_on_cooldown = TRUE
+	has_misfire = FALSE
+	needs_hands = FALSE
+
+/datum/bioEffect/power/critter/snake_bite
+	name = "Ophidentis Vipernox"
+	desc = "Generates an enhanced structure of your fangs allowing for venom."
+	id = "snake_bite"
+	icon_state = "viper"
+	msgGain = "You become oddly aware of your canines and they feel different."
+	msgLose = "You feel less aware of your teeth."
+	cooldown = 20 SECONDS
+	occur_in_genepools = 0
+	stability_loss = 15
+	ability_path = /datum/targetable/geneticsAbility/wrapper/snake_bite
+	var/color = "#888888"
+
+/datum/targetable/geneticsAbility/wrapper/snake_bite
+	wrapped_ability = /datum/targetable/critter/wasp_sting/snake_bite
+	start_on_cooldown = TRUE
+	has_misfire = FALSE
+	needs_hands = FALSE
+	override_params = list("amt1"=5)
+
+
+/datum/bioEffect/power/critter/scorpion_sting
+	name = "Scorpiocauda Vipernox"
+	desc = "Generates a hardened chitin tail like stucture."
+	id = "scorpion_sting"
+	icon_state = "scorpio"
+	msgGain = "You feel aware of something strange around your tail bone."
+	msgLose = "You feel a bit more normal."
+	cooldown = 20 SECONDS
+	occur_in_genepools = 0
+	stability_loss = 15
+	ability_path = /datum/targetable/geneticsAbility/wrapper/scorpion_sting
+	var/color = "#888888"
+
+/datum/targetable/geneticsAbility/wrapper/scorpion_sting
+	wrapped_ability = /datum/targetable/critter/wasp_sting/scorpion_sting
+	start_on_cooldown = TRUE
+	has_misfire = FALSE
+	needs_hands = FALSE
+	override_params = list("amt1"=2,"amt2"=5)
 
 ////////////////
 // Admin Only //
@@ -2219,24 +2733,24 @@
 	name = "Fade"
 	desc = "Fade in and out. An admin power."
 	icon_state = "template"
-	targeted = 0
-	can_act_check = 0
-	has_misfire = 0
-	var/active = 0
-	var/fading = 0
+	targeted = FALSE
+	can_act_check = FALSE
+	has_misfire = FALSE
+	var/active = FALSE
+	var/fading = FALSE
 
 	cast()
 		if (..())
-			return 1
+			return 0
 
 		if (fading)
 			boutput(usr, "/red Already fading. Please wait a bit.")
 
 		if (active)
-			fading = 1
+			fading = TRUE
 			animate(owner, time = 10, alpha = 0, easing = LINEAR_EASING)
-			fading = 0
+			fading = FALSE
 		else
-			fading = 1
+			fading = TRUE
 			animate(owner, time = 10, alpha = 255, easing = LINEAR_EASING)
-			fading = 0
+			fading = FALSE

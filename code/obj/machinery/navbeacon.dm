@@ -1,6 +1,10 @@
 // Navigation beacon for AI robots
 // Functions as a transponder: looks for incoming signal matching
 
+TYPEINFO(/obj/machinery/navbeacon)
+	mats = 4
+	manufactured_type = /obj/machinery/navbeacon //For subtypes
+
 /obj/machinery/navbeacon
 
 	icon = 'icons/obj/objects.dmi'
@@ -8,8 +12,9 @@
 	name = "navigation beacon"
 	desc = "A radio beacon used for bot navigation."
 	level = 1		// underfloor
-	layer = 2.5 // TODO layer whatever
-	anchored = 1
+	layer = UNDERFLOOR_MACHINE
+	anchored = ANCHORED
+	plane = PLANE_NOSHADOW_BELOW
 
 	var/open = 0		// true if cover is open
 	var/locked = 1		// true if controls are locked
@@ -18,28 +23,34 @@
 	var/list/codes		// assoc. list of transponder codes
 	var/codes_txt = ""	// codes as set on map: "tag1;tag2" or "tag1=value;tag2=value"
 	var/net_id = ""
+	var/datum/component/packet_connected/radio/code_component
 
 	req_access = list(access_engineering,access_engineering_mechanic,access_research_director)
-	object_flags = CAN_REPROGRAM_ACCESS
+	object_flags = CAN_REPROGRAM_ACCESS | NO_GHOSTCRITTER
 
 	New()
+		START_TRACKING
 		..()
 
 		UnsubscribeProcess()
 
 		var/turf/T = loc
-		hide(T.intact)
+		// the ruckingenur kit makes a temporary instance of an object when it is uploaded, which would cause issues here
+		// possibly there are also other ways to get a navbeacon that is not on a turf
+		if(isturf(T))
+			hide(T.intact)
 
 		if(!net_id)
 			net_id = generate_net_id(src)
 
 		set_codes()
 
+	disposing()
+		STOP_TRACKING
+		. = ..()
+
 	// set the transponder codes assoc list from codes_txt
 	proc/set_codes()
-		if(!codes_txt)
-			return
-
 		codes = new()
 
 		var/list/entries = splittext(codes_txt, ";")	// entries are separated by semicolons
@@ -53,7 +64,7 @@
 			else
 				codes[e] = "1"
 
-		src.AddComponent( \
+		code_component = src.AddComponent( \
 			/datum/component/packet_connected/radio, \
 			"navbeacon", \
 			src.freq, \
@@ -64,15 +75,25 @@
 			FALSE \
 		)
 
+	/// adds or edits a code and also makes sure the packet component tag is updated appropriately
+	proc/set_code(var/code_key, var/code_value)
+		//codes.Remove(code_key)
+		codes[code_key] = code_value
+		code_component.add_tag(code_key)
+
+	/// removes a code and also makes sure the packet component tag is updated appropriately
+	proc/remove_code(var/code_key)
+		codes.Remove(code_key)
+		code_component.remove_tag(code_key)
 
 	// called when turf state changes
 	// hide the object if turf is intact
 	hide(var/intact)
 		invisibility = intact ? INVIS_ALWAYS : INVIS_NONE
-		updateicon()
+		UpdateIcon()
 
 	// update the icon_state
-	proc/updateicon()
+	update_icon()
 		icon_state="navbeacon[open]"
 		alpha = invisibility ? 128 : 255
 
@@ -86,8 +107,9 @@
 
 		var/beaconrequest = signal.data["findbeacon"] || signal.data["address_tag"]
 		if(beaconrequest && ((beaconrequest in codes) || beaconrequest == "any" || beaconrequest == location))
-			SPAWN_DBG(1 DECI SECOND)
-				post_status(signal.data["sender"] || signal.data["netid"])
+			var/post_target = signal.data["sender"] || signal.data["netid"]
+			SPAWN(1 DECI SECOND)
+				post_status(post_target)
 			return
 
 		if (!signal.data["address_1"] || !signal.data["sender"])
@@ -136,8 +158,7 @@
 				if (!signal.data["code_key"] || !signal.data["code_value"]) return
 				var/code_key = adminscrub(signal.data["code_key"])
 				var/code_value = adminscrub(signal.data["code_value"])
-				codes.Remove(code_key)
-				codes[code_key] = code_value
+				src.set_code(code_key, code_value)
 				post_status(signal.data["sender"])
 
 
@@ -171,7 +192,7 @@
 
 	attackby(var/obj/item/I, var/mob/user)
 		var/turf/T = loc
-		if (T.intact)
+		if (T.intact && !istype(T, /turf/space))
 			return		// prevent intraction when T-scanner revealed
 
 		if (isscrewingtool(I))
@@ -179,17 +200,15 @@
 
 			user.visible_message("[user] [open ? "opens" : "closes"] the beacon's cover.", "You [open ? "open" : "close"] the beacon's cover.")
 
-			updateicon()
+			UpdateIcon()
 
-		if (istype(I, /obj/item/device/pda2) && I:ID_card)
-			I = I:ID_card
-		if (istype(I, /obj/item/card/id))
+		if (istype(get_id_card(I), /obj/item/card/id))
 			if (open)
 				if (src.allowed(user))
 					src.locked = !src.locked
 					boutput(user, "Controls are now [src.locked ? "locked." : "unlocked."]")
 				else
-					boutput(user, "<span class='alert'>Access denied.</span>")
+					boutput(user, SPAN_ALERT("Access denied."))
 				updateDialog()
 			else
 				boutput(user, "You must open the cover first!")
@@ -286,14 +305,14 @@ Transponder Codes:<UL>"}
 						newval = codekey
 						return
 
-					codes.Remove(codekey)
-					codes[newkey] = newval
+					src.remove_code(codekey)
+					src.set_code(newkey, newval)
 
 					updateDialog()
 
 				else if(href_list["delete"])
 					var/codekey = href_list["code"]
-					codes.Remove(codekey)
+					src.remove_code(codekey)
 					updateDialog()
 
 				else if(href_list["add"])
@@ -312,7 +331,7 @@ Transponder Codes:<UL>"}
 					if(!codes)
 						codes = new()
 
-					codes[newkey] = newval
+					src.set_code(newkey, newval)
 
 					updateDialog()
 
@@ -321,14 +340,16 @@ Transponder Codes:<UL>"}
 		get_radio_connection_by_id(src, "navbeacon").update_frequency(freq)
 
 //Wired nav device
+TYPEINFO(/obj/machinery/wirenav)
+	mats = 8
+
 /obj/machinery/wirenav
 	name = "Wired Nav Beacon"
 	icon = 'icons/obj/objects.dmi'
 	icon_state = "wirednav"//-f"
 	level = 1		// underfloor
-	layer = OBJ_LAYER
-	anchored = 1
-	mats = 8
+	layer = UNDERFLOOR_MACHINE
+	anchored = ANCHORED
 	var/nav_tag = null
 	var/net_id = null
 	var/obj/machinery/power/data_terminal/link = null
@@ -344,7 +365,7 @@ Transponder Codes:<UL>"}
 		var/turf/T = get_turf(src)
 		hide(T.intact)
 
-		SPAWN_DBG(0.6 SECONDS)
+		SPAWN(0.6 SECONDS)
 			if(!nav_tag)
 				src.nav_tag = "NOWHERE"
 				var/area/A = get_area(src)
@@ -358,7 +379,7 @@ Transponder Codes:<UL>"}
 				var/obj/machinery/power/data_terminal/test_link = locate() in T
 				if(test_link && !DATA_TERMINAL_IS_VALID_MASTER(test_link, test_link.master))
 					src.link = test_link
-					src.link.master = src
+					src.link.set_master(src, src.net_id)
 
 		return
 
@@ -381,7 +402,7 @@ Transponder Codes:<UL>"}
 			reply.data["netid"] = src.net_id
 			reply.data["data"] = src.nav_tag
 			reply.data["navdat"] = "x=[src.x]&y=[src.y]&z=[src.z]"
-			SPAWN_DBG(0.5 SECONDS)
+			SPAWN(0.5 SECONDS)
 				src.link.post_signal(src, reply)
 			return
 
@@ -702,6 +723,46 @@ Transponder Codes:<UL>"}
 			codes_txt = "delivery;dir=2"
 		west
 			codes_txt = "delivery;dir=8"
+	ranch_north
+		location = "Ranch"
+		codes_txt = "delivery;dir=1"
+
+		east
+			codes_txt = "delivery;dir=4"
+		south
+			codes_txt = "delivery;dir=2"
+		west
+			codes_txt = "delivery;dir=8"
+	pool_north
+		location = "Pool"
+		codes_txt = "delivery;dir=1"
+
+		east
+			codes_txt = "delivery;dir=4"
+		south
+			codes_txt = "delivery;dir=2"
+		west
+			codes_txt = "delivery;dir=8"
+	news_office
+		location = "News Office"
+		codes_txt = "delivery;dir=1"
+
+		east
+			codes_txt = "delivery;dir=4"
+		south
+			codes_txt = "delivery;dir=2"
+		west
+			codes_txt = "delivery;dir=8"
+	mining_north
+		location = "Mining"
+		codes_txt = "delivery;dir=1"
+
+		east
+			codes_txt = "delivery;dir=4"
+		south
+			codes_txt = "delivery;dir=2"
+		west
+			codes_txt = "delivery;dir=8"
 
 /obj/machinery/navbeacon/tour
 	name = "tour beacon"
@@ -799,8 +860,18 @@ Transponder Codes:<UL>"}
 		codes_txt = "tour;next_tour=tour18;desc=I hope you all have an excellent, safe and productive shift onboard this station! If you've enjoyed the tour, please put in a nice word about Murray if you see your captain."
 
 	tour18
-		name = "tour beacon - home"
+		name = "tour beacon - return"
 		location = "tour18"
+		codes_txt = "tour;next_tour=tour19;"
+
+	tour19
+		name = "tour beacon - return"
+		location = "tour19"
+		codes_txt = "tour;next_tour=tour20;"
+
+	tour20
+		name = "tour beacon - home"
+		location = "tour20"
 		codes_txt = "tour"
 
 /obj/machinery/navbeacon/tour/cog2
@@ -1145,12 +1216,159 @@ Transponder Codes:<UL>"}
 	tour11
 		name = "tour beacon - 'Hydroponics'"
 		location = "tour11"
-		codes_txt = "tour;next_tour=tour12;desc=As we wind down, we're just heading past the hydroponics department, where our friendly botanists tend to the crops that supply the catering department and keep our personnel full and healthy! Please note that Greater Domestic Space Bee's are supposed to be that big. No really!"
+		codes_txt = "tour;next_tour=tour12;desc=As we wind down, we're just heading past the hydroponics department, where our friendly botanists tend to the crops that supply the catering department and keep our personnel full and healthy! Please note that Greater Domestic Space Bees are supposed to be that big. No really!"
 
 	tour12
 		name = "tour beacon - 'Kitchen'"
 		location = "tour12"
 		codes_txt = "tour;next_tour=tour13;desc=Here at our last stop, you'll see the kitchen shutters which will open when mealtimes arrive. Make sure you don't miss it! And that's everything! Atlas is a compact stellar cartography ship which requires a minimal compliment to function, we're just pleased as punch that you made the cut and joined us aboard!"
+
+	tour13
+		name = "tour beacon - Finish"
+		location = "tour13"
+		codes_txt = "tour;"
+
+/obj/machinery/navbeacon/tour/neon
+	tour0
+		name = "tour beacon - 'Arrivals'"
+		location = "tour0"
+		codes_txt = "tour;next_tour=tour1;desc=Hello and welcome to Nanotrasen's New-ish-est Research Facility on the surface of the planet Abzu. Let's start, shall we? \nThis here is the arrival lounge and cryogenics area. New crewmembers who were placed into stasis on their journey to the planet Abzu will be awakened here."
+
+	tour1
+		name = "tour beacon - 'Crew Quarters'"
+		location = "tour1"
+		codes_txt = "tour;next_tour=tour2;desc=Our first stop on our tour is the luxurious Crew Quarters featuring a spacious restroom facility, quiet resting chamber, and in this main room the lounge space!"
+
+	tour2
+		name = "tour beacon - 'Chapel'"
+		location = "tour2"
+		codes_txt = "tour;next_tour=tour3;desc=Next here we have the Nanotrasen Approved Multifaith and Nondenominational Religious or Nonreligious Chapel! All are welcome here to use this facility for any religious or non-religious ceremony."
+
+	tour3
+		name = "tour beacon - 'Engineering'"
+		location = "tour3"
+		codes_txt = "tour;next_tour=tour4;desc=This stop takes us outside our busy Engineering Department. These busy bees are hard at work ensuring our station is provided with ample power for continued operations."
+
+	tour4
+		name = "tour beacon - 'Cargo'"
+		location = "tour4"
+		codes_txt = "tour;next_tour=tour5;desc=Ah, the Cargo department. What can we say that they aren't using to demand greater pay and independence? They supply our station with lots of supplies and equipment! To the right is also the Pod Bay, Trader Dock, and Escape Shuttle Dock, where you may go in the event of emergencies or crew transfers."
+
+	tour5
+		name = "tour beacon - 'Bar'"
+		location = "tour5"
+		codes_txt = "tour;next_tour=tour6;desc=Oh goodie, the bar and cafeteria. If you find yourself in need of a break or a fine quality meal, this is the place! The chef has only been fined for sanitation related issues twice in the last 24 hours!"
+
+	tour6
+		name = "tour beacon - 'Bridge'"
+		location = "tour6"
+		codes_txt = "tour;next_tour=tour7;desc=The bridge. If Engineering is the beating heart of the station, the bridge is the brain! Commands and operations are dictated here by our fine Command staff. Perhaps if we're lucky we'll see the Captain!"
+
+	tour7
+		name = "tour beacon - 'Security'"
+		location = "tour7"
+		codes_txt = "tour;next_tour=tour8;desc=Wee woo wee woo, here comes Security! The Security staff are hard at work keeping our station safe from all kinds of threats, inside or outside. Don't break the law if you don't want to end up in the Brig!"
+
+	tour8
+		name = "tour beacon - 'Hydroponics'"
+		location = "tour8"
+		codes_txt = "tour;next_tour=tour9;desc=Can you smell that? Smells like something is being grown here. And that something is your food! Our Hydroponics department should be hard at work providing provisions for the Chef to prepare for your meals. Hopefully they're not growing weed..."
+
+	tour9
+		name = "tour beacon - 'Research'"
+		location = "tour9"
+		codes_txt = "tour;next_tour=tour10;desc=Click click clack. Can you hear that? That's the sound of PRODUCTIVITY! Our research staff are working hard to research the future for humanity! Perhaps even going on daring adventures..."
+
+	tour10
+		name = "tour beacon - 'Medical'"
+		location = "tour10"
+		codes_txt = "tour;next_tour=tour11;desc=CLEAR! Medical! If you find yourself ill or otherwise impaired due to adverse conditions, the Medical staff can get you patched up pronto! Medical insurance covered by your Nanotrasen standard employee contract. And if they can't treat your issue..."
+
+	tour11
+		name = "tour beacon - 'Cloning'"
+		location = "tour11"
+		codes_txt = "tour;next_tour=tour12;desc=...You get taken here, to our bleeding edge Cloning facility! Return to life within a matter of minutes!"
+
+	tour12
+		name = "tour beacon - '???'"
+		location = "tour12"
+		codes_txt = "tour;next_tour=tour13;desc= What would you do with a drunken spacer? What would you do with a..."
+
+	tour13
+		name = "tour beacon - 'Oh'"
+		location = "tour13"
+		codes_txt = "tour;next_tour=tour14;desc=Oh. You're still following me? Uhhh. Tour is over. Thank you. Go away."
+
+	tour14
+		name = "tour beacon - 'Back2base'"
+		location = "tour14"
+		codes_txt = "tour;"
+
+/obj/machinery/navbeacon/tour/menhir
+	tour0
+		name = "tour beacon - 'Arrivals'"
+		location = "tour0"
+		codes_txt = "tour;next_tour=tour1;desc=Welcome to the Menhir Research Enclave. I am the Menhir Orientation Service System, or Moss for short. Follow me to begin your orientation."
+
+	tour1
+		name = "tour beacon - 'Enclave'"
+		location = "tour1"
+		codes_txt = "tour;next_tour=tour2;desc=The Menhir Research Enclave has been built around TOREADOR-7I-22408, a sizable artifact of presumed Precursor origin, to succeed a previous facility, designate 'Limpet'. While this is a purpose-built facility, it is equipped with general amenities, such as the crew lounge to my left and chapel to my right."
+
+	tour2
+		name = "tour beacon - 'Civilian'"
+		location = "tour2"
+		codes_txt = "tour;next_tour=tour3;desc=Should you require food during your stay, this sector of the Enclave is your 'bread and butter', if you'll pardon my parlance. Hydroponics, on my right, is your go-to for fresh produce, and the site's kitchen and bar are to my left."
+
+	tour3
+		name = "tour beacon - 'Crown 1/NW'"
+		location = "tour3"
+		codes_txt = "tour;next_tour=tour4;desc=If you haven't already arrived at this conclusion on your own, the blue floor you're probably standing on is an arm of of TOREADOR-7I-22408 - colloquially, the 'Crown'. Keep an eye on it during your stay, in case it does something neat!"
+
+	tour4
+		name = "tour beacon - 'West Junction'"
+		location = "tour4"
+		codes_txt = "tour;next_tour=tour5;desc=This junction is often a bustling hub of the Enclave. To my north and south, you'll find the medical and engineering sectors, respectively - to my west, you can find the shuttle concourse allocated to mercantile docking, as well as a fitness room."
+
+	tour5
+		name = "tour beacon - 'Research'"
+		location = "tour5"
+		codes_txt = "tour;next_tour=tour6;desc=The station's Research department is situated in the south-central sector of the Enclave in order to be directly attached to the only known entrance to TOREADOR-7I-22408. You can use the little purple chute to get around the 'loop'."
+
+	tour6
+		name = "tour beacon - 'Bar'"
+		location = "tour6"
+		codes_txt = "tour;next_tour=tour7;desc=If you need something to drink, make sure to stop by the bar. Beverages are typically included in the compensation package for Nanotrasen personnel, though you should consult your personnel contract to verify this."
+
+	tour7
+		name = "tour beacon - 'EVA'"
+		location = "tour7"
+		codes_txt = "tour;next_tour=tour8;desc=In the event of a catastrophic event, the EVA chamber to my north is the secure repository for emergency equipment. For those without the necessary authorization, please note that a public counterpart exists in the Arrivals auxiliary arm."
+
+	tour8
+		name = "tour beacon - 'Courtroom'"
+		location = "tour8"
+		codes_txt = "tour;next_tour=tour9;desc=The Courtroom to my left serves as the Enclave's hub for matters of station bureacuracy and legal process. In the event you require reassignment or access escalation, please enqueue here in an orderly fashion."
+
+	tour9
+		name = "tour beacon - 'East Junction'"
+		location = "tour9"
+		codes_txt = "tour;next_tour=tour10;desc=The Bridge and Security sectors are located to my north and south respectively. The hallway to my east leads to the owlery, the public pod bay, and the east shuttle concourse - the lattermost of which is the docking point of the mining shuttle."
+
+	tour10
+		name = "tour beacon - 'Nav Flower'"
+		location = "tour10"
+		codes_txt = "tour;next_tour=tour11;desc=If you're ever a little disoriented and your GPS system isn't working, this handy navigation flower can point you in the right direction. Make sure to keep an eye out for the cyan Escape floor signs around the site, too!"
+
+	tour11
+		name = "tour beacon - 'Escape'"
+		location = "tour11"
+		codes_txt = "tour;next_tour=tour12;desc=In the event of routine shift change or an emergency evacuation, please assemble in this area for departure. You may also board from the Escape Auxiliary Arm to your right, and emergency escape pods are available in both Auxiliary Arms."
+
+	tour12
+		name = "tour beacon - 'Arrivals Wrapup'"
+		location = "tour12"
+		codes_txt = "tour;next_tour=tour13;desc=This concludes your orientation. If you feel inadequately oriented, please feel free to follow me in circles again, or consult local personnel for information."
 
 	tour13
 		name = "tour beacon - Finish"

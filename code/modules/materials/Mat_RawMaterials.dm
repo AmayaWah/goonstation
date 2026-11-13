@@ -1,60 +1,98 @@
 /// Material piece
 /obj/item/material_piece
-	name = "bar"
+	name = "ingot"
 	desc = "Some sort of processed material bar."
-	icon = 'icons/obj/materials.dmi'
+	icon = 'icons/obj/items/materials/materials.dmi'
 	icon_state = "bar"
-	max_stack = INFINITY
+	max_stack = 50
 	stack_type = /obj/item/material_piece
 	/// used for prefab bars
-	var/default_material = null
-	var/static/list/valid_icon_states = null
+	default_material = null
+	uses_default_material_appearance = TRUE
+	mat_changename = TRUE //TRUE for generic names such as Bar or Wad.
+	can_arcplate = FALSE
+	var/icon_stack_value = 1
 
 	New()
 		..()
-		if (istext(default_material))
-			var/datum/material/M = getMaterial(default_material)
-			src.setMaterial(M)
 		setup_material()
+
+	setMaterial(datum/material/mat1, appearance, setname, mutable, use_descriptors)
+		var/icon/mat_icon = mat1.getIconFile()
+		var/potential_icon_state = "[initial(src.icon_state)]_1$$[mat1.getID()]"
+		if(is_valid_icon_state(potential_icon_state, mat_icon))
+			src.icon = mat_icon
+			src.icon_state = potential_icon_state
+		else
+			src.icon = initial(src.icon)
+		. = ..()
+		UpdateStackAppearance()
 
 	proc/setup_material()
 		.=0
 
-	proc/is_valid_icon_state(var/state)
-		if(isnull(src.valid_icon_states))
-			src.valid_icon_states = list()
-			for(var/icon_state in icon_states('icons/obj/materials.dmi'))
-				src.valid_icon_states[icon_state] = 1
-		return state in src.valid_icon_states
+	update_icon()
+		if(src.icon_stack_value == 0)
+			src.icon_state = initial(src.icon_state)
+		else if(!src.material_applied_appearance)
+			src.icon_state = "[initial(src.icon_state)]_[src.icon_stack_value]$$[src.material.getID()]"
+		else
+			src.icon_state = "[initial(src.icon_state)]_[src.icon_stack_value]"
 
-	onMaterialChanged()
-		..()
-		var/potential_new_icon_state = "[src.material.mat_id]-[initial(src.icon_state)]"
-		if(src.is_valid_icon_state(potential_new_icon_state))
-			src.icon_state = potential_new_icon_state
-			src.UpdateOverlays(null, "material")
-			src.color = null
-			src.alpha = 255
+	_update_stack_appearance()
+		if(!material)
+			return
+		var/matname = (src.material && mat_changename) ? material.getName() : ""
+		if(src.amount > 1)
+			name = "[amount] [matname] [initial(src.name)]s"
+		else
+			name = "[matname] [initial(src.name)]"
 
-	update_stack_appearance()
-		if(material)
-			name = "[amount] [material.name] [initial(src.name)][amount > 1 ? "s":""]"
-		return
+		var/icon_stack_new = src.get_stack_value()
+		if(icon_stack_new && src.icon_stack_value != 0 && icon_stack_new != src.icon_stack_value)
+			src.icon_stack_value = icon_stack_new
+			UpdateIcon()
+
+	proc/get_stack_value() //! Determines at what stack sizes the icon_state changes
+		// example: src.icon_state = "bar_[x]$$gold"
+		switch(src.amount)
+			if(1)
+				return 1
+			if(2 to 4)
+				return 2
+			if(5 to 9)
+				return 3
+			if(10 to 24)
+				return 4
+			if(25 to 49)
+				return 5
+			else
+				return 6
+
 
 	split_stack(var/toRemove)
 		if(toRemove >= amount || toRemove < 1) return 0
 		var/obj/item/material_piece/P = new src.type
 		P.set_loc(src.loc)
-		P.setMaterial(copyMaterial(src.material))
+		P.setMaterial(src.material)
 		src.change_stack_amount(-toRemove)
 		P.change_stack_amount(toRemove - P.amount)
 		return P
 
-	attack_hand(mob/user as mob)
+	clamp_act(mob/clamper, obj/item/clamp)
+		if (!(src.material?.getMaterialFlags() & MATERIAL_METAL))
+			return FALSE
+		var/obj/item/sheet/sheets = new(src.loc)
+		sheets.set_stack_amount(src.amount * 10)
+		sheets.setMaterial(src.material)
+		qdel(src)
+		return TRUE
+
+	attack_hand(mob/user)
 		if(user.is_in_hands(src) && src.amount > 1)
 			var/splitnum = round(input("How many material pieces do you want to take from the stack?","Stack of [src.amount]",1) as num)
 			if (!isnum_safe(splitnum) || splitnum >= amount || splitnum < 1)
-				boutput(user, "<span class='alert'>Invalid entry, try again.</span>")
+				boutput(user, SPAN_ALERT("Invalid entry, try again."))
 				return
 			var/obj/item/material_piece/new_stack = split_stack(splitnum)
 			user.put_in_hand_or_drop(new_stack)
@@ -63,32 +101,35 @@
 			..(user)
 
 	attackby(obj/item/W, mob/user)
-		if(W.type == src.type)
+		if(W.stack_type == src.stack_type)
 			stack_item(W)
 			if(!user.is_in_hands(src))
 				user.put_in_hand(src)
-			boutput(user, "<span class='notice'>You add the material to the stack. It now has [src.amount] pieces.</span>")
+			boutput(user, SPAN_NOTICE("You add the material to the stack. It now has [src.amount] pieces."))
 
-	MouseDrop(over_object, src_location, over_location) //src dragged onto over_object
+	mouse_drop(atom/over_object, src_location, over_location) //src dragged onto over_object
 		if (isobserver(usr))
-			boutput(usr, "<span class='alert'>Quit that! You're dead!</span>")
+			boutput(usr, SPAN_ALERT("Quit that! You're dead!"))
+			return
+		if(isintangible(usr))
+			boutput(usr,SPAN_ALERT("You need hands to do that. Do you have hands? No? Then stop it."))
 			return
 
 		if(!istype(over_object, /atom/movable/screen/hud))
-			if (get_dist(usr,src) > 1)
-				boutput(usr, "<span class='alert'>You're too far away from it to do that.</span>")
+			if (BOUNDS_DIST(usr, src) > 0)
+				boutput(usr, SPAN_ALERT("You're too far away from it to do that."))
 				return
-			if (get_dist(usr,over_object) > 1)
-				boutput(usr, "<span class='alert'>You're too far away from it to do that.</span>")
+			if (BOUNDS_DIST(usr, over_object) > 0)
+				boutput(usr, SPAN_ALERT("You're too far away from it to do that."))
 				return
 
-		if (istype(over_object,/obj/item/material_piece)) //piece to piece, doesnt matter if in hand or not.
+		if (istype(over_object,/obj/item/material_piece) && isturf(over_object.loc)) //piece to piece only if on ground
 			var/obj/item/targetObject = over_object
 			if(targetObject.stack_item(src))
-				usr.visible_message("<span class='notice'>[usr.name] stacks \the [src]!</span>")
+				usr.visible_message(SPAN_NOTICE("[usr.name] stacks \the [src]!"))
 		else if(isturf(over_object)) //piece to turf. piece loc doesnt matter.
 			if(src.amount > 1) //split stack.
-				usr.visible_message("<span class='notice'>[usr.name] splits the stack of [src]!</span>")
+				usr.visible_message(SPAN_NOTICE("[usr.name] splits the stack of [src]!"))
 				var/toSplit = round(amount / 2)
 				var/atom/movable/splitStack = split_stack(toSplit)
 				if(splitStack)
@@ -102,7 +143,7 @@
 					if (!src.check_valid_stack(I))
 						continue
 					src.stack_item(I)
-				usr.visible_message("<span class='notice'>[usr.name] stacks \the [src]!</span>")
+				usr.visible_message(SPAN_NOTICE("[usr.name] stacks \the [src]!"))
 		else if(istype(over_object, /atom/movable/screen/hud))
 			var/atom/movable/screen/hud/H = over_object
 			var/mob/living/carbon/human/dude = usr
@@ -113,12 +154,12 @@
 						else if (istype(dude.l_hand, /obj/item/material_piece))
 							var/obj/item/material_piece/DP = dude.l_hand
 							DP.stack_item(src)
-							usr.visible_message("<span class='notice'>[usr.name] stacks \the [DP]!</span>")
+							usr.visible_message(SPAN_NOTICE("[usr.name] stacks \the [DP]!"))
 					else if(amount > 1)
 						var/toSplit = round(amount / 2)
 						var/atom/movable/splitStack = split_stack(toSplit)
 						if(splitStack)
-							usr.visible_message("<span class='notice'>[usr.name] splits the stack of [src]!</span>")
+							usr.visible_message(SPAN_NOTICE("[usr.name] splits the stack of [src]!"))
 							splitStack.set_loc(dude)
 							dude.put_in_hand(splitStack, 1)
 				if("rhand")
@@ -127,12 +168,12 @@
 						else if (istype(dude.r_hand, /obj/item/material_piece))
 							var/obj/item/material_piece/DP = dude.r_hand
 							DP.stack_item(src)
-							usr.visible_message("<span class='notice'>[usr.name] stacks \the [DP]!</span>")
+							usr.visible_message(SPAN_NOTICE("[usr.name] stacks \the [DP]!"))
 					else if(amount > 1)
 						var/toSplit = round(amount / 2)
 						var/atom/movable/splitStack = split_stack(toSplit)
 						if(splitStack)
-							usr.visible_message("<span class='notice'>[usr.name] splits the stack of [src]!</span>")
+							usr.visible_message(SPAN_NOTICE("[usr.name] splits the stack of [src]!"))
 							splitStack.set_loc(dude)
 							dude.put_in_hand(splitStack, 0)
 		else
@@ -141,7 +182,13 @@
 		// crystal, rubber
 		name = "block"
 		icon_state = "block"
-		desc = "A nicely cut square brick."
+		desc = "A nicely cut cube."
+
+	brick
+		// stone
+		name = "brick"
+		icon_state = "brick"
+		desc = "A very rough rectangle."
 
 	wad
 		// organic
@@ -151,38 +198,57 @@
 
 		blob
 			name = "chunk of blob"
+			default_material = "blob"
+			mat_changename = FALSE
 
-			setup_material()
-				src.setMaterial(getMaterial("blob"), setname = 0)
-				..()
+			random
+				var/static/list/datum/material/organic/blob/random_blob_materials = null
+				New()
+					. = ..()
+					if (!src.random_blob_materials)
+						src.random_blob_materials = list()
+						var/datum/material/base_mat = getMaterial("blob")
+						for (var/i in 1 to 10)
+							var/datum/material/organic/blob/new_mat = base_mat.getMutable()
+							new_mat.match_to_blob_color(rgb(rand(0,255), rand(0,255), rand(0,255)))
+							src.random_blob_materials += new_mat
+					var/datum/material/organic/blob/blob_mat = pick(src.random_blob_materials)
+					src.setMaterial(blob_mat)
 
+			sobb
+				New()
+					. = ..()
+					src.setMaterial(getMaterial("blob_sobb"))
 	sphere
 		// energy
 		icon_state = "sphere"
 		name = "sphere"
 		desc = "A weird sphere of some kind."
+		icon_stack_value = 0
 
 	cloth
 		// fabric
 		icon_state = "fabric"
 		name = "fabric"
 		desc = "A weave of some kind."
+		default_material = "cotton"
+		icon_stack_value = 0
 		var/in_use = 0
 
-		attack(mob/living/carbon/M as mob, mob/living/carbon/user as mob)
+		attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
 			if (user.a_intent == INTENT_GRAB)
 				return ..()
 			if (src.in_use)
 				return ..()
-			if (ishuman(M))
-				var/mob/living/carbon/human/H = M
+			if (ishuman(target))
+				var/mob/living/carbon/human/H = target
 				var/zone = user.zone_sel.selecting
 				var/surgery_status = H.get_surgery_status(zone)
 				if (surgery_status && H.organHolder)
-					actions.start(new /datum/action/bar/icon/medical_suture_bandage(H, src, 15, zone, surgery_status, rand(1,4), "bandag"), user)
+					actions.start(new /datum/action/bar/icon/medical_suture_bandage(H, src, 15, zone, surgery_status, rand(1,4), Vrb = "bandag"), user)
 					src.in_use = 1
 				else if (H.bleeding)
-					actions.start(new /datum/action/bar/icon/medical_suture_bandage(H, src, 20, zone, 0, rand(2,4), "bandag"), user)
+					actions.start(new /datum/action/bar/icon/medical_suture_bandage(H, src, 20, zone, 0, rand(2,4), Vrb = "bandag"), user)
 					src.in_use = 1
 				else
 					user.show_text("[H == user ? "You have" : "[H] has"] no wounds or incisions on [H == user ? "your" : his_or_her(H)] [zone_sel2name[zone]] to bandage!", "red")
@@ -197,105 +263,107 @@
 			else if(istype(A, /turf/simulated/wall/))
 				var/obj/decal/poster/banner/B = new(A)
 				if (src.material) B.setMaterial(src.material)
-				logTheThing("station", user, null, "Hangs up a banner (<b>Material:</b> [B.material && B.material.mat_id ? "[B.material.mat_id]" : "*UNKNOWN*"]) in [A] at [log_loc(user)].")
+				logTheThing(LOG_STATION, user, "Hangs up a banner (<b>Material:</b> [B.material && B.material.getID() ? "[B.material.getID()]" : "*UNKNOWN*"]) in [A] at [log_loc(user)].")
 				src.change_stack_amount(-1)
-				user.visible_message("<span class='notice'>[user] hangs up a [B.name] in [A]!.</span>", "<span class='notice'>You hang up a [B.name] in [A]!</span>")
+				user.visible_message(SPAN_NOTICE("[user] hangs up a [B.name] in [A]!."), SPAN_NOTICE("You hang up a [B.name] in [A]!"))
 
+/// The metal appearance and stuff is on the parent, this is just a concrete subtype
+/obj/item/material_piece/metal
 /obj/item/material_piece/fart
 	icon_state = "fart"
 	name = "frozen fart"
 	desc = "Remarkable! The cold temperatures in the freezer have frozen the fart in mid-air."
 	amount = 5
-	setup_material()
-		src.setMaterial(getMaterial("frozenfart"), appearance = 0, setname = 0)
-		..()
+	default_material = "frozenfart"
+	mat_changename = FALSE
+	uses_default_material_appearance = FALSE
+	icon_stack_value = 0
 
 /obj/item/material_piece/steel
 	desc = "A processed bar of Steel, a common metal."
 	default_material = "steel"
 	icon_state = "bar"
-
-	setup_material()
-		src.setMaterial(getMaterial("steel"), appearance = 1, setname = 1)
-		..()
+	default_material = "steel"
 
 /obj/item/material_piece/hamburgris
 	name = "clump"
-	desc = "A big clump of petrified mince, with a horriffic smell."
+	desc = "A big clump of petrified mince, with a horrific smell."
 	default_material = "hamburgris"
-	icon_state = "slag"
-
-	setup_material()
-		src.setMaterial(getMaterial("hamburgris"), appearance = 0, setname = 0)
-		..()
+	icon_state = "wad"
 
 /obj/item/material_piece/glass
 	desc = "A cut block of glass, a common crystalline substance."
 	default_material = "glass"
 	icon_state = "block"
 
-	setup_material()
-		src.setMaterial(getMaterial("glass"), appearance = 1, setname = 1)
-		..()
-
 /obj/item/material_piece/copper
 	desc = "A processed bar of copper, a conductive metal."
 	default_material = "copper"
 	icon_state = "bar"
 
-	setup_material()
-		src.setMaterial(getMaterial("copper"), appearance = 1, setname = 1)
-		..()
-
 /obj/item/material_piece/iridiumalloy
-	icon_state = "iridium"
-	name = "iridium alloy plate"
-	desc = "A chunk of some sort of iridium alloy plating."
+	name = "plate"
+	desc = "A piece of some sort of iridium alloy plating."
+	icon_state = "scrap"
+	default_material = "iridiumalloy"
+	stack_type = /obj/item/material_piece/iridiumalloy
 	amount = 5
-	setup_material()
-		src.setMaterial(getMaterial("iridiumalloy"), appearance = 0, setname = 0)
-		..()
+
+/obj/item/material_piece/iridiumalloy/small
+	amount = 1
 
 /obj/item/material_piece/spacelag
-	icon_state = "spacelag-bar"
-	name = "spacelag bar"
+	icon_state = "bar"
 	desc = "Yep. There it is. You've done it. I hope you're happy now."
+	default_material = "spacelag"
 	amount = 1
-	setup_material()
-		src.setMaterial(getMaterial("spacelag"), appearance = 0, setname = 0)
-		..()
 
 /obj/item/material_piece/slag
-	icon_state = "slag"
+	icon_state = "wad"
 	name = "slag"
 	desc = "By-product of smelting"
-	setup_material()
-		src.setMaterial(getMaterial("slag"), appearance = 0, setname = 0)
-		..()
+	default_material = "slag"
+	mat_changename = FALSE
 
+ABSTRACT_TYPE(/obj/item/material_piece/rubber)
 /obj/item/material_piece/rubber/latex
 	name = "latex sheet"
 	desc = "A sheet of latex."
 	icon_state = "latex"
+	default_material = "latex"
+	icon_stack_value = 0
 
 	setup_material()
-		src.setMaterial(getMaterial("latex"), appearance = 0, setname = 0)
 		src.create_reagents(10)
 		reagents.add_reagent("rubber", 10)
 		return ..()
 
+/obj/item/material_piece/rubber/plastic
+	name = "plastic sheet"
+	icon_state = "latex"
+	desc = "A sheet of plastic."
+	default_material = "plastic"
+	icon_stack_value = 0
+
 /obj/item/material_piece/organic/wood
 	name = "wooden log"
 	desc = "Years of genetic engineering mean timber always comes in mostly perfectly shaped cylindrical logs."
+	icon = 'icons/obj/items/materials/wood.dmi'
 	icon_state = "log"
-	setup_material()
-		src.setMaterial(getMaterial("wood"), appearance = 0, setname = 0)
-		..()
-	attackby(obj/item/W as obj, mob/user as mob)
+	default_material = "wood"
+	max_stack = 10
+	uses_default_material_appearance = FALSE
+	mat_changename = FALSE
+	var/is_rotated = FALSE // Logs are rotated after being felled. Need to unrotate them after stacking.
+
+	New()
+		. = ..()
+		src.UpdateIcon()
+
+	attackby(obj/item/W, mob/user)
 		if ((istool(W, TOOL_CUTTING | TOOL_SAWING)))
 			user.visible_message("[user] cuts a plank from the [src].", "You cut a plank from the [src].")
-			var/obj/item/plankobj = new /obj/item/plank(user.loc)
-			plankobj.setMaterial(getMaterial("wood"), appearance = 0, setname = 0)
+			new /obj/item/sheet/wood(user.loc)
 			if (src.amount > 1)
 				change_stack_amount(-1)
 			else
@@ -303,17 +371,59 @@
 		else
 			..()
 
+	_update_stack_appearance()
+		. = ..()
+		if(src.is_rotated)
+			src.Turn(-90)
+			src.is_rotated = FALSE
+
+	get_stack_value()
+		switch(src.amount)
+			if(1)
+				return 1
+			if(2 to 4)
+				return 2
+			if(5 to 7)
+				return 3
+			if(8 to 9)
+				return 4
+			else
+				return 5
+
+/obj/item/material_piece/organic/wood/thin
+	icon_state = "log_thin"
+
+	get_stack_value()
+		switch(src.amount)
+			if(1)
+				return 1
+			if(2)
+				return 2
+			if(3 to 4)
+				return 3
+			if(5 to 6)
+				return 4
+			if(7 to 8)
+				return 5
+			if(9)
+				return 6
+			else
+				return 7
+
 /obj/item/material_piece/organic/bamboo
-	name = "bamboo stalk"
+	name = "stalk"
 	desc = "Keep away from Space Pandas."
 	icon_state = "bamboo"
-	setup_material()
-		src.setMaterial(getMaterial("bamboo"), appearance = 0, setname = 0)
-		..()
-	attackby(obj/item/W as obj, mob/user as mob)
+	default_material = "bamboo"
+	uses_default_material_appearance = FALSE
+	mat_changename = TRUE
+	icon_stack_value = 0
+
+	attackby(obj/item/W, mob/user)
 		if ((istool(W, TOOL_CUTTING | TOOL_SAWING)))
-			user.visible_message("[user] carefully extracts a shoot from [src].", "You carefully cut a shoot from [src].")
+			user.visible_message("[user] carefully extracts a shoot from [src].", "You carefully cut a shoot from [src], leaving behind some usable building material.")
 			new /obj/item/reagent_containers/food/snacks/plant/bamboo/(user.loc)
+			new /obj/item/sheet/bamboo(user.loc)
 			if (src.amount > 1)
 				change_stack_amount(-1)
 			else
@@ -325,127 +435,168 @@
 	name = "space spider silk"
 	desc = "space silk produced by space dwelling space spiders. space."
 	icon_state = "spidersilk"
-	setup_material()
-		src.setMaterial(getMaterial("spidersilk"), appearance = 0, setname = 0)
-		..()
+	default_material = "spidersilk"
+	uses_default_material_appearance = FALSE
+	mat_changename = FALSE
 
 /obj/item/material_piece/cloth/leather
 	name = "leather"
 	desc = "leather made from the skin of some sort of space critter."
-	icon_state = "leather-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("leather"), appearance = 0, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "leather"
+	mat_changename = FALSE
 
 /obj/item/material_piece/cloth/synthleather
 	name = "synthleather"
 	desc = "A type of artificial leather."
-	icon_state = "synthleather-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("synthleather"), appearance = 0, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "synthleather"
+	mat_changename = FALSE
 
 /obj/item/material_piece/cloth/cottonfabric
-	name = "cotton fabric"
+	name = "fabric"
 	desc = "A type of natural fabric."
 	icon_state = "fabric"
-	setup_material()
-		src.setMaterial(getMaterial("cotton"), appearance = 0, setname = 0)
-		..()
+	default_material = "cotton"
 
-/obj/item/material_piece/cloth/wendigohide
-	name = "wendigo hide"
-	desc = "The hide of a wendigo."
-	icon_state = "wendigohide-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("wendigohide"), appearance = 0, setname = 0)
-		..()
+/obj/item/material_piece/cloth/jean
+	name = "jean textile"
+	desc = "A type of a sturdy textile."
+	icon_state = "fabric"
+	default_material = "jean"
+	mat_changename = FALSE
 
-/obj/item/material_piece/cloth/kingwendigohide
-	name = "king wendigo hide"
-	desc = "The hide of a king wendigo."
-	icon_state = "wendigohide-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("kingwendigohide"), appearance = 0, setname = 0)
-		..()
+/obj/item/material_piece/cloth/brullbarhide
+	name = "brullbar hide"
+	desc = "The hide of a brullbar."
+	icon_state = "fabric"
+	default_material = "brullbarhide"
+	mat_changename = FALSE
+
+/obj/item/material_piece/cloth/kingbrullbarhide
+	name = "king brullbar hide"
+	desc = "The hide of a king brullbar."
+	icon_state = "fabric"
+	default_material = "kingbrullbarhide"
+	mat_changename = FALSE
 
 /obj/item/material_piece/cloth/carbon
-	name = "carbon nano fibre fabric"
+	name = "fabric"
 	desc = "carbon based hi-tech material."
-	icon_state = "carbonfibre-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("carbonfibre"), appearance = 0, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "carbonfibre"
 
 /obj/item/material_piece/cloth/dyneema
-	name = "dyneema fabric"
+	name = "fabric"
 	desc = "carbon nanofibres and space spider silk!"
-	icon_state = "dyneema-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("dyneema"), appearance = 0, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "dyneema"
 
 /obj/item/material_piece/cloth/hauntium
-	name = "hauntium fabric"
+	name = "fabric"
 	desc = "This cloth seems almost alive."
-	icon_state = "dyneema-fabric"
-
-	setup_material()
-		src.setMaterial(getMaterial("hauntium"), appearance = 1, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "hauntium"
 
 /obj/item/material_piece/cloth/beewool
 	name = "bee wool"
 	desc = "Some bee wool."
-	icon_state = "beewool-fabric"
-	setup_material()
-		src.setMaterial(getMaterial("beewool"), appearance = 0, setname = 0)
-		..()
+	icon_state = "fabric"
+	default_material = "beewool"
+	mat_changename = FALSE
+
+/obj/item/material_piece/cloth/carpet
+	name = "carpet"
+	desc = "Some grimy carpet."
+	icon_state = "fabric"
+	default_material = "carpet"
 
 /obj/item/material_piece/soulsteel
-	name = "soulsteel bar"
 	desc = "A bar of soulsteel. Metal made from souls."
-	icon_state = "soulsteel-bar"
-	setup_material()
-		src.setMaterial(getMaterial("soulsteel"), appearance = 0, setname = 0)
-		..()
+	icon_state = "bar"
+	default_material = "soulsteel"
 
 /obj/item/material_piece/bone
 	name = "bits of bone"
 	desc = "some bits and pieces of bones."
 	icon_state = "scrap3"
-	setup_material()
-		src.setMaterial(getMaterial("bone"), appearance = 0, setname = 0)
-		..()
+	default_material = "bone"
+	uses_default_material_appearance = FALSE
+	mat_changename = FALSE
+	icon_stack_value = 0
 
 /obj/item/material_piece/gnesis
-	name = "gnesis wafer"
+	name = "wafer"
 	desc = "A warm, pulsing block of weird alien computer crystal stuff."
-	icon_state = "gnesis-bar"
-	setup_material()
-		src.setMaterial(getMaterial("gnesis"), appearance = 0, setname = 0)
-		..()
+	icon_state = "bar"
+	default_material = "gnesis"
 
 /obj/item/material_piece/gnesisglass
-	name = "gnesisglass wafer"
-	desc = "A shimmering, transclucent block of weird alien computer crystal stuff."
-	icon_state = "gnesisglass-bar"
-	setup_material()
-		src.setMaterial(getMaterial("gnesisglass"), appearance = 0, setname = 0)
-		..()
+	name = "wafer"
+	desc = "A shimmering, translucent block of weird alien computer crystal stuff."
+	icon_state = "block"
+	default_material = "gnesisglass"
 
 /obj/item/material_piece/coral
-	name = "coral"
+	name = "chunk"
 	desc = "A piece of coral. Nice!"
+	icon = 'icons/obj/items/materials/coral.dmi'
 	icon_state = "coral"
-	setup_material()
-		src.setMaterial(getMaterial("coral"), appearance = 0, setname = 0)
-		..()
+	default_material = "coral"
+	uses_default_material_appearance = FALSE
+	icon_stack_value = 0
+
+/obj/item/material_piece/yuranite
+	desc = "Deadly uranium metal."
+	icon_state = "rod"
+	default_material = "yuranite"
+	icon_stack_value = 0
+
+/obj/item/material_piece/neutrite
+	desc = "A very unstable radioactive metal."
+	icon_state = "rod"
+	default_material = "neutrite"
+	icon_stack_value = 0
+
+/obj/item/material_piece/plasmacoral
+	name = "chunk"
+	desc = "A strange piece of coral seemingly infused with plasmastone."
+	icon = 'icons/obj/items/materials/coral.dmi'
+	icon_state = "coral"
+	default_material = "plasmacoral"
+	uses_default_material_appearance = TRUE
+	icon_stack_value = 0
 
 /obj/item/material_piece/neutronium
-	name = "neutronium"
 	desc = "Neutrons condensed into a solid form."
+	icon_state = "rod"
+	default_material = "neutronium"
+	icon_stack_value = 0
+
+/obj/item/material_piece/plutonium
+	desc = "Reprocessed nuclear fuel, refined into fissile isotopes."
+	icon_state = "rod"
+	default_material = "plutonium"
+	icon_stack_value = 0
+
+/obj/item/material_piece/plutonium_scrap
+	name = "scrap"
+	icon_state = "scrap"
+	desc = "Plutonium metal, commonly used as a power source for engines and machinery alike."
+	default_material = "plutonium"
+
+/obj/item/material_piece/foolsfoolsgold
+	name = "fool's pyrite bar"
+	desc = "It's gold that isn't. Except it is. MINDFUCK"
 	icon_state = "bar"
-	setup_material()
-		src.setMaterial(getMaterial("neutronium"), appearance = 0, setname = 0)
-		..()
+	default_material = "gold"
+
+/obj/item/material_piece/veranium
+	desc = "Veranium metal, shocking to the touch."
+	icon_state = "bar"
+	default_material = "veranium"
+
+/obj/item/material_piece/voltite
+	desc = "A highly energetic bar of voltite."
+	icon_state = "bar"
+	default_material = "voltite"

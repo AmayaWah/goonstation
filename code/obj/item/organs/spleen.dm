@@ -3,14 +3,17 @@
 	organ_name = "spleen"
 	organ_holder_name = "spleen"
 	organ_holder_location = "chest"
-	organ_holder_required_op_stage = 6.0
 	icon_state = "spleen"
 	body_side = L_ORGAN
+	surgery_flags = SURGERY_SNIPPING | SURGERY_CUTTING
+	region = SUBCOSTAL
 
 
 	on_life(var/mult = 1)
 		if (!..())
 			return 0
+		if (HAS_ATOM_PROPERTY(src.donor, PROP_MOB_NO_BLOOD_REGEN))
+			return
 		if (donor.blood_volume < 500 && donor.blood_volume > 0) // if we're full or empty, don't bother v
 			if (prob(66))
 				donor.blood_volume += 1 * mult // maybe get a little blood back ^
@@ -42,13 +45,35 @@
 		..()
 		src.icon_state = pick("plant_spleen", "plant_spleen_bloom")
 
+TYPEINFO(/obj/item/organ/spleen/cyber)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = 6
+
 /obj/item/organ/spleen/cyber
 	name = "cyberspleen"
 	desc = "A fancy robotic spleen to replace one that someone's lost!"
 	icon_state = "cyber-spleen"
-	made_from = "pharosium"
+	default_material = "pharosium"
 	// item_state = "heart_robo1"
 	robotic = 1
 	edible = 0
-	mats = 6
 	created_decal = /obj/decal/cleanable/oil
+
+/obj/item/organ/spleen/amphibian
+	name = "amphibian spleen"
+	desc = "Yep. That sure is a spleen analogue."
+	icon_state = "amphibian_spleen"
+
+/obj/item/organ/spleen/skeleton
+	name = "skeleton pancreas"
+	desc = "Is this a spleen? Because it looks like a lump of bone to you."
+	icon_state = "skeleton_spleen"
+	default_material = "bone"
+	blood_reagent = "calcium"
+
+/obj/item/organ/spleen/martian
+	name = "purple knob"
+	desc = "This is a spleen, you think."
+	icon_state = "martian_spleen"
+	created_decal = /obj/decal/cleanable/martian_viscera/fluid
+	default_material = "viscerite"

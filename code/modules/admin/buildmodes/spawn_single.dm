@@ -14,24 +14,41 @@ change the direction of created objects.<br>
 	icon_state = "buildmode2"
 	var/objpath = null
 	var/cinematic = "Blink"
-	var/matrix/mtx = matrix()
+	var/tmp/matrix/mtx = matrix()
+	var/static/list/spawn_types = list(
+		"Telepad", \
+		"Blink", \
+		"Supplydrop", \
+		"Supplydrop (no lootbox)", \
+		"Lethal Supplydrop", \
+		"Lethal Supplydrop (no lootbox)", \
+		"Spawn Heavenly", \
+		"Spawn Demonically", \
+		"Missile", \
+		"Pop in", \
+		"Beam", \
+		"Poof", \
+		"Fling", \
+		"None")
 	click_mode_right(var/ctrl, var/alt, var/shift)
 		if(ctrl)
-			cinematic = (input("Cinematic spawn mode") as null|anything in list("Telepad", "Blink", "Supplydrop", "Supplydrop (no lootbox)", "Lethal Supplydrop", "Lethal Supplydrop (no lootbox)", "Spawn Heavenly", "Spawn Demonically", "Missile", "None")) || cinematic
+			cinematic = (input("Cinematic spawn mode") as null|anything in spawn_types) || cinematic
 			return
-		objpath = get_one_match(input("Type path", "Type path", "/obj/closet"), /atom)
+		if (!objpath)
+			objpath = /obj/critter/domestic_bee/heisenbee
+		objpath = get_one_match(input("Type path", "Type path", "[objpath]"), /atom)
 		update_button_text(objpath)
 
 	click_left(atom/object, var/ctrl, var/alt, var/shift)
 		if (!objpath)
-			boutput(usr, "<span class='alert'>No object path!</span>")
+			boutput(usr, SPAN_ALERT("No object path!"))
 			return
 		var/turf/T = get_turf(object)
 		if(!isnull(T) && objpath)
 			switch(cinematic)
 				if("Telepad")
 					var/obj/decal/teleport_swirl/swirl = new /obj/decal/teleport_swirl
-					var/obj/decal/fakeobjects/teleport_pad/pad = new /obj/decal/fakeobjects/teleport_pad
+					var/obj/fakeobject/teleport_pad/pad = new /obj/fakeobject/teleport_pad
 					swirl.mouse_opacity = 0
 					pad.mouse_opacity = 0
 					pad.loc = T
@@ -40,9 +57,9 @@ change the direction of created objects.<br>
 					mtx.Translate(0, 64)
 					pad.transform = mtx
 					animate(pad, alpha = 255, transform = mtx.Reset(), time = 5, easing=SINE_EASING)
-					SPAWN_DBG(0.7 SECONDS)
+					SPAWN(0.7 SECONDS)
 						swirl.loc = T
-						flick("portswirl", swirl)
+						FLICK("portswirl", swirl)
 
 						var/atom/A = 0
 						if(ispath(objpath, /turf))
@@ -51,7 +68,7 @@ change the direction of created objects.<br>
 							A = new objpath(T)
 
 
-						if (isobj(A) || ismob(A) || isturf(A))
+						if ((isobj(A) || ismob(A) || isturf(A)) && src.holder.dir)
 							A.set_dir(holder.dir)
 							A.onVarChanged("dir", SOUTH, A.dir)
 						sleep(0.5 SECONDS)
@@ -70,7 +87,7 @@ change the direction of created objects.<br>
 					else
 						A = new objpath(T)
 
-					if (isobj(A) || ismob(A) || isturf(A))
+					if ((isobj(A) || ismob(A) || isturf(A)) && src.holder.dir)
 						A.set_dir(holder.dir)
 						A.onVarChanged("dir", SOUTH, A.dir)
 						blink(T)
@@ -109,10 +126,10 @@ change the direction of created objects.<br>
 						marker.pixel_y = -16
 						marker.plane = PLANE_OVERLAY_EFFECTS
 						marker.layer = NOLIGHT_EFFECTS_LAYER_BASE
-						marker.appearance_flags = RESET_ALPHA | RESET_COLOR | NO_CLIENT_COLOR | KEEP_APART | RESET_TRANSFORM
+						marker.appearance_flags = RESET_ALPHA | RESET_COLOR | NO_CLIENT_COLOR | KEEP_APART | RESET_TRANSFORM | PIXEL_SCALE
 						marker.alpha = 100
 						usr.client.images += marker
-						SPAWN_DBG(0)
+						SPAWN(0)
 							launch_with_missile(new objpath, T, (holder.dir in cardinal) ? holder.dir : null)
 							qdel(marker)
 							usr.client.images -= marker
@@ -136,6 +153,41 @@ change the direction of created objects.<br>
 						T.ReplaceWith(objpath, keep_old_material=0, handle_air=0, force=1)
 					else
 						new objpath(T)
+				if("Pop in")
+					if (ispath(objpath, /atom/movable))
+						var/atom/movable/A = new objpath(T)
+						A.Scale(0,0)
+						animate(A, transform = matrix(), time = 1 SECOND, easing = ELASTIC_EASING)
+					else if(ispath(objpath, /turf))
+						T.ReplaceWith(objpath, keep_old_material=0, handle_air=0, force=1)
+					else
+						new objpath(T)
+				if("Beam")
+					if(ispath(objpath, /atom/movable))
+						var/atom/movable/AM = new objpath(T)
+						spawn_beam(AM)
+					else if(ispath(objpath, /turf))
+						T.ReplaceWith(objpath, keep_old_material=0, handle_air=0, force=1)
+					else
+						new objpath(T)
+				if("Poof")
+					if(ispath(objpath, /atom/movable))
+						new objpath(T)
+						var/obj/itemspecialeffect/poof/P = new /obj/itemspecialeffect/poof
+						P.setup(T)
+						playsound(T, 'sound/effects/poff.ogg', 50, TRUE, pitch = 1)
+					else if(ispath(objpath, /turf))
+						T.ReplaceWith(objpath, keep_old_material=0, handle_air=0, force=1)
+					else
+						new objpath(T)
+				if ("Fling")
+					if (ispath(objpath, /atom/movable))
+						var/atom/movable/AM = new objpath(get_turf(usr))
+						AM.throw_at(T, 1000, 1, allow_anchored = TRUE)
+					else if(ispath(objpath, /turf))
+						T.ReplaceWith(objpath, keep_old_material=0, handle_air=0, force=1)
+					else
+						new objpath(T)
 				else
 					var/atom/A = 0
 					if(ispath(objpath, /turf))
@@ -143,7 +195,7 @@ change the direction of created objects.<br>
 					else
 						A = new objpath(T)
 
-					if (isobj(A) || ismob(A) || isturf(A))
+					if ((isobj(A) || ismob(A) || isturf(A)) && src.holder.dir)
 						A.set_dir(holder.dir)
 						A.onVarChanged("dir", SOUTH, A.dir)
 
@@ -155,3 +207,7 @@ change the direction of created objects.<br>
 		else
 			if(isobj(object))
 				qdel(object)
+#ifdef QUICK_MOB_DELETION
+			if (ismob(object))
+				qdel(object)
+#endif

@@ -7,21 +7,20 @@
   if(!istype(T) || !istype(S))
     return
   if(!S.affects_mobs && ismob(T))
-    S.show_message("<span class='alert'>You can't seem to exert enough attractive force to budge it.</span>")
+    S.show_message(SPAN_ALERT("You can't seem to exert enough attractive force to budge it."))
     return
-  if(get_dist(T, user) <= grav_range)
+  if(GET_DIST(T, user) <= grav_range)
     if(!T.anchored)
       if(!T.throwing)
         S.visible_message("<span style='color:red; font-weight:bold'>[S] [pick("sucks", "draws", "pulls", "yanks", "tugs", "flings")] [T] towards itself!</span>")
         T.throw_at(S, grav_range, 2)
     else
-      S.show_message("<span class='alert'>You can't seem to exert enough attractive force to budge it.</span>")
+      S.show_message(SPAN_ALERT("You can't seem to exert enough attractive force to budge it."))
   else
-    S.show_message("<span class='alert'>It's too far away, your gravitational drop-off is too severe.[prob(10) ? " Curse you, general relativity!" : ""]</span>")
+    S.show_message(SPAN_ALERT("It's too far away, your gravitational drop-off is too severe.[prob(10) ? " Curse you, general relativity!" : ""]"))
 
 /mob/living/critter/singularity
   name = "singularity"
-  real_name = "singularity"
   desc = "A tiny, sentient singularity. If there was ever more proof needed of malevolent gods or other cosmic forces, this is it."
   density = 1
   icon_state = "sing"
@@ -31,9 +30,9 @@
   can_throw = 1
   can_grab = 1
   can_disarm = 1
-  speechverb_say = "sucks"
-  speechverb_exclaim = "roars"
-  speechverb_ask = "pulls"
+  speech_verb_say = "sucks"
+  speech_verb_exclaim = "roars"
+  speech_verb_ask = "pulls"
   blood_id = "ldmatter"
   metabolizes = 0
   add_abilities = list(/datum/targetable/critter/zzzap, /datum/targetable/critter/bholerip, /datum/targetable/critter/toxmob, /datum/targetable/critter/mezzer)
@@ -61,7 +60,7 @@
   ..(gibbed)
   if(src)
     src.glow.disable()
-    src.anchored = 1
+    src.anchored = ANCHORED
     src.set_density(0)
     src.name = "weird purple rock thing"
     src.desc = "A weird ultra-dense rock that doesn't want to budge. Huh. Is it plasma?"
@@ -70,17 +69,17 @@
   ..()
   var/datum/handHolder/HH = hands[1]
   HH.limb = new /datum/limb/singularity
-  HH.icon = 'icons/mob/critter_ui.dmi'
+  HH.icon = 'icons/mob/critter_hands.dmi'
   HH.icon_state = "handzap"
   HH.name = "gravitational pull"
   HH.limb_name = "gravitational pull"
   HH.can_range_attack = 1
 
-/mob/living/critter/singularity/attackby(var/obj/item/I as obj, var/mob/user as mob)
+/mob/living/critter/singularity/attackby(var/obj/item/I, var/mob/user)
   if (istype(I, /obj/item/clothing/mask/cigarette))
     var/obj/item/clothing/mask/cigarette/C = I
     if (!C.on)
-      C.light(user, "<span class='alert'><b>[user]</b> lights [C] on [src]. Mildly impressive!</span>")
+      C.light(user, SPAN_ALERT("<b>[user]</b> lights [C] on [src]. Mildly impressive!"))
     else
       return ..()
   else
@@ -109,15 +108,16 @@
       step_towards(M, src)
 
 /mob/living/critter/singularity/proc/eat(atom/movable/A)
-  // TODO: heal based on consumption?
-  if(src.affects_mobs && isliving(A))
-    var/mob/living/M = A
-    if(M && !istype(M, /mob/living/critter/singularity))
-      M.gib()
-  else if(isobj(A) && A.anchored != 2)
-    A.ex_act(1.0)
-    if(A)
-      qdel(A)
+	// TODO: heal based on consumption?
+	if(src.affects_mobs && isliving(A))
+		var/mob/living/M = A
+		if(M && !istype(M, /mob/living/critter/singularity))
+			logTheThing(LOG_COMBAT, M, "was gibbed by [src] ([src.type]) at [log_loc(M)].")
+			M.gib()
+	else if(isobj(A) && A.anchored != 2)
+		A.ex_act(1)
+		if(A)
+			qdel(A)
 
 
 /mob/living/critter/singularity/Crossed(atom/movable/A)

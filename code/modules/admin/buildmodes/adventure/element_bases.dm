@@ -17,9 +17,6 @@ var/global/list/adventure_elements_by_id = list()
 	var/id = null
 
 	New()
-		if (src.opacity)
-			src.opacity = 0
-			RL_SetOpacity(1)
 		if(!(src.id in adventure_elements_by_id))
 			adventure_elements_by_id[src.id] = list(src)
 		else
@@ -48,7 +45,7 @@ var/global/list/adventure_elements_by_id = list()
 	desc = "Marks a selection in Adventure Mode."
 	density = 0
 	opacity = 0
-	anchored = 1
+	anchored = ANCHORED
 
 	disposing()
 		icon_state = null
@@ -86,6 +83,14 @@ var/global/list/adventure_elements_by_id = list()
 	setTarget(var/atom/A)
 		src.target = A
 
+	New()
+		. = ..()
+		START_TRACKING
+
+	disposing()
+		STOP_TRACKING
+		. = ..()
+
 // Hello, goonstation coder reading this piece of code below.
 // I'd like to ask you to stop judging me. Yes, I can hear the thoughts formulating in your brain right now.
 // "what the fuck marquesas. why. why do you do this. why. why is this here. why."
@@ -99,12 +104,20 @@ var/global/list/adventure_elements_by_id = list()
 // DO SOMETHING.
 // LEAVE ME ALONE.
 /obj/adventurepuzzle/triggerable/triggerer
+	New()
+		. = ..()
+		START_TRACKING
+
+	disposing()
+		STOP_TRACKING
+		. = ..()
+
 	var/list/triggered = list()
 
 	proc/post_trigger()
 		for (var/obj/adventurepuzzle/triggerable/T in src.triggered)
 			var/act = src.triggered[T]
-			SPAWN_DBG(0)
+			SPAWN(0)
 				T.trigger(act)
 
 	proc/special_triggers_required()
@@ -163,7 +176,7 @@ var/global/list/adventure_elements_by_id = list()
 	proc/post_trigger()
 		for (var/obj/adventurepuzzle/triggerable/T in src.triggered)
 			var/act = src.triggered[T]
-			SPAWN_DBG(0)
+			SPAWN(0)
 				T.trigger(act)
 
 	proc/special_triggers_required()
@@ -240,7 +253,7 @@ var/global/list/adventure_elements_by_id = list()
 	proc/post_trigger()
 		for (var/obj/adventurepuzzle/triggerable/T in src.triggered)
 			var/act = src.triggered[T]
-			SPAWN_DBG(0)
+			SPAWN(0)
 				T.trigger(act)
 
 	proc/special_triggers_required()
@@ -301,7 +314,7 @@ var/global/list/adventure_elements_by_id = list()
 	proc/post_untrigger()
 		for (var/obj/adventurepuzzle/triggerable/T in src.triggered_unpress)
 			var/act = src.triggered_unpress[T]
-			SPAWN_DBG(0)
+			SPAWN(0)
 				T.trigger(act)
 
 	special_triggers_required()
@@ -374,7 +387,7 @@ var/global/list/adventure_elements_by_id = list()
 	invisibility = INVIS_ALWAYS_ISH
 	density = 0
 	opacity = 0
-	anchored = 1
+	anchored = ANCHORED
 
 	serialize(var/savefile/F, var/path, var/datum/sandbox/sandbox)
 		..()

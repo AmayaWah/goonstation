@@ -7,7 +7,7 @@
 	icon = 'icons/effects/mapeditor.dmi'
 	icon_state = "comment"
 	invisibility = INVIS_ALWAYS
-	anchored = 1
+	anchored = ANCHORED
 	layer = FLY_LAYER+1
 	var/coordinates
 	var/dimensions
@@ -15,7 +15,7 @@
 		. = ..()
 		// Must assign at runtime so initial() != runtime when saving
 		icon = null
-		SPAWN_DBG(1 DECI SECOND)
+		SPAWN(1 DECI SECOND)
 			qdel(src)
 
 //-- Used in generating turf underlay stacks -----

@@ -1,4 +1,8 @@
 // Cleaned up the ancient code that used to be here (Convair880).
+TYPEINFO(/obj/item/mine)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
+	mats = 6
+
 /obj/item/mine
 	name = "land mine (parent)"
 	desc = "You shouldn't be able to see this!"
@@ -7,8 +11,6 @@
 	layer = OBJ_LAYER
 	icon = 'icons/obj/items/weapons.dmi'
 	icon_state = "mine"
-	is_syndicate = TRUE
-	mats = 6
 	event_handler_flags = USE_FLUID_ENTER
 	var/suppress_flavourtext = FALSE
 	var/armed = FALSE
@@ -17,23 +19,30 @@
 
 	New()
 		..()
+		RegisterSignal(src, COMSIG_ITEM_STORAGE_INTERACTION, PROC_REF(on_storage_interaction))
 		if (src.armed)
-			src.update_icon()
+			src.UpdateIcon()
 
 		if (!src.our_timer || !istype(src.our_timer))
 			src.our_timer = new /obj/item/device/timer(src)
 			src.our_timer.master = src
 
 	disposing()
+		UnregisterSignal(src, COMSIG_ITEM_STORAGE_INTERACTION)
 		our_timer = null
 		..()
+
+	proc/on_storage_interaction(var/affected_mine, var/mob/user)
+		if(src.armed)
+			src.triggered(user)
+			return TRUE
 
 	examine()
 		. = ..()
 		if (!src.suppress_flavourtext)
 			. += "It appears to be [src.armed ? "armed" : "disarmed"]."
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		src.add_fingerprint(user)
 
 		if (prob(50) && src.armed && !src.used_up)
@@ -44,7 +53,7 @@
 
 		..()
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (prob(50) && src.armed && !src.used_up)
 			if (!src.suppress_flavourtext)
 				src.visible_message("<font color='red'><b>[user] fumbles with the [src.name], accidentally setting it off!</b></span>")
@@ -53,14 +62,14 @@
 
 		..()
 
-	pull(mob/user as mob)
+	pull(mob/user)
+		if (..())
+			return
 		if (src.armed && !src.used_up)
 			if (!src.suppress_flavourtext)
 				src.visible_message("<font color='red'><b>[user] tries to pull the [src.name], triggering the anti-tamper mechanism!</b></span>")
 			src.triggered(user)
 			return
-
-		..()
 
 	attack_self(mob/user as mob)
 		src.add_fingerprint(user)
@@ -71,21 +80,21 @@
 
 		if (src.armed)
 			src.armed = FALSE
-			src.update_icon()
+			src.UpdateIcon()
 			user.show_text("You disarm the [src.name].", "blue")
-			logTheThing("bombing", user, null, "has disarmed the [src.name] at [log_loc(user)].")
+			logTheThing(LOG_BOMBING, user, "has disarmed the [src.name] at [log_loc(user)].")
 
 		if (src.our_timer && istype(src.our_timer))
-			src.our_timer.attack_self(user)
+			src.our_timer.AttackSelf(user)
 
 
 	receive_signal()
 		if (src.used_up)
 			return
 
-		playsound(src.loc, "sound/weapons/armbomb.ogg", 100, 1)
+		playsound(src.loc, 'sound/weapons/armbomb.ogg', 100, 1)
 		src.armed = TRUE
-		src.update_icon()
+		src.UpdateIcon()
 
 	// Timer process() expects this to be here. Could be used for dynamic icon_states updates.
 	proc/c_state()
@@ -119,6 +128,8 @@
 		..()
 		if (AM == src || !(istype(AM, /obj/vehicle) || istype(AM, /obj/machinery/bot) || ismob(AM)))
 			return
+		if (HAS_ATOM_PROPERTY(AM, PROP_ATOM_FLOATING))
+			return
 		if (ismob(AM) && (!isliving(AM) || isintangible(AM) || iswraith(AM)))
 			return
 		if (src.used_up)
@@ -131,7 +142,8 @@
 		src.triggered(AM)
 		return
 
-	proc/update_icon()
+	update_icon()
+
 		if (!src || !istype(src))
 			return
 
@@ -182,7 +194,7 @@
 		if (!src || !istype(src))
 			return
 		var/logtarget = (T && ismob(T) ? T : null)
-		logTheThing("bombing", M && ismob(M) ? M : null, logtarget, "The [src.name] was triggered at [log_loc(src)][T && ismob(T) ? ", affecting [constructTarget(logtarget,"bombing")]." : "."] Last touched by: [src.fingerprintslast ? "[src.fingerprintslast]" : "*null*"]")
+		logTheThing(LOG_BOMBING, M && ismob(M) ? M : null, "The [src.name] was triggered at [log_loc(src)][T && ismob(T) ? ", affecting [constructTarget(logtarget,"bombing")]." : "."] Last touched by: [replace_if_false(src.get_last_ckey(), "None")]")
 
 /obj/item/mine/radiation
 	name = "radiation land mine"
@@ -200,7 +212,7 @@
 		if (length(mobs))
 			for (var/mob/living/L in mobs)
 				if (istype(L))
-					L.changeStatus("radiation", 60 SECONDS)
+					L.take_radiation_dose(2.5 SIEVERTS)
 					if (L.bioHolder && ishuman(L))
 						L.bioHolder.RandomEffect("bad")
 					if (L != M)
@@ -221,7 +233,7 @@
 		if (!src || !istype(src))
 			return
 
-		fireflash_sm(get_turf(src), 3, 3000, 500)
+		fireflash_melting(get_turf(src), 3, 3000, 500, chemfire = CHEM_FIRE_RED)
 		playsound(src.loc, 'sound/effects/bamf.ogg', 50, 1)
 
 /obj/item/mine/stun
@@ -267,27 +279,29 @@
 
 		explosion(src, src.loc, 0, 1, 2, 3)
 
+TYPEINFO(/obj/item/mine/gibs)
+	analyser_flags = ANALYSER_BLACKLIST
+
 /obj/item/mine/gibs
 	name = "pustule"
 	desc = "Some kind of weird little meat balloon."
 	icon = 'icons/misc/meatland.dmi'
 	icon_state = "meatmine"
 	suppress_flavourtext = TRUE
-	is_syndicate = FALSE
-	mats = 0
 
 	armed
 		armed = TRUE
 
 	update_icon()
+
 		return
 
 	custom_stuff(var/atom/M)
 		if (!src || !istype(src))
 			return
 
-		src.visible_message("<span class='alert'>[src] bursts[pick(" like an overripe melon!", " like an impacted bowel!", " like a balloon filled with blood!", "!", "!")]</span>")
+		src.visible_message(SPAN_ALERT("[src] bursts[pick(" like an overripe melon!", " like an impacted bowel!", " like a balloon filled with blood!", "!", "!")]"))
 		gibs(src.loc)
-		playsound(src.loc, "sound/impact_sounds/Flesh_Break_1.ogg", 50, 1)
+		playsound(src.loc, 'sound/impact_sounds/Flesh_Break_1.ogg', 50, 1)
 
 		return

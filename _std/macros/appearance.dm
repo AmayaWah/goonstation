@@ -18,6 +18,7 @@
 #define HEAD_ITHILLID 15
 #define HEAD_VIRTUAL 16
 #define HEAD_FLASHY 17
+#define HEAD_PUG 18
 
 //tail defines
 #define TAIL_NONE 0
@@ -29,6 +30,7 @@
 #define TAIL_SEAMONKEY 6
 #define TAIL_CAT 7
 #define TAIL_ROACH 8
+#define TAIL_PUG 9
 
 /// appearanceholder color vars. Tells mutant races to stick this color into the specified special hair / limb overlay color slot
 #define CUST_1 1
@@ -88,6 +90,12 @@
 #define FIX_COLORS										(1<<19)
 /// Our head has its own colors that would look weird if tinted
 #define	HEAD_HAS_OWN_COLORS						(1<<20)
+
+// The head has a custom nose
+#define HAS_LONG_NOSE						(1<<21)
+
+/// The eyes are fixed to lightness values above 50 to preserve overlay contrast
+#define LIGHT_EYES							(1<<22)
 
 /// Default normal standard human appearance flags
 #define HUMAN_APPEARANCE_FLAGS (HAS_HUMAN_SKINTONE | HAS_HUMAN_HAIR | HAS_HUMAN_EYES | BUILT_FROM_PIECES | WEARS_UNDERPANTS )

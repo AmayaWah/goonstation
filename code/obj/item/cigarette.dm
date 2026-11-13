@@ -6,9 +6,8 @@
 /obj/item/clothing/mask/cigarette
 	name = "cigarette"
 	icon = 'icons/obj/items/cigarettes.dmi'
-	wear_image_icon = 'icons/mob/mask.dmi'
+	wear_image_icon = 'icons/mob/clothing/mask.dmi'
 	icon_state = "cig"
-	uses_multiple_icon_states = 1
 	item_state = "cig"
 	force = 0
 	hit_type = DAMAGE_BLUNT
@@ -26,7 +25,7 @@
 	var/buttname = "cigarette butt"
 	var/puffrate = 1
 	var/cycle = 4
-	var/numpuffs = 40 //number of times the cig can dispense reagents
+	var/numpuffs = 20 //number of times the cig can dispense reagents
 	rand_pos = 1
 	use_bloodoverlay = 0
 
@@ -39,6 +38,7 @@
 	New()
 		..()
 		src.create_reagents(60)
+		AddComponent(/datum/component/loctargeting/simple_light, 255, 110, 135, 90, src.on)
 
 		if (src.on) //if we spawned lit, do something about it!
 			src.on = 0
@@ -68,8 +68,8 @@
 	afterattack(atom/target , mob/user, flag) // copied from the propuffs
 		if (istype(target, /obj/item/reagent_containers/food/snacks/)) // you dont crush cigs INTO food, you crush them ONTO food!
 			var/obj/item/reagent_containers/food/snacks/T = target // typecasting because atom/target was causing some STINKY problems
-			user.visible_message("<span class='notice'><b>[user]</b> crushes up [src] and sprinkles it onto [target], gross.</span>",\
-			"<span class='notice'>You crush up [src] and sprinkle it onto [target].</span>")
+			user.visible_message(SPAN_NOTICE("<b>[user]</b> crushes up [src] and sprinkles it onto [target], gross."),\
+			SPAN_NOTICE("You crush up [src] and sprinkle it onto [target]."))
 			if (!(T.has_cigs))
 				T.desc = "[T.desc]<br>Are those crushed cigarettes on top? That's disgusting!"
 				T.has_cigs = 1
@@ -78,16 +78,16 @@
 			qdel (src)
 			return
 		else if (istype(target, /obj/item/reagent_containers/)) // crushing cigs into actual containers remains the same
-			user.visible_message("<span class='notice'><b>[user]</b> crushes up [src] into [target].</span>",\
-			"<span class='notice'>You crush up [src] into [target].</span>")
+			user.visible_message(SPAN_NOTICE("<b>[user]</b> crushes up [src] into [target]."),\
+			SPAN_NOTICE("You crush up [src] into [target]."))
 			if (src.reagents) // copied wirefix
 				src.reagents.trans_to(target, 5)
 			qdel (src)
 			return
-		else if (istype(target, /obj/item/match) && src.on)
-			target:light(user, "<span class='alert'><b>[user]</b> lights [target] with [src].</span>")
+		else if (istype(target, /obj/item/match) && src.on == MATCH_LIT)
+			target:light(user, SPAN_ALERT("<b>[user]</b> lights [target] with [src]."))
 		else if (src.on == 0 && isitem(target) && target:burning)
-			src.light(user, "<span class='alert'><b>[user]</b> lights [src] with [target]. Goddamn.</span>")
+			src.light(user, SPAN_ALERT("<b>[user]</b> lights [src] with [target]. Goddamn."))
 			return
 		else
 			return ..()
@@ -115,10 +115,12 @@
 				var/mob/M = src.loc
 				M.set_clothing_icon_dirty()
 			if(src?.reagents)
-				puffrate = src.reagents.total_volume / numpuffs //40 active cycles (200 total, about 10 minutes)
+				puffrate = src.reagents.total_volume / numpuffs //default 20 active cycles (100 total, about 5 minutes)
 			processing_items |= src
 
 			hit_type = DAMAGE_BURN
+
+			SEND_SIGNAL(src, COMSIG_LIGHT_ENABLE)
 
 	proc/put_out(var/mob/user as mob, var/message as text)
 		if (src.on == 1)
@@ -139,45 +141,47 @@
 
 			hit_type = DAMAGE_BLUNT
 
-			playsound(src, "sound/impact_sounds/burn_sizzle.ogg", 50, 1)
+			SEND_SIGNAL(src, COMSIG_LIGHT_DISABLE)
+
+			playsound(src, 'sound/impact_sounds/burn_sizzle.ogg', 50, TRUE)
 
 	temperature_expose(datum/gas_mixture/air, temperature, volume)
 		if (src.on == 0)
 			if (temperature > T0C+200)
-				src.visible_message("<span class='alert'>The [src] ignites!</span>", group = "cig_ignite")
+				src.visible_message(SPAN_ALERT("[src] ignites!"), group = "cig_ignite")
 				src.light()
 
 	ex_act(severity)
 		. = ..()
 		if (src.on == 0)
-			src.visible_message("<span class='alert'>The [src] ignites!</span>", group = "cig_ignite")
+			src.visible_message(SPAN_ALERT("[src] ignites!"), group = "cig_ignite")
 			src.light()
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.on == 0)
 			if (isweldingtool(W) && W:try_weld(user,0,-1,0,0))
-				src.light(user, "<span class='alert'><b>[user]</b> casually lights [src] with [W], what a badass.</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> casually lights [src] with [W], what a badass."))
 				return
 			else if (istype(W, /obj/item/sword) && W:active)
-				src.light(user, "<span class='alert'><b>[user]</b> swishes [W] alarmingly close to [his_or_her(user)] face and lights [src] ablaze.</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> swishes [W] alarmingly close to [his_or_her(user)] face and lights [src] ablaze."))
 				return
 			else if (istype(W, /obj/item/clothing/head/cakehat) && W:on)
-				src.light(user, "<span class='alert'>Did [user] just light [his_or_her(user)] [src.name] with [W]? Holy Shit.</span>")
+				src.light(user, SPAN_ALERT("Did [user] just light [his_or_her(user)] [src.name] with [W]? Holy Shit."))
 				return
 			else if (istype(W, /obj/item/device/igniter))
-				src.light(user, "<span class='alert'><b>[user]</b> fumbles around with [W]; a small flame erupts from [src].</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> fumbles around with [W]; a small flame erupts from [src]."))
 				return
 			else if (istype(W, /obj/item/device/light/zippo) && W:on)
-				src.light(user, "<span class='alert'>With a single flick of their wrist, [user] smoothly lights [src] with [W]. Damn they're cool.</span>")
+				src.light(user, SPAN_ALERT("With a single flick of [his_or_her(user)] wrist, [user] smoothly lights [src] with [W]. Damn [hes_or_shes(user)] cool."))
 				return
 			else if ((istype(W, /obj/item/match) || istype(W, /obj/item/clothing/mask/cigarette) || istype(W, /obj/item/device/light/candle)) && W:on)
-				src.light(user, "<span class='alert'><b>[user]</b> lights [src] with [W].</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> lights [src] with [W]."))
 				return
 			else if (W.burning)
-				src.light(user, "<span class='alert'><b>[user]</b> lights [src] with [W]. Goddamn.</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> lights [src] with [W]. Goddamn."))
 				return
 			else if (W.firesource)
-				src.light(user, "<span class='alert'><b>[user]</b> lights [src] with [W].</span>")
+				src.light(user, SPAN_ALERT("<b>[user]</b> lights [src] with [W]."))
 				W.firesource_interact()
 				return
 			else
@@ -185,28 +189,29 @@
 		else
 			return ..() // CALL your GODDAMN PARENTS
 
-	attack(atom/target, mob/user as mob)
+	attack(atom/target, mob/user, def_zone, is_special = FALSE)
 		if (isliving(target))
 			var/mob/living/M = target
-
+			if (is_special)
+				return ..()
 			if (ishuman(M))
 				var/mob/living/carbon/human/H = M
-				if (H.bleeding || (H.butt_op_stage == 4 && user.zone_sel.selecting == "chest"))
+				if (H.bleeding || (H.organHolder?.back_op_stage > BACK_SURGERY_CLOSED && user.zone_sel.selecting == "chest"))
 					if (src.cautery_surgery(H, user, 5, src.on))
 						return
 			if (M.getStatusDuration("burning") && src.on == 0)
 				if (M == user)
-					src.light(user, "<span class='alert'><b>[user]</b> lights [his_or_her(user)] [src.name] with [his_or_her(user)] OWN flaming body. That's dedication! Or crippling addiction.</span>")
+					src.light(user, SPAN_ALERT("<b>[user]</b> lights [his_or_her(user)] [src.name] with [his_or_her(user)] OWN flaming body. That's dedication! Or crippling addiction."))
 				else
-					src.light(user, "<span class='alert'><b>[user]</b> lights [his_or_her(user)] [src.name] with [M]'s flaming body. That's cold, man. That's real cold.</span>")
+					src.light(user, SPAN_ALERT("<b>[user]</b> lights [his_or_her(user)] [src.name] with [M]'s flaming body. That's cold, man. That's real cold."))
 				return
 			else if (istype(M, /mob/living/critter/fire_elemental))
 				if (M == user)
-					src.light(user, "<span class='alert'><b>[user]</b> lights [his_or_her(user)] [src.name] with [his_or_her(user)] OWN flaming body.")
+					src.light(user, SPAN_ALERT("<b>[user]</b> lights [his_or_her(user)] [src.name] with [his_or_her(user)] OWN flaming body."))
 				else
-					src.light(user, "<span class='alert'><b>[user]</b> lights [src] with [M]. Good thinking!</span>")
+					src.light(user, SPAN_ALERT("<b>[user]</b> lights [src] with [M]. Good thinking!"))
 			else if (src.on == 1)
-				src.put_out(user, "<span class='alert'><b>[user]</b> puts [src] out on [target].</span>")
+				src.put_out(user, SPAN_ALERT("<b>[user]</b> puts [src] out on [target]."))
 				if (ishuman(target))
 					var/mob/living/carbon/human/chump = target
 					if (!chump.stat)
@@ -217,7 +222,7 @@
 			else
 				return ..(target, user)
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if (!user) return
 		var/can_blow_smoke = (user.wear_mask == src && src.on && src.reagents.total_volume > 0 && src.puff_ready)
 		var/success = ( ..() )
@@ -238,24 +243,27 @@
 
 		if (target)
 			var/message_append = ""
-			switch(rand(1, 13))
-				if (1) message_append = " Ouch!"
-				if (2) message_append = " Are they just going to take that?"
-				if (3) message_append = " Whoa!"
-				if (4) message_append = " What a jerk!"
-				if (5) message_append = " That's bad-ass."
-				if (6) message_append = " That looks pretty cool!"
-				if (7) message_append = " That's cold."
-				if (8) message_append = " How rude."
-				if (9) message_append = " Wow!"
-			user.visible_message("<span class='alert'><B>[user]</B> blows smoke right into <B>[target]</B>'s face![message_append]</span>", group = "[user]_blow_smoke_at_[target]")
+			if (prob(60))
+				switch(rand(1, 9))
+					if (1) message_append = " Ouch!"
+					if (2) message_append = " [capitalize(is_or_are(target))] [he_or_she(target)] just going to take that?"
+					if (3) message_append = " Whoa!"
+					if (4) message_append = " What a jerk!"
+					if (5) message_append = " That's bad-ass."
+					if (6) message_append = " That looks pretty cool!"
+					if (7) message_append = " That's cold."
+					if (8) message_append = " How rude."
+					if (9) message_append = " Wow!"
+			user.visible_message(SPAN_ALERT("<B>[user]</B> blows smoke right into <B>[target]</B>'s face![message_append]"), group = "[user]_blow_smoke_at_[target]")
 
 			var/mob/living/carbon/human/human_target = target
-			if (human_target && rand(1,5) == 1)
-				SPAWN_DBG(0) target.emote("cough")
+			if (human_target && !issmokeimmune(human_target) && prob(20))
+				target.emote("cough")
+				if(prob(20))
+					target.drop_item()
 		else
 			var/message
-			switch(rand(1, 8))
+			switch(rand(1, 10))
 				if (1) message = "<B>[user]</B> takes a drag and blows a cloud of smoke!"
 				if (2) message = "<B>[user]</B> puffs out a smoke cloud!"
 				if (3) message = "<B>[user]</B> exhales a huge cloud of smoke!"
@@ -266,7 +274,7 @@
 				if (8) message = "<B>[user]</B> takes a drag of [his_or_her(user)] [src.name]."
 				if (9) message = "<B>[user]</B> pulls on [his_or_her(user)] [src.name]."
 				if (10) message = "<B>[user]</B> blows out some smoke in the shape of a [pick("butt","bee","shelterfrog","heart","burger","gun","cube","face","dog","star")]!"
-			user.visible_message("<span class='alert'>[message]</span>", group = "blow_smoke")
+			user.visible_message(SPAN_ALERT("[message]"), group = "blow_smoke")
 		src.cycle = 0 //do the transfer on the next cycle. Also means we get the lung damage etc rolls
 
 		src.puff_ready = 0
@@ -285,12 +293,11 @@
 					if(H.traitHolder && H.traitHolder.hasTrait("smoker") || !((src in H.get_equipped_items()) || ((H.l_store==src||H.r_store==src) && !(H.wear_mask && (H.wear_mask.c_flags & BLOCKSMOKE || (H.wear_mask.c_flags & MASKINTERNALS && H.internal))))))
 						src.reagents.remove_any(puffrate)
 					else
-						if(H.bodytemperature < H.base_body_temp)
-							H.bodytemperature += 1
+						H.changeBodyTemp(1 KELVIN, max_temp = H.base_body_temp)
 						if (prob(1))
 							H.contract_disease(/datum/ailment/malady/heartdisease,null,null,1)
 						src.reagents.trans_to(M, puffrate)
-						src.reagents.reaction(M, INGEST, puffrate)
+						src.reagents.reaction(M, INGEST, puffrate, paramslist = list("inhaled"))
 						//lung damage
 						if (prob(40))
 							if (prob(70))
@@ -301,7 +308,7 @@
 									H.organHolder.damage_organ(0, 0, 1, "right_lung")
 				else
 					src.reagents.trans_to(M, puffrate)
-					src.reagents.reaction(M, INGEST, puffrate)
+					src.reagents.reaction(M, INGEST, puffrate, paramslist = list("inhaled"))
 			else if (src?.reagents) //ZeWaka: Copied Wire's fix for null.remove_any() below
 				src.reagents.remove_any(puffrate)
 
@@ -309,11 +316,11 @@
 			if (src.exploding)
 				src.on = 0 //Let's not keep looping while we're busy blowing up, ok?
 				processing_items.Remove(src)
-				SPAWN_DBG((20)+(rand(1,10)))
+				SPAWN((20)+(rand(1,10)))
 					trick_explode()
 				return
 			else
-				src.put_out(M, "<span class='alert'><b>[M]</b>'s [src.name] goes out.</span>")
+				src.put_out(M, SPAN_ALERT("<b>[M]</b>'s [src.name] goes out."))
 				return
 
 		//if (istype(location, /turf)) //start a fire if possible
@@ -325,13 +332,14 @@
 
 	dropped(mob/user as mob)
 		if (!isturf(src.loc))
-			return
+			return ..()
 		if (src.on == 1 && !src.exploding && src.reagents.total_volume <= 20)
-			src.put_out(user, "<span class='alert'><b>[user]</b> calmly drops and treads on the lit [src.name], putting it out instantly.</span>")
-			return ..()
-		else
-			user.visible_message("<span class='alert'><b>[user]</b> drops [src]. Guess they've had enough for the day.</span>", group = "cig_drop")
-			return ..()
+			src.put_out(user, SPAN_ALERT("<b>[user]</b> calmly drops and treads on the lit [src.name], putting it out instantly."))
+		else if (user.client)
+			if (!user.client.check_key(KEY_THROW)) //checks if player is in throw mode to avoid double messages
+				user.visible_message(SPAN_ALERT("<b>[user]</b> drops [src]. Guess [he_or_she(user)][ve_or_s(user)] had enough for the day."), group = "cig_drop")
+
+		return ..()
 
 
 	proc/trick_explode()
@@ -340,14 +348,15 @@
 			explosion(src, tlocation, 0, 1, 1, 2)
 		else
 			elecflash(src,power = 2)
-			playsound(src.loc, "sound/effects/Explosion1.ogg", 75, 1)
-		src.visible_message("<span class='alert'>The [src] explodes!</span>")
+			playsound(src.loc, 'sound/effects/Explosion1.ogg', 75, 1)
+		src.visible_message(SPAN_ALERT("The [src] explodes!"))
 
 		// Added (Convair880).
 		if (ismob(src.loc))
-			logTheThing("bombing", null, src.loc, "A trick cigarette (held/equipped by [constructTarget(src.loc,"bombing")]) explodes at [log_loc(src)].")
+			logTheThing(LOG_BOMBING, null, "A trick cigarette (held/equipped by [constructTarget(src.loc,"bombing")]) explodes at [log_loc(src)].")
 		else
-			logTheThing("bombing", src.fingerprintslast, null, "A trick cigarette explodes at [log_loc(src)]. Last touched by [src.fingerprintslast ? "[src.fingerprintslast]" : "*null*"].")
+			var/last_ckey = src.get_last_ckey()
+			logTheThing(LOG_BOMBING, last_ckey, "A trick cigarette explodes at [log_loc(src)]. Last touched by [replace_if_false(last_ckey, "None")].")
 
 		if (istype(src.loc,/obj/item/device/pda2))
 			var/obj/item/device/pda2/pda = src.loc
@@ -379,19 +388,12 @@
 	desc = "A cigarette which seems to have been laced with something."
 
 	New()
-		if (all_functional_reagent_ids.len > 0)
+		if (length(all_functional_reagent_ids) > 0)
 			var/list/chem_choices = all_functional_reagent_ids
 			src.flavor = pick(chem_choices)
 		else
 			src.flavor = "nicotine"
 		..()
-
-
-/obj/item/clothing/mask/cigarette/dryjoint
-	name = "dried up joint"
-	desc = "An ancient joint, it's paper now resembles the burial shroud of an egyptian king. There's no telling what the roller could have twisted up in here."
-	nic_free = 1
-	flavor = "THC"
 
 /obj/item/clothing/mask/cigarette/cigar
 	name = "cigar"
@@ -443,7 +445,7 @@
 	buttdesc = "Tarry, smelly."
 	buttname = "cigarillo roach"
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if((W.tool_flags & TOOL_CUTTING) || (W.hit_type & DAMAGE_CUT) || (W.hit_type & DAMAGE_STAB))
 			var/obj/item/bluntwrap/B = new(user.loc)
 			if(src.flavor)
@@ -451,7 +453,7 @@
 				B.flavor = src.flavor
 				B.name = "[reagent_id_to_name(src.flavor)]-flavoured blunt wrap"
 			src.reagents.trans_to(B, 20)
-			boutput(user, "<span class='alert'>You cut [src] open to make a blunt wrapper.</span>")
+			boutput(user, SPAN_ALERT("You cut [src] open to make a blunt wrapper."))
 			qdel(src)
 			user.put_in_hand_or_drop(B)
 
@@ -474,15 +476,15 @@
 
 	New()
 		src.flavor = pick("CBD","CBD","CBD","CBD","THC","THC","THC","THC","silicate","antihol","mutadone","rum","mutagen","toxin","water_holy","fuel","salbutamol","haloperidol",
-		"cryoxadone","cryostylane","omnizine","jenkem","vomit","carpet","charcoal","blood","cheese","bilk","atropine",
+		"cryoxadone","cryostylane","omnizine","vomit","carpet","charcoal","blood","cheese","bilk","atropine",
 		"lexorin","teporone","mannitol","spaceacillin","saltpetre","anti_rad","insulin","gvomit","milk","colors","diluted_fliptonium",
 		"something","honey_tea","tea","coffee","chocolate","guacamole","juice_pickle","vanilla","enriched_msg","egg","aranesp",
 		"paper","bread","green_goop","black_goop", "mint_tea", "juice_peach", "ageinium")
 		..()
 		if (src?.reagents) //Warc: copied ZeWaka's copy of Wire's fix for null.remove_any() way above
 			src.reagents.remove_any(15)
-			src.reagents.add_reagent(pick("CBD","mucus","ethanol","glitter","methamphetamine","uranium","pepperoni","poo","quebon","jenkem","cryoxadone","kerosene","cryostylane","ectoplasm","gravy","cheese","paper","carpet","ants","enriched_msg","THC","THC","THC","bee","coffee","fuel","salbutamol","milk","grog"),5)
-			src.reagents.add_reagent(pick("CBD","mucus","ethanol","glitter","methamphetamine","uranium","pepperoni","poo","quebon","jenkem","cryoxadone","kerosene","cryostylane","ectoplasm","gravy","cheese","paper","carpet","ants","enriched_msg","THC","THC","THC","bee","coffee","fuel","salbutamol","milk","grog"),5)
+			src.reagents.add_reagent(pick("CBD","mucus","ethanol","glitter","methamphetamine","uranium","pepperoni","poo","quebon","cryoxadone","kerosene","cryostylane","ectoplasm","gravy","cheese","paper","carpet","ants","enriched_msg","THC","THC","THC","bee","coffee","fuel","salbutamol","milk","grog"),5)
+			src.reagents.add_reagent(pick("CBD","mucus","ethanol","glitter","methamphetamine","uranium","pepperoni","poo","quebon","cryoxadone","kerosene","cryostylane","ectoplasm","gravy","cheese","paper","carpet","ants","enriched_msg","THC","THC","THC","bee","coffee","fuel","salbutamol","milk","grog"),5)
 			if(prob(5))
 				src.reagents.add_reagent("triplemeth",5)
 
@@ -497,7 +499,7 @@
 
 	New()
 		src.flavor = pick("silicate","antihol","mutadone","rum","mutagen","toxin","water_holy","fuel","salbutamol","haloperidol",
-		"cryoxadone","cryostylane","omnizine","jenkem","vomit","carpet","charcoal","blood","cheese","bilk","atropine",
+		"cryoxadone","cryostylane","omnizine","vomit","carpet","charcoal","blood","cheese","bilk","atropine",
 		"lexorin","teporone","mannitol","spaceacillin","saltpetre","anti_rad","insulin","gvomit","milk","colors","diluted_fliptonium",
 		"something","honey_tea","tea","coffee","chocolate","guacamole","juice_pickle","vanilla","enriched_msg","egg","aranesp",
 		"paper","bread","green_goop","black_goop", "mint_tea", "juice_peach", "ageinium", "synaptizine", "plasma", "morphine","oculine","CBD")
@@ -512,16 +514,15 @@
 // WHY
 /obj/item/clothing/mask/cigarette/custom
 	desc = "There could be anything in this."
-	flags = FPRINT|TABLEPASS|OPENCONTAINER
+	flags = TABLEPASS | OPENCONTAINER
 
 	New()
 		..()
 		src.reagents.maximum_volume = 600
 		src.reagents.clear_reagents()
-		numpuffs = 20
 
 	is_open_container()
-		return 1
+		return 0
 
 /* ================================================= */
 /* -------------------- Packets -------------------- */
@@ -532,23 +533,63 @@
 	desc = "The most popular brand of Space Cigarettes, sponsors of the Space Olympics."
 	icon = 'icons/obj/items/cigarettes.dmi'
 	icon_state = "cigpacket"
-	uses_multiple_icon_states = 1
 	item_state = "cigpacket"
 	w_class = W_CLASS_TINY
 	throwforce = 2
 	var/max_cigs = 6
 	var/cigtype = /obj/item/clothing/mask/cigarette
 	var/package_style = "cigpacket"
-	flags = ONBELT | TABLEPASS | FPRINT
+	var/list/allowed = list(/obj/item/clothing/mask/cigarette)
+	c_flags = ONBELT
 	stamina_damage = 3
 	stamina_cost = 3
 	rand_pos = 1
 
 	New()
 		..()
+		AddComponent(/datum/component/transfer_input/quickloading, allowed, "onLoading", "filterLoading")
+		if (!cigtype)
+			return
 		for(var/i in 1 to src.max_cigs)
 			new src.cigtype(src)
 
+	mouse_drop(atom/over_object, src_location, over_location, src_control, over_control, params)
+		if (!can_act(usr) || !in_interact_range(usr, src) || !in_interact_range(usr, over_location) || !in_interact_range(over_location, src) || usr.lying || isAIeye(usr) || isAI(usr) || isrobot(usr) || isghostcritter(usr) || (over_object && over_object.event_handler_flags & NO_MOUSEDROP_QOL) || isintangible(usr))
+			return ..()
+
+		if ((istype(over_object, /obj/table) || \
+					(isturf(over_object) && total_density(over_location) < 1)) && \
+					in_interact_range(over_object,src) && \
+					src.contents.len > 0)
+			usr.visible_message(SPAN_NOTICE("[usr] dumps out [src]'s contents onto [over_object]!"))
+			for (var/obj/item/thing in src.contents)
+				thing.set_loc(over_location)
+			src.UpdateIcon()
+			if (!islist(params)) params = params2list(params)
+			if (params) params["dumped"] = 1
+		else
+			return ..()
+
+	should_place_on(obj/target, params)
+		if (istype(target, /obj/table) && params && params["dumped"])
+			return FALSE
+		return ..()
+
+	get_help_message(dist, mob/user)
+		. = ..()
+		. += "Hold this and drag a nearby cigarette onto it to auto-fill.\n \
+			Drag this onto a nearby table or floor while holding it to dump its contents."
+
+/obj/item/cigpacket/proc/onLoading(atom/movable/incoming)
+	src.UpdateIcon()
+	// No idea is usr works via components like this, but there seems to be no recourse without altering the component itself.
+	incoming.add_fingerprint(usr)
+	return TRUE
+
+/obj/item/cigpacket/proc/filterLoading(obj/item/clothing/mask/cigarette/cig)
+	if (length(src.contents) >= max_cigs) return FALSE
+	if (cig.on) return FALSE
+	return TRUE
 
 /obj/item/cigpacket/nicofree
 	name = "nicotine-free cigarette packet"
@@ -571,6 +612,13 @@
 	icon_state = "cigpacket-r"
 	package_style = "cigpacket-r"
 
+/obj/item/cigpacket/paperpack
+	name = "paper cigarette packet"
+	desc = "A flavor surprise in each cigarette, lovingly wrapped in the finest papers."
+	cigtype = null
+	icon_state = "cigpacket-wo"
+	package_style = "cigpacket-w"
+
 /obj/item/cigpacket/random
 	name = "odd cigarette packet"
 	desc = "These don't seem to have a brand name on them."
@@ -582,7 +630,7 @@
 // haine: these can just inherit the parent name and description vOv
 	cigtype = /obj/item/clothing/mask/cigarette/syndicate
 
-/obj/item/cigpacket/proc/update_icon()
+/obj/item/cigpacket/update_icon()
 	src.overlays = null
 	if (length(src.contents) == 0)
 		src.icon_state = "[src.package_style]0"
@@ -590,9 +638,10 @@
 	else
 		src.icon_state = "[src.package_style]o"
 		src.overlays += "cig[length(src.contents)]"
+		src.desc = initial(src.desc)
 	return
 
-/obj/item/cigpacket/attack_hand(mob/user as mob)
+/obj/item/cigpacket/attack_hand(mob/user)
 	if (user.find_in_hand(src))//r_hand == src || user.l_hand == src)
 		if (length(src.contents) == 0)
 			user.show_text("You're out of cigs, shit! How you gonna get through the rest of the day?", "red")
@@ -600,7 +649,7 @@
 		else
 			var/obj/item/clothing/mask/cigarette/W = src.contents[1]
 			user.put_in_hand_or_drop(W)
-		src.update_icon()
+		src.UpdateIcon()
 	else
 		return ..()
 	return
@@ -619,9 +668,9 @@
 			W.set_loc(get_turf(user))
 			user.show_text("You knock a cig out of [src], flopping it to the ground.", "red")
 
-	src.update_icon()
+	src.UpdateIcon()
 
-/obj/item/cigpacket/attackby(obj/item/W as obj, mob/user as mob)
+/obj/item/cigpacket/attackby(obj/item/W, mob/user)
 	if (istype(W, /obj/item/clothing/mask/cigarette))
 		var/obj/item/clothing/mask/cigarette/cig = W
 		if (cig.on)
@@ -631,7 +680,7 @@
 			src.contents += cig
 			user.u_equip(cig)
 			cig.set_loc(src)
-			src.update_icon()
+			src.UpdateIcon()
 			return
 		else
 			user.show_text("The packet is just too full to fit any more cigs.", "red")
@@ -652,26 +701,26 @@
 
 /obj/item/cigarbox
 	name = "cigar box"
-	desc = "The not-so-prestigeous brand of Space Cigars."
+	desc = "The not-so-prestigious brand of Space Cigars."
 	icon = 'icons/obj/items/cigarettes.dmi'
 	icon_state = "cigarbox"
-	uses_multiple_icon_states = 1
 	item_state = "cigarbox"
+	default_material = "wood"
 	w_class = W_CLASS_TINY
 	throwforce = 2
 	var/cigcount = 5
 	var/cigtype = /obj/item/clothing/mask/cigarette/cigar
 	var/package_style = "cigarbox"
-	flags = ONBELT | TABLEPASS | FPRINT
+	c_flags = ONBELT
 	stamina_damage = 3
 	stamina_cost = 3
 	rand_pos = 1
 
 /obj/item/cigarbox/New()
 	..()
-	src.update_icon()
+	src.UpdateIcon()
 
-/obj/item/cigarbox/proc/update_icon()
+/obj/item/cigarbox/update_icon()
 	src.overlays = null
 	if (src.cigcount <= 0)
 		src.icon_state = "[src.package_style]"
@@ -681,7 +730,7 @@
 		src.overlays += "cigar[src.cigcount]"
 	return
 
-/obj/item/cigarbox/attack_hand(mob/user as mob)
+/obj/item/cigarbox/attack_hand(mob/user)
 	if (user.find_in_hand(src))//r_hand == src || user.l_hand == src)
 		if (src.cigcount == 0)
 			user.show_text("You're out of cigars! How you gonna get through the rest of the day?", "red")
@@ -691,7 +740,7 @@
 			user.put_in_hand_or_drop(W)
 			if (src.cigcount != -1)
 				src.cigcount--
-		src.update_icon()
+		src.UpdateIcon()
 	else
 		return ..()
 	return
@@ -712,26 +761,26 @@
 			W.set_loc(get_turf(user))
 			user.show_text("You knock a cigar out of [src], flopping it to the ground.", "red")
 
-	src.update_icon()
+	src.UpdateIcon()
 
 /obj/item/cigarbox/gold
 	name = "deluxe golden cigar box"
-	desc = "The most prestigeous brand of Space Cigars, made in Space Cuba."
+	desc = "The most prestigious brand of Space Cigars, made in Space Cuba."
 	icon = 'icons/obj/items/cigarettes.dmi'
 	icon_state = "cigarbox"
-	uses_multiple_icon_states = 1
 	item_state = "cigarbox"
 	w_class = W_CLASS_TINY
 	throwforce = 2
 	cigcount = 5
 	cigtype = /obj/item/clothing/mask/cigarette/cigar/gold
 	package_style = "cigarbox"
-	flags = ONBELT | TABLEPASS | FPRINT
+	c_flags = ONBELT
 	stamina_damage = 3
 	stamina_cost = 3
 	rand_pos = 1
 
 /obj/item/cigarbox/gold/update_icon()
+
 	src.overlays = null
 	if (src.cigcount <= 0)
 		src.icon_state = "[src.package_style]"
@@ -741,7 +790,7 @@
 		src.overlays += "goldcigar[src.cigcount]"
 	return
 
-/obj/item/cigarbox/gold/attack_hand(mob/user as mob)
+/obj/item/cigarbox/gold/attack_hand(mob/user)
 	if (user.find_in_hand(src))//r_hand == src || user.l_hand == src)
 		if (src.cigcount == 0)
 			user.show_text("You're out of cigars! How you gonna get through the rest of the day?", "red")
@@ -751,7 +800,7 @@
 			user.put_in_hand_or_drop(W)
 			if (src.cigcount != -1)
 				src.cigcount--
-		src.update_icon()
+		src.UpdateIcon()
 	else
 		return ..()
 	return
@@ -773,14 +822,14 @@
 			W.set_loc(get_turf(user))
 			user.show_text("You knock a cigar out of [src], flopping it to the ground.", "red")
 
-	src.update_icon()
+	src.UpdateIcon()
 
 // breh
 
 /obj/item/cigpacket/cigarillo
 	max_cigs = 2
 	name = "Discount Dan's Last-Ditch Doinks"
-	desc = "These claim to be '100% all natoural* tobacco**'."
+	desc = "These claim to be '100% all natoural* tobacco**'."  // dunno if the typo was intentional but I'm keeping it - Mouse
 	cigtype = /obj/item/clothing/mask/cigarette/cigarillo/flavoured
 	icon_state = "cigarillopacket"
 	package_style = "cigarillopacket"
@@ -804,17 +853,16 @@
 	desc = "A little bit of heavy paper with some matches in it, and a little strip to light them on."
 	icon = 'icons/obj/items/cigarettes.dmi'
 	icon_state = "matchbook"
-	uses_multiple_icon_states = 1
 	w_class = W_CLASS_TINY
 	throwforce = 1
-	flags = FPRINT | TABLEPASS | SUPPRESSATTACK
+	flags = TABLEPASS | SUPPRESSATTACK
 	stamina_damage = 0
 	stamina_cost = 0
 	stamina_crit_chance = 1
 	burn_point = 220
 	burn_output = 900
-	burn_possible = 1
-	health = 20
+	burn_possible = TRUE
+	health = 4
 	var/match_amt = 6 // -1 for infinite
 	rand_pos = 1
 
@@ -826,7 +874,7 @@
 		else
 			. += "It's empty."
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if (user.find_in_hand(src))
 			if (src.match_amt == 0)
 				user.show_text("Looks like there's no matches left.", "red")
@@ -836,8 +884,8 @@
 				user.put_in_hand_or_drop(W)
 				if (src.match_amt != -1)
 					src.match_amt --
-					tooltip_rebuild = 1
-			src.update_icon()
+					tooltip_rebuild = TRUE
+			src.UpdateIcon()
 		else
 			return ..()
 		return
@@ -871,7 +919,7 @@
 	attack()
 		return
 
-	proc/update_icon()
+	update_icon()
 		if (src.match_amt == -1)
 			src.icon_state = "matchbook6"
 			return
@@ -880,23 +928,20 @@
 
 /obj/item/match
 	name = "match"
-	desc = "A little stick of wood with phosphorus on the tip, for lighting fires, or making you very frustrated and not lighting fires. Either or."
+	desc = "A little stick of wood with phosphorus on the tip, for lighting fires, or making you very frustrated and not lighting fires. Either/or."
 	icon = 'icons/obj/items/cigarettes.dmi'
 	icon_state = "match"
-	uses_multiple_icon_states = 1
 	w_class = W_CLASS_TINY
 	throwforce = 1
-	flags = FPRINT | TABLEPASS | SUPPRESSATTACK
+	flags = TABLEPASS | SUPPRESSATTACK
 	stamina_damage = 0
 	stamina_cost = 0
 	stamina_crit_chance = 1
 	burn_point = 220
 	burn_output = 600
-	burn_possible = 1
-	health = 10
+	burn_possible = TRUE
 
-	/// 0 = unlit, 1 = lit, -1 is burnt out/broken or otherwise unable to be lit
-	var/on = 0
+	var/on = MATCH_UNLIT
 
 	var/light_mob = 0
 	var/life_timer = 0
@@ -913,22 +958,23 @@
 		light.attach(src)
 		src.life_timer = rand(15,25)
 
+
 	pickup(mob/user)
 		..()
 		light.attach(user)
 
 	dropped(mob/user)
 		..()
-		if (isturf(src.loc) && src.on > 0)
-			user.visible_message("<span class='alert'><b>[user]</b> calmly drops and treads on the lit [src.name], putting it out instantly.</span>")
+		if (isturf(src.loc) && src.on == MATCH_LIT)
+			user.visible_message(SPAN_ALERT("<b>[user]</b> calmly drops and treads on the lit [src.name], putting it out instantly."))
 			src.put_out(user)
 			return
-		SPAWN_DBG(0)
+		SPAWN(0)
 			if (src.loc != user)
 				light.attach(src)
 
 	process()
-		if (src.on > 0)
+		if (src.on == MATCH_LIT)
 			if (src.life_timer >= 0)
 				life_timer--
 			var/location = src.loc
@@ -949,54 +995,57 @@
 			//sleep(1 SECOND)
 
 	proc/light(var/mob/user as mob)
-		src.on = 1
+		src.on = MATCH_LIT
 		src.firesource = FIRESOURCE_OPEN_FLAME
 		src.icon_state = "match-lit"
 
-		playsound(user, "sound/items/matchstick_light.ogg", 50, 1)
+		playsound(user, 'sound/items/matchstick_light.ogg', 50, TRUE)
 		light.enable()
 
 		processing_items |= src
 
 	proc/put_out(var/mob/user as mob, var/break_it = 0)
-		src.on = -1
+		src.on = MATCH_INERT
 		src.firesource = FALSE
 		src.life_timer = 0
 		if (break_it)
 			src.icon_state = "match-broken"
 			src.name = "broken match"
 			if (user)
-				playsound(user, "sound/impact_sounds/Flesh_Crush_1.ogg", 60, 1, 0, 2)
+				playsound(user, 'sound/impact_sounds/Flesh_Crush_1.ogg', 60, TRUE, 0, 2)
 		else
 			src.icon_state = "match-burnt"
 			src.name = "burnt-out match"
-			playsound(src, "sound/impact_sounds/burn_sizzle.ogg", 50, 1)
+			playsound(src, 'sound/impact_sounds/burn_sizzle.ogg', 50, TRUE)
 
 		light.disable()
 
 		processing_items.Remove(src)
 
 	temperature_expose(datum/gas_mixture/air, temperature, volume)
-		if (src.on == 0)
+		if (src.on == MATCH_UNLIT)
 			if (temperature > T0C+200)
-				src.visible_message("<span class='alert'>The [src] ignites!</span>")
+				src.visible_message(SPAN_ALERT("[src] ignites!"))
 				src.light()
 
 	ex_act(severity)
-		if (src.on == 0)
-			src.visible_message("<span class='alert'>The [src] ignites!</span>")
+		..()
+		if (QDELETED(src))
+			return
+		if (src.on == MATCH_UNLIT)
+			src.visible_message(SPAN_ALERT("[src] ignites!"))
 			src.light()
 
 	afterattack(atom/target, mob/user as mob)
-		if (src.on > 0)
+		if (src.on > MATCH_UNLIT)
 			if (!ismob(target) && target.reagents)
 				user.show_text("You heat [target].", "blue")
 				target.reagents.temperature_reagents(4000,10)
 				return
-		else if (src.on == -1)
+		else if (src.on == MATCH_INERT)
 			user.show_text("You [pick("fumble", "fuss", "mess", "faff")] around with [src] and try to get it to light, but it's no use.", "red")
 			return
-		else if (src.on == 0)
+		else if (src.on == MATCH_UNLIT)
 			if (istype(target, /obj/item/match) && target:on > 0)
 				user.visible_message("<b>[user]</b> lights [src] with the flame from [target].",\
 				"You light [src] with the flame from [target].")
@@ -1030,15 +1079,15 @@
 				src.light(user)
 				return
 			else if (istype(target, /obj/item/reagent_containers/food/snacks/)) // RE-copied from cigarettes
-				user.visible_message("<span class='notice'><b>[user]</b> crushes up [src] and sprinkles it onto [target], what the fuck?.</span>",\
-				"<span class='notice'>You crush up [src] and sprinkle it onto [target].</span>")
+				user.visible_message(SPAN_NOTICE("<b>[user]</b> crushes up [src] and sprinkles it onto [target], what the fuck?."),\
+				SPAN_NOTICE("You crush up [src] and sprinkle it onto [target]."))
 				if (src.reagents) // copied wirefix
 					src.reagents.trans_to(target, 5)
 				qdel (src)
 				return
 			else if (istype(target, /obj/item/reagent_containers/)) // crushing cigs into actual containers remains the same
-				user.visible_message("<span class='notice'><b>[user]</b> crushes up [src] into [target].</span>",\
-				"<span class='notice'>You crush up [src] into [target].</span>")
+				user.visible_message(SPAN_NOTICE("<b>[user]</b> crushes up [src] into [target]."),\
+				SPAN_NOTICE("You crush up [src] into [target]."))
 				if (src.reagents) // copied wirefix
 					src.reagents.trans_to(target, 5)
 				qdel (src)
@@ -1061,21 +1110,23 @@
 					playsound(user.loc, 'sound/items/matchstick_hit.ogg', 50, 1)
 					return
 
-	attack(mob/M as mob, mob/user as mob)
-		if (ishuman(M))
+	attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
+		if (ishuman(target))
+			if (is_special)
+				return ..()
 			if (src.on > 0)
-				var/mob/living/carbon/human/fella = M
+				var/mob/living/carbon/human/fella = target
 				if (fella.wear_mask && istype(fella.wear_mask, /obj/item/clothing/mask/cigarette))
 					var/obj/item/clothing/mask/cigarette/smoke = fella.wear_mask // aaaaaaa
-					smoke.light(user, "<span class='alert'><b>[user]</b> lights [fella]'s [smoke] with [src].</span>")
+					smoke.light(user, SPAN_ALERT("<b>[user]</b> lights [fella]'s [smoke] with [src]."))
 					fella.set_clothing_icon_dirty()
 					return
-				else if (fella.bleeding || (fella.butt_op_stage == 4 && user.zone_sel.selecting == "chest"))
+				else if (fella.bleeding || (fella.organHolder?.back_op_stage > BACK_SURGERY_CLOSED && user.zone_sel.selecting == "chest"))
 					src.cautery_surgery(fella, user, 5, src.on)
 					return ..()
 				else
-					user.visible_message("<span class='alert'><b>[user]</b> puts out [src] on [fella]!</span>",\
-					"<span class='alert'>You put out [src] on [fella]!</span>")
+					user.visible_message(SPAN_ALERT("<b>[user]</b> puts out [src] on [fella]!"),\
+					SPAN_ALERT("You put out [src] on [fella]!"))
 					fella.TakeDamage("All", 0, rand(1,5))
 					if (!fella.stat)
 						fella.emote("scream")
@@ -1086,7 +1137,7 @@
 
 	attack_self(mob/user)
 		if (user.find_in_hand(src))
-			if (src.on > 0)
+			if (src.on == MATCH_LIT)
 				user.visible_message("<b>[user]</b> [pick("licks [his_or_her(user)] finger and snuffs out [src].", "waves [src] around until it goes out.")]")
 				src.put_out(user)
 		else
@@ -1103,7 +1154,9 @@
 	inhand_image_icon = 'icons/mob/inhand/hand_general.dmi'
 	w_class = W_CLASS_TINY
 	throwforce = 4
-	flags = FPRINT | ONBELT | TABLEPASS | CONDUCT | ATTACK_SELF_DELAY
+	flags = TABLEPASS | CONDUCT | ATTACK_SELF_DELAY
+	c_flags = ONBELT
+	object_flags = NO_GHOSTCRITTER
 	click_delay = 0.7 SECONDS
 	stamina_damage = 5
 	stamina_cost = 5
@@ -1115,11 +1168,16 @@
 	col_g = 0.69
 	col_b = 0.27
 	var/infinite_fuel = 0 //1 is infinite fuel. Borgs use this apparently.
+	/// exposure temp when heating reagents
+	var/reagent_expose_temp = 4000
+	/// exposure temp of passive enviromental heating
+	var/enviromental_expose_temp = 700
 
 	New()
 		..()
-		src.create_reagents(20)
-		reagents.add_reagent("fuel", 20)
+		if (!infinite_fuel)
+			src.create_reagents(20)
+			reagents.add_reagent("fuel", 20)
 
 		src.setItemSpecial(/datum/item_special/flame)
 		return
@@ -1127,6 +1185,8 @@
 	attack_self(mob/user)
 		if (user.find_in_hand(src))
 			if (!src.on)
+				if (infinite_fuel)
+					src.activate(user)
 				if (!reagents)
 					return
 				if (!reagents.get_reagent_amount("fuel"))
@@ -1145,11 +1205,11 @@
 		src.firesource = FIRESOURCE_OPEN_FLAME
 		set_icon_state(src.icon_on)
 		src.item_state = "[item_state_base]on"
+		FLICK("[icon_state]_open", src)
 		light.enable()
 		processing_items |= src
 		if (user != null)
-			user.visible_message("<span class='alert'>Without even breaking stride, [user] flips open and lights [src] in one smooth movement.</span>")
-			playsound(user, 'sound/items/zippo_open.ogg', 30, 1)
+			playsound(user, 'sound/items/zippo_open.ogg', 30, TRUE)
 			user.update_inhands()
 
 	proc/deactivate(mob/user as mob)
@@ -1157,49 +1217,31 @@
 		src.firesource = FALSE
 		set_icon_state(src.icon_off)
 		src.item_state = "[item_state_base]"
+		FLICK("[icon_state]_close", src)
 		light.disable()
 		processing_items.Remove(src)
 		if (user != null)
-			user.visible_message("<span class='alert'>You hear a quiet click, as [user] shuts off [src] without even looking what they're doing. Wow.</span>")
-			playsound(user, 'sound/items/zippo_close.ogg', 30, 1)
+			playsound(user, 'sound/items/zippo_close.ogg', 30, TRUE)
 			user.update_inhands()
 
-	attack(mob/target, mob/user as mob)
+	attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
 		if (ishuman(target))
 			var/mob/living/carbon/human/fella = target
 
+			if (is_special)
+				return ..()
 			if (src.on)
-				if (user.zone_sel.selecting == "l_arm")
-					if (fella.limbs.l_arm_bleed > 1)
-						fella.TakeDamage("chest",0,10)
-						fella.limbs.l_arm_bleed = max(0,fella.limbs.l_arm_bleed-5)
-						if (fella.limbs.l_arm_bleed == 0)
-							user.visible_message("<span class='alert'>[user] completely cauterises [fella]'s left stump with [src]!</span>")
-						else
-							user.visible_message("<span class='alert'>[user] partially cauterises [fella]'s left stump with [src]!</span>")
-						return
-
-				if (user.zone_sel.selecting == "r_arm")
-					if (fella.limbs.r_arm_bleed > 1)
-						fella.TakeDamage("chest",0,10)
-						fella.limbs.r_arm_bleed = max(0,fella.limbs.r_arm_bleed-5)
-						if (fella.limbs.r_arm_bleed == 0)
-							user.visible_message("<span class='alert'>[user] completely cauterises [fella]'s right stump with [src]!</span>")
-						else
-							user.visible_message("<span class='alert'>[user] partially cauterises [fella]'s right stump with [src]!</span>")
-						return
-
 				if (fella.wear_mask && istype(fella.wear_mask, /obj/item/clothing/mask/cigarette))
 					var/obj/item/clothing/mask/cigarette/smoke = fella.wear_mask // aaaaaaa
-					smoke.light(user, "<span class='alert'><b>[user]</b> lights [fella]'s [smoke] with [src].</span>")
+					smoke.light(user, SPAN_ALERT("<b>[user]</b> lights [fella]'s [smoke] with [src]."))
 					fella.set_clothing_icon_dirty()
 					return
 
-			if (fella.bleeding || (fella.butt_op_stage == 4 && user.zone_sel.selecting == "chest"))
+			if (fella.bleeding || (fella.organHolder?.back_op_stage > BACK_SURGERY_CLOSED && user.zone_sel.selecting == "chest"))
 				if (src.cautery_surgery(target, user, 10, src.on))
 					return
 
-		user.visible_message("<span class='alert'><b>[user]</b> waves [src] around in front of [target]'s face! OoOo, are ya scared?![src.on ? "" : " No, probably not, since [src] is closed."]</span>")
+		user.visible_message(SPAN_ALERT("<b>[user]</b> waves [src] around in front of [target]'s face! OoOo, are ya scared?![src.on ? "" : " No, probably not, since [src] is closed."]"))
 		return
 
 	afterattack(atom/O, mob/user as mob)
@@ -1212,33 +1254,28 @@
 				return
 
 			if (reagents.get_reagent_amount("fuel") >= src.reagents.maximum_volume) //this could be == but just in case...
-				boutput(user, "<span class='alert'>[src] is full!</span>")
+				boutput(user, SPAN_ALERT("[src] is full!"))
 				return
 
 			if (O.reagents.total_volume)
-				O.reagents.trans_to(src, src.reagents.maximum_volume - src.reagents.get_reagent_amount("fuel"))
-				boutput(user, "<span class='notice'>[src] has been refueled.</span>")
-				playsound(src.loc, "sound/effects/zzzt.ogg", 50, 1, -6)
+				if (O.reagents.has_reagent("fuel"))
+					O.reagents.trans_to(src, src.reagents.maximum_volume - src.reagents.get_reagent_amount("fuel"), 1, 1, O.reagents.reagent_list.Find("fuel"))
+					boutput(user, SPAN_NOTICE("[src] has been refueled."))
+					playsound(src.loc, 'sound/effects/zzzt.ogg', 50, 1, -6)
+				else
+					user.show_text("[src] can only be refilled with fuel.", "red")
 			else
 				user.show_text("[O] is empty.", "red")
 			return
 
 		else if (!ismob(O) && src.on && O.reagents)
 			user.show_text("You heat [O].", "blue")
-			O.reagents.temperature_reagents(4000,10)
+			O.reagents.temperature_reagents(reagent_expose_temp,10)
 		else
 			return ..()
 
 	process()
 		if (src.on)
-			if (!reagents)
-				if (ismob(src.loc))
-					src.deactivate(src.loc)
-				else
-					src.deactivate(null)
-				return
-			if (!infinite_fuel && reagents.get_reagent_amount("fuel"))
-				reagents.remove_reagent("fuel", 0.2)
 			var/turf/location = src.loc
 			if (ismob(location))
 				var/mob/M = location
@@ -1246,17 +1283,27 @@
 					location = M.loc
 			var/turf/T = get_turf(src.loc)
 			if (T)
-				T.hotspot_expose(700,5)
-			if (!reagents.get_reagent_amount("fuel"))
+				T.hotspot_expose(enviromental_expose_temp,5)
+
+			if (infinite_fuel) //skip all fuel checks
+				return
+			if (!reagents)
 				if (ismob(src.loc))
 					src.deactivate(src.loc)
 				else
 					src.deactivate(null)
 				return
+			if (reagents.get_reagent_amount("fuel"))
+				reagents.remove_reagent("fuel", 0.2)
+			if (!reagents.get_reagent_amount("fuel"))
+				if (ismob(src.loc))
+					src.deactivate(src.loc)
+				else
+					src.deactivate(null)
 			//sleep(1 SECOND)
 
-	temperature_expose(datum/gas_mixture/air, exposed_temperature, exposed_volume)
-		if (exposed_temperature > 1000)
+	temperature_expose(datum/gas_mixture/air, exposed_temperature, exposed_volume, cannot_be_cooled = FALSE)
+		if (exposed_temperature > enviromental_expose_temp)
 			return ..()
 		return
 
@@ -1270,12 +1317,12 @@
 			user.suiciding = 0
 			return 0
 		if (!src.on) // don't need to do more than just show the message since the lighter is deleted in a moment anyway
-			user.visible_message("<span class='alert'>Without even breaking stride, [user] flips open and lights [src] in one smooth movement.</span>")
-		user.visible_message("<span class='alert'><b>[user] swallows the on [src.name]!</b></span>")
+			user.visible_message(SPAN_ALERT("Without even breaking stride, [user] flips open and lights [src] in one smooth movement."))
+		user.visible_message(SPAN_ALERT("<b>[user] swallows the on [src.name]!</b>"))
 		user.take_oxygen_deprivation(75)
 		user.TakeDamage("chest", 0, 100)
 		user.emote("scream")
-		SPAWN_DBG(50 SECONDS)
+		SPAWN(50 SECONDS)
 			if (user && !isdead(user))
 				user.suiciding = 0
 		qdel(src)
@@ -1290,7 +1337,7 @@
 /obj/item/device/light/zippo/brighter
 	name = "\improper Zippo brighter"
 	desc = "Are you feeling blinded by the light?"
-	brightness = 4.0
+	brightness = 4
 	col_r = 0.69
 	col_g = 0.27
 	col_b = 1
@@ -1308,8 +1355,10 @@
 /obj/item/device/light/zippo/borg
 	infinite_fuel = 1
 
+TYPEINFO(/obj/item/device/light/zippo/syndicate)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
 /obj/item/device/light/zippo/syndicate
-	desc = "A sleek black lighter with a red stripe."
+	desc = "A sleek black lighter with a red stripe and an incredibly hot flame."
 	icon_state = "syndie_zippo"
 	icon_off = "syndie_zippo"
 	icon_on = "syndie_zippoon"
@@ -1319,11 +1368,12 @@
 	col_r = 0.298
 	col_g = 0.658
 	col_b = 0
-	is_syndicate = 1
+	reagent_expose_temp = 20000
+	enviromental_expose_temp = 3500
 
 	New()
 		. = ..()
-		RegisterSignal(src, list(COMSIG_MOVABLE_SET_LOC, COMSIG_MOVABLE_MOVED), .proc/update_hotbox_flag)
+		RegisterSignals(src, list(COMSIG_MOVABLE_SET_LOC, COMSIG_MOVABLE_MOVED), PROC_REF(update_hotbox_flag))
 
 	proc/update_hotbox_flag(thing, previous_loc, direction)
 		if (!firesource) return

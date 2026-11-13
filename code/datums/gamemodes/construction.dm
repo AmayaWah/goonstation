@@ -1,6 +1,7 @@
 /datum/game_mode/construction
-	name = "Construction"
+	name = "Construction (For testing only. Don't select this!)"
 	config_tag = "construction"
+	regular = FALSE
 	crew_shortage_enabled = 0
 	var/list/enabled_jobs = list()
 	var/list/milestones = list()
@@ -38,7 +39,7 @@
 		var/mob/new_player/player = C.mob
 		if (!istype(player)) continue
 
-		if (player.ready)
+		if (player.ready_play)
 			player.close_spawn_windows()
 
 	var/datum/job/special/station_builder/C = new /datum/job/special/station_builder()
@@ -124,13 +125,13 @@
 				else
 					if (prob(5))
 						var/obj/artifact/lamp/L = new /obj/artifact/lamp(T)
-						SPAWN_DBG(1 SECOND)
+						SPAWN(1 SECOND)
 							L.ArtifactActivated()
 					if (prob(100 / (picks + 1)))
 						new /obj/item/mining_tool(T)
 						picks++
 					var/count = pick(prob(50); 0, 1, prob(25); 2, prob(10); 3)
-					for (var/i = 0, i < count; i++)
+					for (var/i = 0; i < count; i++)
 						var/item_class = pick(1, prob(50); 2, prob(25); 3, prob(10); 4)
 						switch (item_class)
 							if (1)
@@ -176,7 +177,7 @@
 	switch (grade)
 		if (1)
 			common_ores = list(/datum/ore/pharosium, /datum/ore/molitz, /datum/ore/mauxite)
-			rare_ores = list(/datum/ore/claretine, /datum/ore/bohrum)
+			rare_ores = list(/datum/ore/claretine, /datum/ore/bohrum, /datum/ore/batiline)
 
 		if (2)
 			common_ores = list(/datum/ore/claretine, /datum/ore/bohrum, /datum/ore/viscerite, /datum/ore/koshmarite)
@@ -226,7 +227,7 @@
 			minor_ores += mining_controls.get_ore_from_path(pick(common_ores))
 			minor_ores += mining_controls.get_ore_from_path(pick(rare_ores))
 	var/datum/generation_marker/initial = new
-	logTheThing("debug", null, null, "<B>Marquesas/Construction:</B> Generating asteroid at [showCoords(ax, ay, 1)].")
+	logTheThing(LOG_DEBUG, null, "<B>Marquesas/Construction:</B> Generating asteroid at [showCoords(ax, ay, 1)].")
 	initial.x = ax
 	initial.y = ay
 	initial.z = 1
@@ -238,23 +239,31 @@
 		tiles -= marker
 		var/turf/T = locate(marker.x, marker.y, marker.z)
 		processing -= T
-		var/turf/simulated/wall/asteroid/AST = new /turf/simulated/wall/asteroid(T)
+		var/turf/simulated/wall/auto/asteroid/AST = new /turf/simulated/wall/auto/asteroid(T)
 		processing += T
 		var/datum/ore/ORE = null
-		switch (rand(1,5))
-			if (3 to 4)
+		switch (rand(1, 5))
+			if (1 to 2)
 				ORE = major_ore
-			if (5)
+			if (3)
 				ORE = pick(minor_ores)
+			else
+				; // default
 		if (ORE)
 			AST.ore = ORE
 			AST.hardness += ORE.hardness_mod
 			AST.amount = rand(ORE.amount_per_tile_min,ORE.amount_per_tile_max)
-			var/image/ore_overlay = image('icons/turf/asteroid.dmi',ORE.name)
-			ore_overlay.transform = turn(ore_overlay.transform, pick(0,90,180,-90))
-			ore_overlay.pixel_x += rand(-6,6)
-			ore_overlay.pixel_y += rand(-6,6)
-			AST.overlays += ore_overlay
+			AST.ClearAllOverlays() // i know theres probably a better way to handle this
+			AST.UpdateIcon()
+			var/image/ore_overlay = image('icons/turf/walls/asteroid.dmi',"[ORE.name][AST.orenumber]")
+			ore_overlay.filters += filter(type="alpha", icon=icon('icons/turf/walls/asteroid.dmi',"mask-side_[AST.icon_state]"))
+			ore_overlay.layer = ASTEROID_TOP_OVERLAY_LAYER // so meson goggle nerds can still nerd away
+			AST.AddOverlays(ore_overlay, "ast_ore")
+
+#ifndef UNDERWATER_MAP // We don't want fullbright ore underwater.
+			AST.AddOverlays(new /image/fullbright, "fullbright")
+#endif
+
 			ORE.onGenerate(AST)
 			AST.mining_health = ORE.mining_health
 			AST.mining_max_health = ORE.mining_health
@@ -307,7 +316,7 @@
 				M.z = marker.z
 				M.probability = marker.probability * 0.75
 				tiles += M
-	for (var/turf/simulated/wall/asteroid/AST in processing)
+	for (var/turf/simulated/wall/auto/asteroid/AST in processing)
 		AST.space_overlays()
 
 
@@ -373,11 +382,15 @@
 	boutput(world, "<b><span color='red'>The construction is over. There will be some obscure scoring shit here.</span></b>")
 
 /datum/game_mode/construction/post_setup()
-	wagesystem.station_budget = 0
-	wagesystem.shipping_budget = 7000
-	wagesystem.research_budget = 0
+	wagesystem.budgets[BUDGET_CAT_PAYROLL] = 0
+	wagesystem.budgets[BUDGET_CAT_DEPT_SUPPLY] = 7000
+	wagesystem.budgets[BUDGET_CAT_DEPT_MEDICAL] = 0
+	wagesystem.budgets[BUDGET_CAT_UNION] = 0
 	random_events.events_enabled = 0
 	random_events.minor_events_enabled = 0
+#ifdef MAP_OVERRIDE_MENHIR
+	random_events.menhir_events_enabled = 0
+#endif
 	for (var/tp in childrentypesof(/datum/supply_control))
 		var/datum/supply_control/S = new tp()
 		if (S.current_stock < S.maximum_stock && S.replenishment_time)

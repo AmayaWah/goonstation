@@ -1,11 +1,12 @@
+TYPEINFO(/obj/item/gun/energy/artifact)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
 /obj/item/gun/energy/artifact
 	// an energy gun, it shoots things as you might expect
 	name = "artifact energy gun"
 	icon = 'icons/obj/artifacts/artifactsitem.dmi'
 	icon_state = "laser"
-	force = 5.0
+	force = 5
 	artifact = 1
-	is_syndicate = 1
 	mat_changename = 0
 	mat_changedesc = 0
 
@@ -17,7 +18,7 @@
 		src.artifact = AS
 		// The other three are normal for energy gun setup, so proceed as usual i guess
 
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 			var/datum/artifact/A = src.artifact
 
@@ -37,13 +38,13 @@
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/A = src.artifact
-		if (istext(A.examine_hint))
-			. += A.examine_hint
+		if (istext(A.examine_hint) && (usr && (usr.traitHolder?.hasTrait("training_scientist")) || isobserver(usr) || isobserver(usr)))
+			. += SPAN_ARTHINT(A.examine_hint)
 
 	UpdateName()
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
 
@@ -57,7 +58,7 @@
 		src.Artifact_emp_act()
 		..()
 
-	shoot(var/target,var/start,var/mob/user)
+	shoot(turf/target, turf/start, mob/user, POX, POY, is_dual_wield, atom/called_target = null)
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/energygun/A = src.artifact
@@ -77,10 +78,10 @@
 
 		if(prob(20))
 			src.ArtifactDevelopFault(100)
-			user.visible_message("<span class='alert'>[src] emits \a [pick("ominous", "portentous", "sinister")] sound.</span>")
+			user.visible_message(SPAN_ALERT("[src] emits \a [pick("ominous", "portentous", "sinister")] sound."))
 		else if(prob(20))
 			src.ArtifactTakeDamage(20)
-			user.visible_message("<span class='alert'>[src] emits a terrible cracking noise.</span>")
+			user.visible_message(SPAN_ALERT("[src] emits a terrible cracking noise."))
 
 		return
 
@@ -99,6 +100,7 @@
 /datum/artifact/energygun
 	associated_object = /obj/item/gun/energy/artifact
 	type_name = "Energy Gun"
+	type_size = ARTIFACT_SIZE_MEDIUM
 	rarity_weight = 350
 	validtypes = list("ancient","eldritch","precursor")
 	react_elec = list(0.02,0,5)
@@ -117,6 +119,7 @@
 			// artifact tweak buff, people said guns were useless compared to their cells
 			// the next 3 lines override the randomize(). Doing this instead of editing randomize to avoid changing prismatic spray.
 			bullet.power = rand(15,35) // randomise puts it between 2 and 50, let's make it less variable
+			bullet.generate_inverse_stats()
 			bullet.dissipation_rate = rand(1,bullet.power)
 			bullet.cost = rand(35,100) // randomise puts it at 50-150
 			bullets += bullet

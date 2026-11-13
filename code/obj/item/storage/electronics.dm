@@ -24,18 +24,29 @@
 		/obj/item/disk/data/cartridge/syndicate,
 		/obj/item/disk/data/cartridge/ai,
 		/obj/item/disk/data/cartridge/cyborg,
-		/obj/item/disk/data/cartridge/ringtone_syndie)
+		/obj/item/disk/data/cartridge/ringtone_syndie,
+		/obj/item/disk/data/cartridge/hos)
 
 		var/list/spawnable = typesof(/obj/item/disk/data/cartridge)
 		spawnable -= invalid_carts
 		for (var/i = 1, i <= 3, i++)
 			var/cartpath = pick(spawnable)
-			new cartpath(src)
+			src.storage.add_contents(new cartpath(src))
 
 /obj/item/storage/box/diskbox
 	name = "diskette box"
 	icon_state = "disk_kit"
 	spawn_contents = list(/obj/item/disk/data/floppy = 7)
+
+/obj/item/storage/box/diskbox/programs
+	spawn_contents = list(/obj/item/disk/data/floppy/computer3boot,
+	/obj/item/disk/data/floppy/read_only/terminal_os,
+	/obj/item/disk/data/floppy/read_only/network_progs,
+	/obj/item/disk/data/floppy/read_only/medical_progs,
+	/obj/item/disk/data/floppy/read_only/ext_research_progs,
+	/obj/item/disk/data/floppy/read_only/communications,
+	/obj/item/disk/data/floppy/read_only/engine_prog)
+
 
 /obj/item/storage/box/tapebox
 	name = "\improper ThinkTape box"
@@ -138,5 +149,15 @@
 				/obj/item/device/light/glowstick/yellow,
 				/obj/item/device/light/glowstick/pink,
 				/obj/item/device/light/glowstick/purple)
-				new glowstick(src)
+				src.storage.add_contents(new glowstick(src))
 
+/obj/item/storage/box/elecrepair
+	name = "electrical repair kit"
+	icon_state = "electrical_nt"
+	desc = "A specially designed box that can hold power cells, cabling and other tools that aid in electrical repairs."
+	can_hold = list(/obj/item/cell)
+	spawn_contents = list(/obj/item/cable_coil/blue = 3,
+	/obj/item/cell/cerenkite = 2,
+	/obj/item/device/t_scanner,
+	/obj/item/pinpointer/category/apcs)
+	check_wclass = STORAGE_CHECK_W_CLASS_INCLUDE

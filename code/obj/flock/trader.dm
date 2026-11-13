@@ -20,7 +20,12 @@
 ////////////////
 /turf/simulated/shuttle/wall/flock
 	icon = 'icons/misc/featherzone.dmi'
+#ifdef UNDERWATER_MAP
+	color = OCEAN_COLOR
+	icon_state = "shuttle-wall-oshan"
+#else
 	icon_state = "shuttle-wall"
+#endif
 
 /////////////////
 // SHUTTLE FLOORS
@@ -29,16 +34,14 @@
 	icon = 'icons/misc/featherzone.dmi'
 	icon_state = "shuttle-floor"
 
+TYPEINFO(/turf/simulated/floor/shuttlebay/flock)
+	mat_appearances_to_ignore = list("steel","gnesis")
 /turf/simulated/floor/shuttlebay/flock
 	name = "shuttle bay plating"
-	mat_appearances_to_ignore = list("steel","gnesis")
 	icon = 'icons/misc/featherzone.dmi'
 	icon_state = "shuttle-bay"
 	allows_vehicles = 1
-
-/turf/simulated/floor/shuttlebay/flock/New()
-	..()
-	setMaterial(getMaterial("gnesis"))
+	default_material = "gnesis"
 
 /turf/simulated/floor/shuttlebay/flock/middle
 	icon = 'icons/misc/featherzone.dmi'
@@ -59,42 +62,47 @@
 // FLOCK FAKEOBJECT PARENT
 ///////////////////////////
 
-/obj/decal/fakeobjects/flock
+/obj/fakeobject/flock
 	icon = 'icons/misc/featherzone.dmi'
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
+	provides_grip = TRUE
 
 /////////
 // WING
 /////////
-/obj/decal/fakeobjects/flock/wing
+/obj/fakeobject/flock/wing
 	icon = 'icons/misc/featherzone-96x96.dmi'
 	icon_state = "wing"
 	name = "sparking blade"
 	desc = "It looks very fragile from here. And dangerously live. Best not get too close."
 
-/obj/decal/fakeobjects/flock/wing/broken
+/obj/fakeobject/flock/wing/broken
 	icon_state = "wing-broken"
 	name = "jagged blade"
 	desc = "Looks incredibly sharp. It'll probably tear your hand to shreds if you try touching it."
 
-/obj/decal/fakeobjects/flock/wing/destroyed
+/obj/fakeobject/flock/wing/destroyed
 	icon_state = "wing-destroyed"
 	name = "razor-sharp shrapnel"
 	desc = "Looks incredibly sharp. It'll probably tear your hand to shreds if you try touching it."
+	density = 0 // The icon's offset will effectively create an invisible wall otherwise.
 
 ///////////
 // ANTENNA
 ///////////
-/obj/decal/fakeobjects/flock/antenna
+/obj/fakeobject/flock/antenna
 	icon_state = "antenna"
 	name = "fibrous pole"
 	desc = "Huh. Weird."
 
-/obj/decal/fakeobjects/flock/antenna/end
+/obj/fakeobject/flock/antenna/not_dense
+	density = FALSE
+
+/obj/fakeobject/flock/antenna/end
 	icon_state = "antenna-end"
 
-/obj/decal/fakeobjects/flock/antenna/broken
+/obj/fakeobject/flock/antenna/broken
 	icon_state = "antenna-broken-1"
 	desc = "Huh. Looks busted."
 	random_icon_states = list("antenna-broken-1", "antenna-broken-2")
@@ -102,7 +110,9 @@
 ///////////////////
 // TELEPORT MARKER
 ///////////////////
-/obj/decal/fakeobjects/flock/telepad
+/obj/fakeobject/flock/telepad
+	plane = PLANE_NOSHADOW_BELOW
+	layer = FLOOR_EQUIP_LAYER1
 	icon_state = "telemarker"
 	name = "glowing marker"
 	desc = "I got nothin'."
@@ -121,17 +131,21 @@
 	var/range = 4
 
 	New()
-		START_TRACKING_CAT(TR_CAT_TELEPORT_JAMMERS)
+		APPLY_ATOM_PROPERTY(src, PROP_ATOM_TELEPORT_JAMMER, src, src.range)
 		..()
 
 	disposing()
-		STOP_TRACKING_CAT(TR_CAT_TELEPORT_JAMMERS)
+		REMOVE_ATOM_PROPERTY(src, PROP_ATOM_TELEPORT_JAMMER, src)
 		..()
 
 /obj/item/device/flockblocker/attack_self(mob/user as mob)
 	active = !active
+	if (!src.active)
+		REMOVE_ATOM_PROPERTY(src, PROP_ATOM_TELEPORT_JAMMER, src)
+	else
+		APPLY_ATOM_PROPERTY(src, PROP_ATOM_TELEPORT_JAMMER, src, src.range)
 	icon_state = "[base_state]-[active ? "on" : "off"]"
-	boutput(user, "<span class='notice'>You fumble with [src] until you [active ? "turn it on. Space suddenly feels more thick." : "turn it off. You feel strangely exposed."]</span>")
+	boutput(user, SPAN_NOTICE("You fumble with [src] until you [active ? "turn it on. Space suddenly feels more thick." : "turn it off. You feel strangely exposed."]"))
 
 
 ////////////////
@@ -139,13 +153,16 @@
 ////////////////
 // Contains mini-quest logic so I'm putting it here and not just in the trader.dm file
 ////////////////
+TYPEINFO(/obj/npc/trader/flock)
+	start_speech_modifiers = list(SPEECH_MODIFIER_FLOCK_GRADIENT)
+
 /obj/npc/trader/flock
 	icon = 'icons/misc/featherzone.dmi'
 	icon_state = "totem"
 	picture = "flocktrader.png"
 	name = "Flocktrader Sa.le"
 	desc = "Some sort of weird holographic image on some fancy totem thing. Seems like it wants to trade."
-	trader_area = "/area/flock_trader"
+	theme = "flock"
 	var/is_greeting = 0
 	var/grad_col_1 = "#3cb5a3"
 	var/grad_col_2 = "#124e43"
@@ -173,6 +190,7 @@
 
 	src.goods_sell += new/datum/commodity/flock/tech/table(src)
 	src.goods_sell += new/datum/commodity/flock/tech/chair(src)
+	src.goods_sell += new/datum/commodity/flock/tech/stamp(src)
 	src.goods_sell += new/datum/commodity/flock/tech/gnesis(src)
 	src.goods_sell += new/datum/commodity/flock/tech/gnesisglass(src)
 	src.goods_sell += new/datum/commodity/flock/tech/flocknugget(src)
@@ -181,33 +199,32 @@
 	src.goods_sell += new/datum/commodity/flock/tech/flockburger(src)
 	src.goods_sell += new/datum/commodity/flock/tech/flockblocker(src)
 	src.goods_sell += new/datum/commodity/flock/tech/incapacitor(src)
+	src.goods_sell += new/datum/commodity/flock/tech/ai_kit_flock(src)
 
 
-	greeting= {"[src.name] clicks from your headset. \"[gradientText(grad_col_1, grad_col_2, "Greetings, spacefarer. There are many permutations of the Signal, and we are an iteration less inclined to senseless destruction. Do you wish to engage in trade?")]\""}
+	greeting= "Greetings, spacefarer. There are many permutations of the Signal, and we are an iteration less inclined to senseless destruction. Do you wish to engage in trade?"
 
-	portrait_setup = "<img src='[resource("images/traders/[src.picture]")]'><HR><B>[src.name]</B><HR>"
+	sell_dialogue = "We always seek raw materials for repairs and maintenance. We value some materials more than others, though."
 
-	sell_dialogue = {"[src.name] makes a short burst of pink noise. \"[gradientText(grad_col_1, grad_col_2, "We always seek raw materials for repairs and maintenance. We value some materials more than others, though.")]\""}
+	buy_dialogue = "Our technology is rare in this region of space. We must warn you that some items may be beyond your capacity to operate. You lack the knowledge and frequencies required. We are prohibited from providing them."
 
-	buy_dialogue = {"[src.name] whirrs and rattles. \"[gradientText(grad_col_1, grad_col_2, "Our technology is rare in this region of space. We must warn you that some items may be beyond your capacity to operate. You lack the knowledge and frequencies required. We are prohibited from providing them.")]\""}
+	successful_sale_dialogue = list("*holographic head nods silently in approval.",
+		"You are a valued trading partner. If you have further resources to provide, we can provide further compensation.")
 
-	successful_sale_dialogue = list("[src.name]'s holographic head nods silently in approval.",
-		"[src.name] warbles in a rising glissando. \"[gradientText(grad_col_1, grad_col_2, "You are a valued trading partner. If you have further resources to provide, we can provide further compensation.")]\"")
+	failed_sale_dialogue = list("The intent is appreciated but we cannot process this at this time.",
+		"We have no use for this. Maybe others will?",
+		"We apologise but we have other priorities to attend to at the moment. Please take your, hrm, merchandise elsewhere.",
+		"Are your cognitive systems functioning correctly? We can't assess proper function for your type.")
 
-	failed_sale_dialogue = list("[src.name] beeps in a descending portamento. \"[gradientText(grad_col_1, grad_col_2, "The intent is appreciated but we cannot process this at this time.")]\"",
-		"[src.name] chirps rapidly. \"[gradientText(grad_col_1, grad_col_2, "We have no use for this. Maybe others will?")]\"",
-		"[src.name] squawks. \"[gradientText(grad_col_1, grad_col_2, "We apologise but we have other priorities to attend to at the moment. Please take your, hrm, merchandise elsewhere.")]\"",
-		"[src.name] beeps questioningly. \"[gradientText(grad_col_1, grad_col_2, "Are your cognitive systems functioning correctly? We can't assess proper function for your type.")]\"")
+	successful_purchase_dialogue = list("We hope you can find good use for our preconfigured matter.",
+		"We appreciate your custom, even if it pains us to part with our own mass.")
 
-	successful_purchase_dialogue = list("[src.name] sings a short melody. \"[gradientText(grad_col_1, grad_col_2, "We hope you can find good use for our preconfigured matter.")]\"",
-		"[src.name] bloops. \"[gradientText(grad_col_1, grad_col_2, "We appreciate your custom, even if it pains us to part with our own mass.")]\"")
+	failed_purchase_dialogue = list("We need credits to purchase materials from others. We cannot afford to operate a charity.",
+		"We sympathize with your dearth of resources, but good will does not help us fix our vessel.")
 
-	failed_purchase_dialogue = list("[src.name] makes a descending bleep. \"[gradientText(grad_col_1, grad_col_2, "We need credits to purchase materials from others. We cannot afford to operate a charity.")]\"",
-		"[src.name] slowly shakes its head. \"[gradientText(grad_col_1, grad_col_2, "We sympathize with your dearth of resources, but good will does not help us fix our vessel.")]\"")
+	pickupdialogue = "A pleasure conducting business with you."
 
-	pickupdialogue = "[src.name] caws contentedly. \"[gradientText(grad_col_1, grad_col_2, "A pleasure conducting business with you.")]\""
-
-	pickupdialoguefailure = "[src.name] emits a burst of static. \"[gradientText(grad_col_1, grad_col_2, "You have nothing to collect. We do not have time to instruct you in basic trading protocol. Please find someone else to teach you.")]\""
+	pickupdialoguefailure = "You have nothing to collect. We do not have time to instruct you in basic trading protocol. Please find someone else to teach you."
 
 	// String 1 - player is being dumb and hiked a price up when buying, trader accepted it because they're a dick
 	// String 2 - same as above only the trader is being nice about it
@@ -215,21 +232,21 @@
 	// String 4 - same as string 3 except with a nice trader
 	// String 5 - player haggled further than the trader is willing to tolerate
 	// String 6 - trader has had enough of your bullshit and is leaving
-	errormsgs = list("\"[gradientText(grad_col_1, grad_col_2, "Your generosity knows no bounds! How delightful.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "You are offering greater than the asking price. We appreciate this, but we ought to inform you of this first.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "Truly luminous, you are, to provide such a discount! We'll be taking this.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "In the interests of fair trade, we wish to inform you we were prepared to pay more for your items. Do not starve yourself for us.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "Unreasonable. Unreasonable! Your assessment of value is questionable. Calculate with more care.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "You are far too incompetent to be worth the effort. Leave our ship at once, you are taking up time we can spend with other clients.")]\"")
+	errormsgs = list("Your generosity knows no bounds! How delightful.",
+		"You are offering greater than the asking price. We appreciate this, but we ought to inform you of this first.",
+		"Truly luminous, you are, to provide such a discount! We'll be taking this.",
+		"In the interests of fair trade, we wish to inform you we were prepared to pay more for your items. Do not starve yourself for us.",
+		"Unreasonable. Unreasonable! Your assessment of value is questionable. Calculate with more care.",
+		"You are far too incompetent to be worth the effort. Leave our ship at once, you are taking up time we can spend with other clients.")
 
-	hagglemsgs = list("\"[gradientText(grad_col_1, grad_col_2, "Is this price more feasible?")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "We know exactly what the value is. Does this motivate?")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "We are re-evaluating your worth as trading partner. Will this do?")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "We have more agreeable clients we could be working with. We hope this suffices.")]\"",
-		"\"[gradientText(grad_col_1, grad_col_2, "We will not agree to any other price. Take it or leave it.")]\"")
+	hagglemsgs = list("Is this price more feasible?",
+		"We know exactly what the value is. Does this motivate?",
+		"We are re-evaluating your worth as trading partner. Will this do?",
+		"We have more agreeable clients we could be working with. We hope this suffices.",
+		"We will not agree to any other price. Take it or leave it.")
 
 	// set up environmental things
-	SPAWN_DBG(10 SECONDS)
+	SPAWN(10 SECONDS)
 		for(var/obj/flock_screen/F in orange(5, src))
 			screen = F
 		screen?.trader = src
@@ -243,24 +260,24 @@
 	flockdronegibs(location)
 
 /obj/npc/trader/flock/activatesecurity()
-	src.visible_message("<B>[src.name]</B> screeches, \"[gradientText(grad_col_1, grad_col_2, "We will not tolerate this!")]\"")
+	src.trader_say("We will not tolerate this!")
 	for(var/turf/T in get_area_turfs( get_area(src) ))
 		for(var/mob/living/L in T)
-			if(isflock(L))
+			if(isflockmob(L))
 				continue // don't zap our buddies
 			arcFlash(src, L, 2000000)
 
 
 /obj/npc/trader/flock/anger()
 	for(var/mob/M in AIviewers(src))
-		boutput(M, "<span class='alert'><B>[src.name]</B> becomes angry!</span>")
+		boutput(M, SPAN_ALERT("<B>[src.name]</B> becomes angry!"))
 	src.desc = "Looks absolutely furious, as far as you can read the expressions of holographic alien heads."
 	src.icon_state = "totem-angry"
-	SPAWN_DBG(rand(1000,3000))
+	SPAWN(rand(1000,3000))
 		src.icon_state = "totem"
 		src.visible_message("<b>[src.name] calms down.</b>")
 		src.desc = "[src] looks a bit annoyed."
-		src.temp = "[src.name] has calmed down.<BR><A href='?src=\ref[src];mainmenu=1'>OK</A>"
+		src.temp = "[src.name] has calmed down.<BR><A href='byond://?src=\ref[src];mainmenu=1'>OK</A>"
 		src.angry = 0
 
 /obj/npc/trader/flock/death()
@@ -277,7 +294,7 @@
 	is_greeting = 1
 	if(trader in approved_traders)
 		if(screen)
-			SPAWN_DBG(0)
+			SPAWN(0)
 				screen.show_icon("yes")
 			screen.say(pick_string("flockmind.txt", "flocktrader_friendly_greeting"))
 		sleep(1 SECOND)
@@ -285,7 +302,7 @@
 			door.open()
 	else
 		if(screen)
-			SPAWN_DBG(0)
+			SPAWN(0)
 				screen.show_icon("no")
 			screen.say(pick_string("flockmind.txt", "flocktrader_cautious_greeting"))
 	is_greeting = 0
@@ -303,14 +320,14 @@
 		var/existing_trader = (donator in approved_traders)
 		approved_traders |= donator
 		approved_at *= increase_rate
-		SPAWN_DBG(0)
+		SPAWN(0)
 			if(screen)
 				if(existing_trader)
-					SPAWN_DBG(0)
+					SPAWN(0)
 						screen.show_icon("present")
 					screen.say(pick_string("flockmind.txt", "flocktrader_target_met_existing_trader"))
 				else
-					SPAWN_DBG(0)
+					SPAWN(0)
 						screen.show_icon("yes")
 					screen.say(pick_string("flockmind.txt", "flocktrader_target_met_new_trader"))
 			sleep(1 SECOND)
@@ -323,13 +340,18 @@
 ///////////////////////
 // FLOCKTRADER SCREEN
 ///////////////////////
+TYPEINFO(/obj/flock_screen)
+	start_speech_modifiers = list(SPEECH_MODIFIER_FLOCK_GRADIENT)
+	start_speech_outputs = list(SPEECH_OUTPUT_SPOKEN_LOCAL)
+
 /obj/flock_screen
 	icon = 'icons/misc/featherzone-64x32.dmi'
 	icon_state = "screen-off"
 	name = "blank surface"
 	desc = "Huh."
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
+	speech_verb_say = "beeps"
 	var/obj/npc/trader/flock/trader
 
 /obj/flock_screen/proc/show_icon(var/state)
@@ -341,11 +363,6 @@
 	sleep(4 SECONDS)
 	icon_state = "screen-off"
 
-/obj/flock_screen/proc/say(var/message)
-	if(!message)
-		return
-	src.audible_message("<span class='game say'><span class='name'>[src]</span> beeps, \"[gradientText("#3cb5a3", "#124e43", message)]\"")
-
 ////////////////////////////////
 // FLOCKTRADER DONATE RECLAIMER
 ////////////////////////////////
@@ -355,43 +372,34 @@
 	name = "open receptacle"
 	desc = "Probably don't stick your hand in it. Looks like some kinda plasma blender."
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	var/obj/npc/trader/flock/trader
 
-/obj/flock_reclaimer/attack_hand(mob/user as mob)
+/obj/flock_reclaimer/attack_hand(mob/user)
 	if(!user)
 		return
 	if(!trader)
-		boutput(user, "<span class='alert'>Nothing happens.</span>")
+		boutput(user, SPAN_ALERT("Nothing happens."))
 		return
-	src.visible_message("<span class='notice'>[user.name] waves their hand over [src.name].</span>")
+	src.visible_message(SPAN_NOTICE("[user.name] waves their hand over [src.name]."))
 	trader.greet(user)
 
-/obj/flock_reclaimer/attackby(obj/item/W as obj, mob/user as mob)
+/obj/flock_reclaimer/attackby(obj/item/W, mob/user)
 	if(!W || !user || W.cant_drop)
 		return
 	if(istype(W, /obj/item/grab))
-		boutput(user, "<span class='alert'>You can't fit them into this, sadly.</span>")
+		var/obj/item/grab/G = W
+		boutput(user, SPAN_ALERT("You can't fit [him_or_her(G.affecting)] into this, sadly."))
 		return
-	src.visible_message("<span class='alert'>[user.name] puts [W] in [src].</span>")
+	src.visible_message(SPAN_ALERT("[user.name] puts [W] in [src]."))
 	var/gained_resources = (W.health * 2) + 5
 	user.remove_item(W)
 	qdel(W)
 	sleep(1 SECOND)
-	playsound(src.loc, "sound/impact_sounds/Energy_Hit_2.ogg", 70, 1)
+	playsound(src.loc, 'sound/impact_sounds/Energy_Hit_2.ogg', 70, 1)
 	sleep(0.5 SECONDS)
 	if(trader)
 		trader.donate(user, gained_resources)
-
-///////////////////////////
-// FLOCK WINGRILLE SPAWNER
-///////////////////////////
-/obj/wingrille_spawn/flock
-	icon = 'icons/misc/featherzone.dmi'
-	icon_state = "wingrille"
-	win_path = "/obj/window/feather"
-	grille_path = "/obj/grille/flock"
-	full_win = 1
 
 ////////////////////
 // FLOCKTRADER DOOR
@@ -418,7 +426,7 @@
 // make sure to put more specific types first, else they'll be skipped over in the processing
 /var/list/flocklore = list(
 	/obj/item/book_kinginyellow = "flocklore_king_in_yellow",
-	/obj/item/storage/bible = "flocklore_bible",
+	/obj/item/bible = "flocklore_bible",
 	/obj/item/space_thing = "flocklore_space_thing",
 	/obj/item/reagent_containers/food/snacks/ingredient/egg/bee/buddy = "flocklore_buddy_egg",
 	/obj/item/reagent_containers/food/snacks/ingredient/egg/bee/moon = "flocklore_moon_egg",
@@ -444,7 +452,7 @@
 )
 // items that, instead of being flung aside, will gently be moved elsewhere
 /var/list/respected_items = list(
-	/obj/item/storage/bible,
+	/obj/item/bible,
 	/obj/item/space_thing,
 	/obj/item/reagent_containers/food/snacks/ingredient/egg/bee,
 	/obj/item/feather,

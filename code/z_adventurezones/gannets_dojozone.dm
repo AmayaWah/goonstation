@@ -68,7 +68,7 @@ Contents:
 * icons/turf/dojo.dmi <-- floor icons
 * icons/obj/dojo.dmi <-- object icons
 * radiotelescope.dm
-* browserassets/images/radioTelescope
+* browserassets/src/images/radioTelescope
 * icons/effects/224x160.dmi
 * weapons.dmi
 * hand_weapons.dmi
@@ -101,21 +101,22 @@ Contents:
 	sound_loop = 'sound/ambience/dojo/dojoambi.ogg'
 	sound_loop_vol = 50
 
+/area/dojo/New()
+	. = ..()
+	START_TRACKING_CAT(TR_CAT_AREA_PROCESS)
 
-	New()
-		..()
-		SPAWN_DBG(1 SECOND)
-			process()
+/area/dojo/disposing()
+	STOP_TRACKING_CAT(TR_CAT_AREA_PROCESS)
+	. = ..()
 
-	proc/process()
-		while(current_state < GAME_STATE_FINISHED)
-			sleep(rand(125,225))
-			if (current_state == GAME_STATE_PLAYING)
-				if(!played_fx_2 && prob(10))
-					sound_fx_2 = pick('sound/ambience/nature/Biodome_Birds1.ogg','sound/ambience/nature/Biodome_Birds2.ogg','sound/ambience/nature/Biodome_Bugs.ogg')
-					for(var/mob/M in src)
-						if (M.client)
-							M.client.playAmbience(src, AMBIENCE_FX_2, 30)
+/area/dojo/area_process()
+	if(prob(15)) // originally 12-22s
+		src.sound_fx_2 = pick('sound/ambience/nature/Biodome_Birds1.ogg',\
+			'sound/ambience/nature/Biodome_Birds2.ogg',\
+			'sound/ambience/nature/Biodome_Bugs.ogg')
+
+		for(var/mob/living/carbon/human/H in src)
+			H.client?.playAmbience(src, AMBIENCE_FX_2, 30)
 
 // Mobs
 
@@ -127,7 +128,7 @@ Contents:
 
 	New()
 		..()
-		SPAWN_DBG(0)
+		SPAWN(0)
 			JobEquipSpawned("Samurai")
 			return
 
@@ -135,13 +136,14 @@ Contents:
 	name = "Samurai"
 	limit = 0
 	wages = 0
-//	slot_belt = /obj/item/katana_sheath
-	slot_jump = /obj/item/clothing/under/gimmick/hakama/random
-	slot_head = /obj/item/clothing/head/bandana/random_color
-	slot_foot = /obj/item/clothing/shoes/sandal
-	slot_rhan = /obj/item/katana/self_destructing
-	slot_lhan = /obj/item/dojohammer
-	slot_back = null
+//	slot_belt = /obj/item/swords_sheaths/katana
+	slot_jump = list(/obj/item/clothing/under/gimmick/hakama/random)
+	slot_head = list(/obj/item/clothing/head/bandana/random_color)
+	slot_foot = list(/obj/item/clothing/shoes/sandal/magic/wizard)
+	slot_rhan = null
+	slot_lhan = list(/obj/item/dojohammer)
+	slot_belt = list(/obj/item/swords_sheaths/katana/reverse)
+	slot_back = list(/obj/item/storage/backpack/randoseru)
 	slot_card = null
 	slot_ears = null
 
@@ -165,7 +167,7 @@ Contents:
 	stamina_cost = 45
 	stamina_crit_chance = 10
 
-/obj/decal/fakeobjects/unfinished_katana
+/obj/fakeobject/unfinished_katana
 
 /obj/item/unfinished_katana
 	name = "unfinished blade"
@@ -190,73 +192,46 @@ Contents:
 	New()
 		..()
 
-	attackby(obj/item/H as obj, mob/user as mob)
+	attackby(obj/item/H, mob/user)
 		if (istype(H, /obj/item/dojohammer))
 			var/obj/table/anvil/A = locate() in get_turf(src)
 			if(A)
 				actions.start(new/datum/action/bar/icon/forge_katana(user, H, src, A), user)
 
+	proc/can_forge()
+		. = src.temperature >= (500 + T0C)
+
 	// black body radiation color temperature
 	proc/set_real_color()
-		var/input = temperature / 100
-
-		var/red
-		if (input <= 66)
-			red = 255
-		else
-			red = input - 60
-			red = 329.698727446 * (red ** -0.1332047592)
-		red = clamp(red, 0, 255)
-
-		var/green
-		if (input <= 66)
-			green = max(0.001, input)
-			green = 99.4708025861 * log(green) - 161.1195681661
-		else
-			green = input - 60
-			green = 288.1221695283 * (green ** -0.0755148492)
-		green = clamp(green, 0, 255)
-
-		var/blue
-		if (input >= 66)
-			blue = 255
-		else
-			if (input <= 19)
-				blue = 0
-			else
-				blue = input - 10
-				blue = 138.5177312231 * log(blue) - 305.0447927307
-		blue = clamp(blue, 0, 255)
-
-		color = rgb(red, green, blue)
+		src.color = blackbody_color(src.temperature)
 
 	afterattack(var/atom/target, var/mob/user)
 		var/obj/item/reagent_containers/RC = target
 		var/can_quench = istype(RC) && RC.is_open_container()  && RC.reagents.total_volume >= 120
-		if( can_quench && (src.strikes > (src.strikes_to_complete * 0.25)) && (src.temperature > T0C+1000))
+		if(!QDELETED(src) && can_quench && (src.strikes > (src.strikes_to_complete * 0.25)) && (src.temperature > T0C+1000))
 			if( src.strikes > src.strikes_to_complete )
 				if(RC.reagents.has_reagent("reversium",1))
-					new /obj/item/katana/reverse(get_turf(target))
+					new /obj/item/swords/katana/reverse(get_turf(target))
 				else
-					new /obj/item/katana/crafted(get_turf(target))
+					new /obj/item/swords/katana/crafted(get_turf(target))
 				RC.reagents.smoke_start(RC.reagents.total_volume)
+				user.u_equip(src)
 				qdel(src)
 			else
 				RC.reagents.smoke_start(RC.reagents.total_volume)
-				var/obj/item/fragile_sword/sword = new(get_turf(target))
+				var/obj/item/swords/fragile_sword/sword = new(get_turf(target))
 
 				// scale sword based on % complete
 				sword.maximum_force = max(30 * (src.strikes / src.strikes_to_complete),10)
 				sword.force = sword.maximum_force
 				sword.throwforce = 10
+				user.u_equip(src)
 				qdel(src)
-
 
 
 /datum/action/bar/icon/forge_katana
 	duration = 1.5 SECONDS
 	interrupt_flags = INTERRUPT_MOVE | INTERRUPT_STUNNED | INTERRUPT_ATTACKED | INTERRUPT_ACTION
-	id = "forge_katana"
 
 	var/mob/living/user
 	var/obj/item/dojohammer/H
@@ -278,7 +253,7 @@ Contents:
 
 	onUpdate()
 		..()
-		if(get_dist(user, target) > 1 || get_dist(A, target) > 0 || user == null || target == null)
+		if(BOUNDS_DIST(user, target) > 0 || GET_DIST(A, target) > 0 || user == null || target == null)
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		target.temperature -= 5
@@ -287,9 +262,10 @@ Contents:
 		if(outline)
 			outline:color = target.color
 		border.UpdateOverlays(icon_image, "action_icon")
-		if(target.temperature < (500 + T0C) )
+		if(!target.can_forge())
 			interrupt(INTERRUPT_ALWAYS)
 			boutput(user,"[target] has cooled to a point where it can no longer be forged by [H].")
+			src.resumable = FALSE
 			return
 
 		if(target.strikes > target.strikes_to_complete)
@@ -298,9 +274,10 @@ Contents:
 
 	onStart()
 		..()
-		if(target.temperature < (500 + T0C) )
+		if(!target.can_forge())
 			interrupt(INTERRUPT_ALWAYS)
 			boutput(user,"[target] is too cold to be forged.")
+			src.resumable = FALSE
 			return
 		target.set_real_color()
 		if(!outline && length(icon_image.filters))
@@ -308,44 +285,42 @@ Contents:
 			outline:color = target.color
 		icon_image.color =  target.color
 		border.UpdateOverlays(icon_image, "action_icon")
-		if(get_dist(user, target) > 1 || user == null || target == null)
+		if(BOUNDS_DIST(user, target) > 0 || user == null || target == null)
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		src.loopStart()
 		return
 
 	onEnd()
-		if(get_dist(user, target) > 1 || user == null || target == null || !user.find_in_hand(H))
+		if(BOUNDS_DIST(user, target) > 0 || user == null || target == null || !user.find_in_hand(H))
 			..()
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		playsound(target,'sound/impact_sounds/Metal_Clang_3.ogg', 60, pitch=1-(rand()*0.2))
-		target.strikes++
 
-		looped++
+		if(target.can_forge())
+			target.strikes++
+			looped++
+
 		src.onRestart()
 
 
 // -Decoration
 
-/obj/decal/fakeobjects/arch
+/obj/fakeobject/arch
 	name = "torii"
 	desc = "A great gate marking sacred grounds."
 	icon = 'icons/obj/large/160x128.dmi'
 	icon_state = "arch"
 
-/obj/sakura_tree
+/obj/tree/sakura_tree
 	name = "cherry tree"
 	desc = "A pretty japanese cherry tree. You don't find a lot of these away from earth."
 	icon = 'icons/effects/96x96.dmi'
 	icon_state = "sakuratree"
-	anchored = 1
-	layer = EFFECTS_LAYER_UNDER_3
-	pixel_x = -20
-	density = 1
-	opacity = 0
+	season_affected = FALSE
 
-/obj/sakura_tree/tree_2
+/obj/tree/sakura_tree/tree_2
 	icon_state = "sakuratree2"
 
 /*
@@ -356,34 +331,34 @@ Contents:
 * It's a pretty horrible mistranslation, so I'm 100% keeping it.
 */
 
-/obj/decal/fakeobjects/kanji_1
+/obj/fakeobject/kanji_1
 	plane = PLANE_FLOOR
 	name = "symbol"
 	icon = 'icons/effects/96x96.dmi'
 	icon_state = "kanji_1"
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
-/obj/decal/fakeobjects/kanji_2
+/obj/fakeobject/kanji_2
 	plane = PLANE_FLOOR
 	name = "symbol"
 	icon = 'icons/effects/96x96.dmi'
 	icon_state = "kanji_2"
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
-/obj/decal/fakeobjects/dojohouse
+/obj/fakeobject/dojohouse
 	icon = 'icons/effects/224x160.dmi'
 	icon_state = "dojohouse"
 
-/obj/decal/fakeobjects/lotus
+/obj/fakeobject/lotus
 	name = "lotus"
 	desc = "A pretty water garden flower."
 	icon = 'icons/obj/dojo.dmi'
 	icon_state = "lotus_1"
 
-/obj/decal/fakeobjects/birdhouse // i literally cannot find the correct name for this.
+/obj/fakeobject/birdhouse // i literally cannot find the correct name for this.
 	name = "small shrine"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	opacity = 0
 	layer = OBJ_LAYER
 	icon = 'icons/obj/dojo.dmi'
@@ -403,10 +378,10 @@ Contents:
 		light.attach(src)
 		light.enable()
 
-/obj/decal/fakeobjects/plantpot
+/obj/fakeobject/plantpot
 	name = "plant pot"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	opacity = 0
 	layer = EFFECTS_LAYER_UNDER_3
 	icon = 'icons/obj/dojo.dmi'
@@ -416,13 +391,13 @@ Contents:
 	name = "toro"
 	desc = "A stone lamp. It doesn't appear to be lit."
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	opacity = 0
 	layer = 5
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "lamp1"
 
-/obj/decal/fakeobjects/bridge_rail
+/obj/fakeobject/bridge_rail
 	name = "railing"
 	icon = 'icons/obj/dojo_rail.dmi'
 	layer = EFFECTS_LAYER_BASE
@@ -438,14 +413,14 @@ Contents:
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "furnace"
 	density = 1
-	anchored = 2
-	var/obj/effects/tatara/effect
+	anchored = ANCHORED_ALWAYS
+	var/obj/effects/little_sparks/tatara/effect
 
 	var/temperature = T0C + 870
 
 	New()
 		..()
-		effect = new /obj/effects/tatara(src)
+		effect = new(src)
 		vis_contents += effect
 
 	attackby(obj/item/W, mob/user as mob)
@@ -461,19 +436,19 @@ Contents:
 			K = pick(src.contents)
 			if(istype(K))
 				K.set_real_color()
-			usr.put_in_hand_or_eject(K)
+			user.put_in_hand_or_eject(K)
 
 	process(mult)
 		for(var/obj/O in contents)
 			if(istype(O,/obj/item/unfinished_katana))
 				var/obj/item/unfinished_katana/K = O
 				K.temperature = lerp(K.temperature, src.temperature, 0.3)
-				if(K.temperature >= src.temperature * 0.90)
+				if(K.temperature >= src.temperature * 0.9)
 					effect.spark_up()
 			if(istype(O,/obj/item/rods))
 				var/obj/item/rods/R = O
 				if(prob(1*mult))
-					if((R.material?.material_flags & MATERIAL_METAL) && R.material.getProperty("density") >= 30 && R.material.getProperty("hard") >= 15)
+					if((R.material?.getMaterialFlags() & MATERIAL_METAL) && R.material.getProperty(MATERIAL::PROPERTY::DENSITY) >= 3 && R.material.getProperty(MATERIAL::PROPERTY::HARDNESS) >= 2)
 						if (R.amount > 1)
 							R.change_stack_amount(-1)
 						else
@@ -489,15 +464,74 @@ Contents:
 	icon = 'icons/obj/dojo.dmi'
 	icon_state = "anvil"
 	density = 1
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 	parts_type = null
 	hulk_immune = TRUE
+	HELP_MESSAGE_OVERRIDE("") // No, you can't wrench it
 
-	attackby(obj/item/W as obj, mob/user as mob, params)
-		if (istype(W) && src.place_on(W, user, params))
+	attackby(obj/item/W, mob/user, params)
+		if (istype(W))
+			src.place_on(W, user, params)
+
+/obj/table/anvil/gimmick
+	anchored = UNANCHORED
+	HELP_MESSAGE_OVERRIDE({"You can use a <b>welding tool</b> on <span class='harm'>harm</span> intent to slice it into sheets."})
+	attackby(obj/item/W, mob/user, params)
+		if (isweldingtool(W) && user.a_intent == "harm")
+			SETUP_GENERIC_ACTIONBAR(user, src, 10 SECONDS, PROC_REF(deconstruct), null, W.icon, W.icon_state, "[user] finishes slicing \the [src] into sheets.",
+			INTERRUPT_ACT | INTERRUPT_ACTION | INTERRUPT_MOVE | INTERRUPT_ATTACKED | INTERRUPT_STUNNED)
 			return
-		else
-			return ..()
+		..()
+
+	deconstruct()
+		var/obj/item/sheet/sheet_stack = new /obj/item/sheet(src.loc)
+		sheet_stack.amount = 10
+		if (src.material)
+			sheet_stack.setMaterial(src.material)
+		sheet_stack.update_appearance()
+		qdel(src)
+
+// hehe angilvib but anyone under it
+/obj/table/anvil/gimmick/gib_any
+	New()
+		..()
+		src.anchored = ANCHORED_ALWAYS
+		src.density = 0
+		src.pixel_y = 224 // 32 * 7 default anvilgib
+		src.alpha = 0
+		src.layer += 4
+		src.plane = PLANE_NOSHADOW_ABOVE
+
+		animate(src, alpha = 255, time = 0.9 SECONDS, flags = ANIMATION_PARALLEL)
+		animate(src, pixel_y = 0, easing = EASE_IN | QUAD_EASING, time = 1.84 SECONDS, flags = ANIMATION_PARALLEL)
+
+		var/obj/effects/shadow = new /obj/effects{
+			icon='icons/effects/96x96.dmi';
+			icon_state="circle";
+			mouse_opacity = 0;
+			color = "#000000";
+			alpha = 0;
+			transform = matrix(0.8, 0, 0, 0, 0.5, 0);
+			pixel_x = -32;
+			pixel_y = -32 - 7;
+			anchored = ANCHORED_ALWAYS;
+			plane = PLANE_NOSHADOW_BELOW
+		}(get_turf(src))
+		animate(shadow, alpha = 150, transform = matrix(0.25, 0, 0, 0, 0.17, 0), easing = EASE_IN | QUAD_EASING, time = 1.75 SECONDS, flags = ANIMATION_PARALLEL)
+
+		playsound(get_turf(src), 'sound/effects/cartoon_fall.ogg', 50, FALSE)
+		SPAWN (1.8 SECONDS)
+			// yoinked from lethal supplydrops
+			for(var/mob/M in view(7, src.loc))
+				shake_camera(M, 1 SECOND, 4)
+				if(M.loc == src.loc && isliving(M) && !isintangible(M))
+					if(isliving(M))
+						logTheThing(LOG_COMBAT, M, "was gibbed by [src] ([src.type]) at [log_loc(M)].")
+					M.gib(1, 1)
+			src.anchored = initial(src.anchored)
+			src.plane = initial(src.plane)
+			src.density = initial(src.density)
+			qdel(shadow)
 
 /obj/dojo_bellows
 	name = "bellows"
@@ -505,42 +539,33 @@ Contents:
 	icon = 'icons/obj/dojo.dmi'
 	icon_state = "bellows"
 	density = 1
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
 	attack_hand(mob/user)
 		. = ..()
 		if(ON_COOLDOWN(src,"bellows", 2 SECOND))
 			boutput(user,"The bellows are still working...")
 		else
-			playsound(src, "sound/impact_sounds/Stone_Scrape_1.ogg", 40)
+			playsound(src, 'sound/impact_sounds/Stone_Scrape_1.ogg', 40)
 			for(var/obj/machinery/dojo_tatara/T in orange(2))
-				src.visible_message("\The [src] breathe life into \the [T] causing it errupt in flames.", blind_message="A loud roar of air causes a fire to errupt.")
+				src.visible_message("\The [src] breathe life into \the [T] causing it erupt in flames.", blind_message="A loud roar of air causes a fire to erupt.")
 				T.temperature = clamp(T.temperature + 150, initial(T.temperature)-150, T0C+2500)
 
-/obj/decal/fakeobjects/swordrack
+/obj/fakeobject/swordrack
 	name = "katana rack"
 	desc = "A wooden rack of swords."
 	icon = 'icons/obj/dojo.dmi'
 	icon_state = "sword_wall_rack"
 	density = 1
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
-/obj/decal/fakeobjects/rake
+/obj/fakeobject/rake
 	name = "zen garden rake"
 	desc = "A little wooden tool for raking sand in to patterns."
 	icon = 'icons/obj/dojo.dmi'
 	icon_state = "rake"
 
-/obj/decal/fakeobjects/sealed_door
-	name = "laboratory door"
-	desc = "It appears to be sealed."
-	icon = 'icons/obj/dojo.dmi'
-	icon_state = "sealed_door"
-	density = 1
-	anchored = 2
-	opacity = 1
-
-/obj/decal/fakeobjects/katana_fake
+/obj/fakeobject/katana_fake
 	name = "katana sheath"
 	desc = "It can clean a bloodied katana, and also allows for easier storage of a katana"
 	icon = 'icons/obj/items/weapons.dmi'
@@ -552,7 +577,7 @@ Contents:
 	name = "paper lantern"
 	desc = "A brightly lit paper lantern."
 	density = 0
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 	opacity = 0
 
 	var/datum/light/point/light
@@ -677,28 +702,33 @@ Contents:
 // Turfs
 
 // -Walls
-
+TYPEINFO(/turf/unsimulated/wall/auto/sengoku)
+TYPEINFO_NEW(/turf/unsimulated/wall/auto/sengoku)
+	. = ..()
+	connects_to = typecacheof(/turf/unsimulated/wall/auto/sengoku)
 /turf/unsimulated/wall/auto/sengoku
-	icon = 'icons/turf/walls_sengoku.dmi'
-	connects_to = list(/turf/unsimulated/wall/auto/sengoku)
+	icon = 'icons/turf/walls/sengoku.dmi'
 
+
+TYPEINFO(/turf/unsimulated/wall/auto/paper)
+TYPEINFO_NEW(/turf/unsimulated/wall/auto/paper)
+	. = ..()
+	connects_to = typecacheof(/turf/unsimulated/wall/auto/paper)
 /turf/unsimulated/wall/auto/paper
-	icon = 'icons/turf/walls_paper.dmi'
-	connects_to = list(/turf/unsimulated/wall/auto/paper)
+	icon = 'icons/turf/walls/paper.dmi'
+
 
 /turf/unsimulated/wall/sengoku_tall
-	icon = 'icons/turf/walls_sengoku.dmi'
+	icon = 'icons/turf/walls/sengoku.dmi'
 	icon_state= "tall"
 	opacity = 0
 
 /turf/simulated/wall/false_wall/sengoku
 	desc = "There seems to be markings on one of the edges, huh."
-	icon = 'icons/turf/walls_paper.dmi'
+	icon = 'icons/turf/walls/paper.dmi'
 	icon_state = "2"
 	can_be_auto = 0
 
-	find_icon_state()
-		return
 
 // -Floors
 
@@ -786,6 +816,7 @@ Contents:
 	name = "zen garden"
 	icon = 'icons/turf/dojo.dmi'
 	icon_state = "sand"
+	can_dig = TRUE
 
 	horizontal
 		icon_state = "sand_horiz"

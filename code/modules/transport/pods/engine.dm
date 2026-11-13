@@ -2,36 +2,75 @@
 //enables travel to other Z-Spaces.
 /obj/item/shipcomponent/engine
 	name = "Warp-1 Engine"
-	desc = "A standard engine"
+	desc = "A standard engine."
 	var/powergenerated = 200 //how much power for components the engine generates
 	var/currentgen = 200 //handles engine power debuffs
 	var/warprecharge = 300 //Interval it takes for warp to be ready again
 	//delay between dropping wormhole and being able to enter it
 	var/portaldelay = 3 SECONDS
 	var/status = "Normal"
-	var/speedmod = 2 // how fast should the vehicle be, lower is faster
+	// multiplicative speed mod this engine has on its pod's speed
+	var/engine_speed = 1
 	var/wormholeQueued = 0 //so users cant open a million inputs and bypass all cooldowns
 	var/warp_autopilot = 0		//prevents us from mistakenly moving when trying to warp. Checked in pod movement_controller
 	power_used = 0
 	system = "Engine"
 	icon_state = "engine-1"
+	var/image/engine_icon = null
+	var/startup_time = 0.8 SECONDS // Currently visual only
+
+	get_install_slot()
+		return POD_PART_ENGINE
+
+	get_desc()
+		return "Rated for [src.powergenerated] units of continuous power output."
 
 	activate()
 		..()
+		if(ship.fueltank?.air_contents.toxins <= 0)
+			boutput(usr, "[ship.ship_message("No plasma located inside of the fuel tank!")]")
+			src.deactivate()
+			return
+
+		var/usage = 10/3000 // minimum usage @ 0.0333 moles consumed per 100W per tick
+		var/datum/gas_mixture/consumed = ship.fueltank?.remove_air(usage)
+		var/toxins = consumed?.toxins
+		if(isnull(toxins))
+			toxins = 0
+		if(consumed)
+			ship.fueltank?.assume_air(consumed)
+			if(abs(usage - toxins)/usage > 0.10) // 5% difference from expectation
+				boutput(usr, "[ship.ship_message("Insufficient plasma located inside of the fuel tank!")]")
+				src.deactivate()
+				return
+
 		ship.powercapacity = src.powergenerated
+		src.ship.speedmod *= src.engine_speed
+
+		// ----- Startup sequence -----
+		if(src.engine_icon) // Vehicles might not have an engine overlay
+			src.engine_icon.icon_state = "[src.icon_state]-start"
+			ship.UpdateOverlays(src.engine_icon, "engine")
+			spawn(src.startup_time) src.startup_finished()
 		return
 	////Warp requires recharge time
 	ready()
-		SPAWN_DBG(warprecharge)
+		SPAWN(warprecharge)
 			ready = 1
 			wormholeQueued = 0
 
 	deactivate()
+		if (src.active)
+			src.ship.speedmod /= src.engine_speed
 		..()
 		ship.powercapacity = 0
-		for(var/obj/item/shipcomponent/S in ship.components)
-			if(S.active)
-				S.deactivate()
+		for(var/part_slot in ship.installed_parts)
+			var/obj/item/shipcomponent/part = ship.get_part(part_slot)
+			if(part?.active)
+				part.deactivate()
+		if(src.engine_icon)
+			src.engine_icon.icon_state = "[src.icon_state]-off"
+			ship.UpdateOverlays(src.engine_icon, "engine")
 		return
 
 	opencomputer(mob/user as mob)
@@ -55,11 +94,40 @@
 		onclose(user, "ship_engine")
 		return
 
+	ship_install()
+		src.engine_icon = null
+		if(istype(src.ship, /obj/machinery/vehicle/pod_smooth))
+			src.engine_icon = image('icons/effects/64x64.dmi', "[src.icon_state]-off", layer = ABOVE_OBJ_LAYER)
+		else if(istype(src.ship, /obj/machinery/vehicle/miniputt) || istype(src.ship, /obj/machinery/vehicle/escape_pod) || istype(src.ship, /obj/machinery/vehicle/pod_wars_dingy))
+			src.engine_icon = image('icons/obj/ship.dmi', "[src.icon_state]-off", layer = ABOVE_OBJ_LAYER)
+
+		if(src.engine_icon)
+			src.engine_icon.appearance_flags = KEEP_APART | RESET_COLOR | RESET_ALPHA
+			src.copy_appearance_to_image(src.engine_icon)
+			ship.AddOverlays(engine_icon, "engine")
+		..()
+
+	ship_uninstall()
+		ship.ClearSpecificOverlays("engine")
+		src.engine_icon = null // In case the next vehicle does not have an engine overlay
+		ship.flying = FALSE
+		..()
+
+	proc/startup_finished()
+		if(!src.ship || !src.engine_icon)
+			return
+		if(src.active)
+			src.engine_icon.icon_state = "[src.icon_state]-on"
+		else
+			src.engine_icon.icon_state = "[src.icon_state]-off"
+		src.ship.UpdateOverlays(src.engine_icon, "engine")
+
+
 /obj/item/shipcomponent/engine/proc/Wormhole()
 	if (wormholeQueued || warprecharge == -1)
 		return
 	//check for sensors, maybe communications too?
-	var/obj/item/shipcomponent/sensor/S = ship.sensors
+	var/obj/item/shipcomponent/sensor/S = ship.get_part(POD_PART_SENSORS)
 	if (istype(S))
 		if (!S.active)
 			boutput(usr, "[ship.ship_message("Sensors inactive! Unable to calculate warp trajectory!")]")
@@ -73,34 +141,40 @@
 		var/datum/movement_controller/pod/MCP = ship.movement_controller
 		if (MCP.velocity_x != 0 || MCP.velocity_y != 0)
 			boutput(usr, "[ship.ship_message("Ship must have ZERO relative velocity to calculate warp destination!")]")
-			playsound(src, "sound/machines/buzz-sigh.ogg", 50)
+			playsound(src, 'sound/machines/buzz-sigh.ogg', 50)
 			// ready = 0
 			return
 	else if (istype(ship.movement_controller, /datum/movement_controller/tank))
 		var/datum/movement_controller/tank/MCT = ship.movement_controller
 		if (MCT.input_x != 0 || MCT.input_y != 0)
 			boutput(usr, "[ship.ship_message("Ship must have ZERO relative velocity (be stopped) to calculate warp destination!")]")
-			playsound(src, "sound/machines/buzz-sigh.ogg", 50)
-
+			playsound(src, 'sound/machines/buzz-sigh.ogg', 50)
 
 	var/list/beacons = list()
+	var/list/count = list() // associative list of number of times names in beacons are used (if possibly occuring more than once)
 	//This is bad and dumb. I should turn the by_type[/obj/warp_beacon] list into a manager datum, but this is already taking too long. -kyle
 	//I realize the possiblity of a bug where if you sit here ready to warp when it's about to change and then warp, but whatever
 #if defined(MAP_OVERRIDE_POD_WARS)
 	var/pilot_team = get_pod_wars_team_num(ship?.pilot)
 	for(var/obj/warp_beacon/pod_wars/W in by_type[/obj/warp_beacon])
 		if (W.current_owner == pilot_team)
-			beacons += W
+			beacons[W.name] = W
 #else
 	for(var/obj/warp_beacon/W in by_type[/obj/warp_beacon])
-		beacons += W
+		if(W.encrypted)
+			var/obj/item/shipcomponent/communications/comms_part = ship.get_part(POD_PART_COMMS)
+			if(QDELETED(comms_part) || !(W.encrypted in comms_part.access_type))
+				continue
+		count[W.name]++
+		beacons["[W.name][count[W.name] == 1 ? null : " #[count[W.name]]"]"] = W
 #endif
 	for (var/obj/machinery/tripod/T in machine_registry[MACHINES_MISC])
 		if (istype(T.bulb, /obj/item/tripod_bulb/beacon))
-			beacons += T
+			count[T.name]++
+			beacons["[T.name][count[T.name] == 1 ? null : " #[count[T.name]]"]"] = T
 	wormholeQueued = 1
-	var/obj/target = input(usr, "Please select a location to warp to.", "Warp Computer") as null|obj in beacons
-	if(!target)
+	var/obj/target = beacons[tgui_input_list(usr, "Please select a location to warp to.", "Warp Computer", sortList(beacons, /proc/cmp_text_asc))]
+	if(!target || usr.loc != src.ship) // we need to make sure the user is still in the vehicle or selected a target
 		wormholeQueued = 0
 		return
 
@@ -116,7 +190,7 @@
 		return
 
 	//starting warp
-	playsound(src, "sound/machines/boost.ogg", 75)
+	playsound(src, 'sound/machines/boost.ogg', 75)
 
 	//the chargeup/runway bit
 	var/warp_dir = ship.dir
@@ -129,15 +203,19 @@
 	for(var/i=0, i<max_steps, i++)
 		step(P, warp_dir)
 
-	var/dist = get_dist(src, P)
+	var/dist = GET_DIST(src, P)
 	portal_px_offset(P, warp_dir, dist)
 	animate(P, transform = matrix(1, MATRIX_SCALE), pixel_x = 0, pixel_y = 0, time = 30, easing = ELASTIC_EASING )
 
 	sleep(portaldelay)
 	P.target = target
+	if (istype(target, /obj/warp_beacon))
+		var/obj/warp_beacon/WB = target
+		if (WB.encrypted) // special beacon, ignore restricted Z checks and similar
+			P.bypass_tele_block = TRUE
 	ready = 0
 	warp_autopilot = 0
-	logTheThing("station", usr, null, "creates a wormhole (pod portal) (<b>Destination:</b> [target]) at [log_loc(usr)].")
+	logTheThing(LOG_STATION, usr, "creates a wormhole (pod portal) (<b>Destination:</b> [target]) at [log_loc(usr)].")
 	ready()
 
 
@@ -145,7 +223,7 @@
 	switch(direction)
 		if(NORTH)
 			A.pixel_y = -dist*32
-		if(SOUTH) 
+		if(SOUTH)
 			A.pixel_y = dist*32
 		if(EAST)
 			A.pixel_x = -dist*32
@@ -163,31 +241,41 @@
 		if(SOUTHWEST)
 			A.pixel_y = dist*32
 			A.pixel_x = dist*32
+
+/obj/item/shipcomponent/engine/scout
+	name = "Scout Engine"
+	desc = "An engine optimized for speed and warp travel over power. Warning: Power is insufficient to operate most non-factory installed pod components."
+	powergenerated = 50
+	currentgen = 50
+	warprecharge = 5 SECONDS
+	engine_speed = 1.3
+	icon_state = "engine-0"
+
 /obj/item/shipcomponent/engine/helios
 	name = "Helios Mark-II Engine"
-	desc = "A really fast engine"
+	desc = "A really fast engine."
 	powergenerated = 300 //how much power for components the engine generates
 	currentgen = 300 //handles engine power debuffs
 	warprecharge = 150 //Interval it takes for warp to be ready again
-	speedmod = 1
+	engine_speed = 1.15
 	icon_state = "engine-2"
 
 /obj/item/shipcomponent/engine/hermes
 	name = "Hermes 3.0 Engine"
-	desc = "An incredibly powerful but slow engine"
+	desc = "An incredibly powerful but slow engine."
 	powergenerated = 500
 	currentgen = 500
 	warprecharge = 300
-	speedmod = 3
+	engine_speed = 0.7
 	icon_state = "engine-3"
 
 /obj/item/shipcomponent/engine/zero
 	name = "Warp-0 Engine"
-	desc = "An old prototype engine"
+	desc = "An old prototype engine."
 	powergenerated = 190
 	currentgen = 190
 	warprecharge = -1 //This disables the ability to create wormholes completely.
-	speedmod = 2
+	engine_speed = 1.1
 	icon_state = "engine-4"
 
 /obj/item/shipcomponent/engine/escape
@@ -195,3 +283,4 @@
 	desc = "This engine can probably make a warp jump. Once."
 	warprecharge = 20 MINUTES
 	portaldelay = 0 SECONDS
+	icon_state = "engine-esc"

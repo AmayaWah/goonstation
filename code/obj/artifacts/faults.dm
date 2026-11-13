@@ -9,18 +9,20 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 	// these are booby traps, self-defense mechanisms, hardware faults or just other nasty shit that can fuck you up when you
 	// use the artifact for anything
 	var/type_name = "bad artifact code"
+	var/add_message = "does a thing. This message shouldn't be displayed!" //message displayed when the fault is added by an agitator
 	var/trigger_prob = 0
 	var/tmp/datum/artifact/holder = null
 	var/halt_loop = 0
 
 	proc/deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
-		if (!O || !user)
+		if (!O || !user || user.nodamage)
 			return 1
 		return 0
 
 /datum/artifact_fault/burn
 	// sets the victim on fire
 	type_name = "Fire"
+	add_message = "seems to burst into flames, before immediately extinguishing itself."
 	trigger_prob = 8
 	var/burn_amount = 40
 
@@ -28,25 +30,27 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 		if (..())
 			return
 		var/turf/T = get_turf(user)
-		T.visible_message("<span class='alert'>The [cosmeticSource.name] suddenly emits a burst of flame!</span>")
-		fireflash(T, 0)
-		playsound(T, "sound/effects/bamf.ogg", 100, 1)
+		T.visible_message(SPAN_ALERT("The [cosmeticSource.name] suddenly emits a burst of flame!"))
+		fireflash(T, 0, chemfire = CHEM_FIRE_RED)
+		playsound(T, 'sound/effects/bamf.ogg', 100, TRUE)
 
 /datum/artifact_fault/irradiate
 	// irradiates the victim
 	type_name = "Radiation"
+	add_message = "seems to briefly emit a green light." //unsure if this wording is correct
 	trigger_prob = 8
-	var/rads_amount = 20
+	var/rads_amount = 2 SIEVERTS
 
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
 		if (..())
 			return
-		boutput(user, "<span class='alert'>You feel strange.</span>")
-		user.changeStatus("radiation", (src.rads_amount) SECONDS, 3)
+		boutput(user, SPAN_ALERT("You feel strange."))
+		user.take_radiation_dose(src.rads_amount)
 
 /datum/artifact_fault/shutdown
 	// deactivates the artifact
 	type_name = "Deactivation"
+	add_message = "'s glow seems to dim slightly."
 	trigger_prob = 10
 	halt_loop = 1
 
@@ -54,26 +58,33 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 		if (..())
 			return
 		var/turf/T = get_turf(O)
-		T.visible_message("<span class='alert'>The [O.name] suddenly deactivates!</span>")
-		playsound(T, "sound/effects/shielddown2.ogg", 100, 1)
+		T.visible_message(SPAN_ALERT("The [O.name] suddenly deactivates!"))
+		playsound(T, 'sound/effects/shielddown2.ogg', 100, TRUE)
 		O.ArtifactDeactivated()
 
 /datum/artifact_fault/warp
 	// warps the user off somewhere random
 	type_name = "Teleportation"
+	add_message = "vanishes for a moment, then immediately reappears."
 	trigger_prob = 15
 
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
 		if (..())
 			return
 		var/turf/T = get_turf(O)
-		T.visible_message("<span class='alert'>The [cosmeticSource.name] warps [user.name] away!</span>")
-		playsound(T, "sound/effects/mag_warp.ogg", 100, 1)
-		user.set_loc(pick(wormholeturfs))
+		T.visible_message(SPAN_ALERT("The [cosmeticSource.name] warps [user.name] away!"))
+		playsound(T, 'sound/effects/mag_warp.ogg', 100, TRUE)
+		var/turf/destination = pick(random_floor_turfs)
+		logTheThing(LOG_COMBAT, user, "was teleported by artifact fault from [log_loc(user)] to [log_loc(destination)]")
+		if (ishuman(user))
+			var/mob/living/carbon/human/H = user
+			H.shoes?.magnetic_teleport_check(H, get_turf(H), destination)
+		user.set_loc(destination)
 
 /datum/artifact_fault/grow
 	// embiggens the artifact
 	type_name = "Growth"
+	add_message = "seems to grow slightly larger."
 	trigger_prob = 10
 
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
@@ -85,17 +96,18 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 		if(I.w_class > W_CLASS_GIGANTIC)
 			return
 
-		boutput(user, "<span class='alert'>The [I.name] grows in size!</span>")
+		boutput(user, SPAN_ALERT("The [I.name] grows in size!"))
 		I.transform = matrix(I.transform, 1.1, 1.1, MATRIX_SCALE)
 		I.w_class++
 		if (I.loc == user && I.w_class > W_CLASS_BULKY)
-			boutput(user, "<span class='alert'>You can't maintain a grip due to its excessive girth!</span>")
+			boutput(user, SPAN_ALERT("You can't maintain a grip due to its excessive girth!"))
 			user.u_equip(I)
 			I.set_loc(user.loc)
 
 /datum/artifact_fault/shrink
 	// ensmallens the artifact
 	type_name = "Shrinkage"
+	add_message = "seems to shrink slightly."
 	trigger_prob = 10
 
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
@@ -105,11 +117,11 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 			return
 		var/obj/item/I = O
 
-		boutput(user, "<span class='alert'>The [I.name] shrinks in size!</span>")
+		boutput(user, SPAN_ALERT("The [I.name] shrinks in size!"))
 		I.transform = matrix(I.transform, 0.9, 0.9, MATRIX_SCALE)
 		I.w_class--
 		if (I.w_class < W_CLASS_TINY)
-			boutput(user, "<span class='alert'>The artifact shrinks away into nothingness!</span>")
+			boutput(user, SPAN_ALERT("The artifact shrinks away into nothingness!"))
 			user.u_equip(I)
 			I.set_loc(user.loc)
 			I.invisibility = INVIS_ALWAYS_ISH
@@ -117,6 +129,7 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 /datum/artifact_fault/murder
 	// gibs the user
 	type_name = "Vaporization"
+	add_message = "sparks violently!"
 	trigger_prob = 1
 	halt_loop = 1
 
@@ -127,15 +140,17 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 			var/obj/item/I = O
 			if (I.loc == user)
 				user.u_equip(I)
-				I.dropped()
+				I.dropped(user)
 		var/turf/T = get_turf(O)
-		T.visible_message("<span class='alert'><b>The [cosmeticSource.name] utterly annihilates [user.name]!</b></span>")
-		playsound(T, "sound/effects/elec_bigzap.ogg", 40, 1) // seriously 100 volume on this file? Are you trying to deafen players?
+		T.visible_message(SPAN_ALERT("<b>The [cosmeticSource.name] utterly annihilates [user.name]!</b>"))
+		playsound(T, 'sound/effects/elec_bigzap.ogg', 40, TRUE) // seriously 100 volume on this file? Are you trying to deafen players?
+		logTheThing(LOG_COMBAT, user, "was elecgibbed by an artifact fault from [O] at [log_loc(user)].")
 		user.elecgib()
 
 /datum/artifact_fault/explode
 	// causes an explosion and destroys the artifact
 	type_name = "Explosion"
+	add_message = "shudders violently!"
 	trigger_prob = 1
 	halt_loop = 1
 
@@ -143,24 +158,25 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 		if (..())
 			return
 		var/turf/T = get_turf(O)
-		T.visible_message("<span class='alert'>The [cosmeticSource.name] suddenly explodes!</span>")
+		T.visible_message(SPAN_ALERT("The [cosmeticSource.name] suddenly explodes!"))
 		if (isitem(O))
 			var/obj/item/I = O
 			user.u_equip(I)
-			I.dropped()
+			I.dropped(user)
 		explosion(O, T, 0, 1, 2, 4)
 		O.ArtifactDestroyed()
 
 /datum/artifact_fault/zap
 	// electrocutes the user
 	type_name = "Electricity"
+	add_message = "releases sparks."
 	trigger_prob = 6
 
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
 		if (..())
 			return
 		var/turf/T = get_turf(O)
-		T.visible_message("<span class='alert'><b>[user.name]</b> is shocked by a surge of energy from [cosmeticSource.name]!</span>")
+		T.visible_message(SPAN_ALERT("<b>[user.name]</b> is shocked by a surge of energy from [cosmeticSource.name]!"))
 		var/datum/effects/system/spark_spread/s = new /datum/effects/system/spark_spread
 		s.set_up(4, 1, user)
 		s.start()
@@ -169,6 +185,7 @@ ABSTRACT_TYPE(/datum/artifact_fault/)
 
 ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 /datum/artifact_fault/messager
+	add_message = "makes a strange noise."
 	trigger_prob = 30
 	var/say_instead = FALSE
 	var/text_style = null
@@ -187,6 +204,8 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
 		if (..())
 			return
+		if(isdead(user))
+			return
 		if(src.say_instead)
 			var/msg = "[prob(20)?"":";"][generate_message(O, user)]"
 			if(prob(20))
@@ -194,7 +213,7 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 			else
 				user.say(generate_message(O, user))
 			var/datum/artifact/A = O.artifact
-			logTheThing("say", src, null, "SAY: [html_encode(msg)] [log_loc(user)] (was forced to speak by artifact of type [A.type] due to fault [src.type])")
+			logTheThing(LOG_SAY, user, "SAY: [html_encode(msg)] [log_loc(user)] (was forced to speak by artifact of type [A.type] due to fault [src.type])")
 			return
 		switch(text_style)
 			if ("small")
@@ -202,9 +221,9 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 			if ("big")
 				boutput(user, "<big>[generate_message(O, user, cosmeticSource)]</big>")
 			if ("red")
-				boutput(user, "<span class='alert'>[generate_message(O, user, cosmeticSource)]</span>")
+				boutput(user, SPAN_ALERT("[generate_message(O, user, cosmeticSource)]"))
 			if ("blue")
-				boutput(user, "<span class='notice'>[generate_message(O, user, cosmeticSource)]</span>")
+				boutput(user, SPAN_NOTICE("[generate_message(O, user, cosmeticSource)]"))
 			if ("monospace")
 				boutput(user, "<span style='font-family: monospace;'>[generate_message(O, user, cosmeticSource)]</span>")
 			else
@@ -252,13 +271,13 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 		..()
 		if(prob(70))
 			allowed_emoji = list()
-			for(var/i in 1 to rand(10))
+			for(var/i in 1 to rand(1, 10))
 				allowed_emoji += random_emoji()
 
 	generate_message(obj/O, mob/living/user)
 		. = list()
-		for(var/i in 1 to rand(10))
-			if(isnull(src.allowed_emoji) || prob(2))
+		for(var/i in 1 to rand(1, 10))
+			if(!length(src.allowed_emoji) || prob(2))
 				. += random_emoji()
 			else
 				. += pick(src.allowed_emoji)
@@ -266,6 +285,7 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 
 /datum/artifact_fault/poison
 	type_name = "Toxins"
+	add_message = "opens a hidden compartment containing a sharp needle, before closing again."
 	trigger_prob = 8
 	var/poison_type = "toxin"
 	var/poison_amount = 10
@@ -273,6 +293,6 @@ ABSTRACT_TYPE(/datum/artifact_fault/messager/)
 	deploy(var/obj/O,var/mob/living/user,var/atom/cosmeticSource)
 		if (..())
 			return
-		boutput(user, "<span class='alert'>The [cosmeticSource.name] stings you!</span>")
+		boutput(user, SPAN_ALERT("The [cosmeticSource.name] stings you!"))
 		if (user.reagents)
 			user.reagents.add_reagent(poison_type,poison_amount)

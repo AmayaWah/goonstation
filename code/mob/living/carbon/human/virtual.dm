@@ -1,19 +1,38 @@
+TYPEINFO(/mob/living/carbon/human/virtual)
+	start_listen_inputs = list(LISTEN_INPUT_EARS)
+	start_speech_outputs = list(SPEECH_OUTPUT_SPOKEN, SPEECH_OUTPUT_EQUIPPED)
+
 /mob/living/carbon/human/virtual
 	real_name = "Virtual Human"
+	default_speech_output_channel = SAY_CHANNEL_OUTLOUD
 	var/mob/body = null
 	var/isghost = 0 //Should contain a string of the original ghosts real_name
 	var/escape_vr = 0
 
-
-	New()
+	New(newLoc, is_ghost)
 		..()
 		sound_burp = 'sound/voice/virtual_gassy.ogg'
 		//sound_malescream = 'sound/voice/virtual_scream.ogg'
-		sound_scream = 'sound/voice/virtual_scream.ogg'
-		sound_fart = 'sound/voice/virtual_gassy.ogg'
+		src.bioHolder.mobAppearance.screamsounds["virtual"] = 'sound/voice/virtual_scream.ogg'
+		src.bioHolder.mobAppearance.screamsound = "virtual"
+		src.bioHolder.mobAppearance.fartsounds["virtual"] = 'sound/voice/virtual_gassy.ogg'
+		src.bioHolder.mobAppearance.fartsound = "virtual"
 		sound_snap = 'sound/voice/virtual_snap.ogg'
 		sound_fingersnap = 'sound/voice/virtual_snap.ogg'
-		SPAWN_DBG(0)
+		src.sims = null
+		if (is_ghost)
+			src.ensure_speech_tree()
+			src.speech_tree.AddSpeechOutput(SPEECH_OUTPUT_DEADCHAT)
+			src.speech_tree.RemoveSpeechOutput(SPEECH_OUTPUT_SPOKEN)
+
+			src.ensure_listen_tree()
+			src.listen_tree.AddListenInput(LISTEN_INPUT_DEADCHAT)
+			src.listen_tree.AddListenInput(LISTEN_INPUT_BLOBCHAT)
+			src.listen_tree.AddListenInput(LISTEN_INPUT_FLOCK_GLOBAL)
+
+			src.default_speech_output_channel = SAY_CHANNEL_DEAD
+
+		SPAWN(0)
 			src.set_mutantrace(/datum/mutantrace/virtual)
 
 	Life(datum/controller/process/mobs/parent)
@@ -26,25 +45,21 @@
 		if (!escape_vr)
 			var/area/A = get_area(src)
 			if ((T && !(T.z == 2)) || (A && !A.virtual))
-				boutput(src, "<span class='alert'>Is this virtual?  Is this real?? <b>YOUR MIND CANNOT TAKE THIS METAPHYSICAL CALAMITY</b></span>")
+				boutput(src, SPAN_ALERT("Is this virtual?  Is this real?? <b>YOUR MIND CANNOT TAKE THIS METAPHYSICAL CALAMITY</b>"))
 				src.gib()
 				return
 
 			if(!isghost && src.body)
-				if(!istype(src.body, /mob/dead/aieye) && isdead(src.body) || !src.body:network_device)
+				if(!isAIeye(src) && isdead(src.body) || !src.body:network_device)
 					src.gib()
 					return
 		return
 
 	death(gibbed)
-		for (var/atom/movable/a in contents)
-			if (a.flags & ISADVENTURE)
-				a.set_loc(get_turf(src))
-
 		Station_VNet.Leave_Vspace(src)
 
+		. = ..()
 		qdel(src)
-		return
 
 	disposing()
 		if (isghost && src.client)
@@ -61,24 +76,7 @@
 			src.death()
 		return
 
-	say(var/message) //Handle Virtual Spectres
-		if(!isghost)
-			return ..()
-
-		message = trim(copytext(sanitize(message), 1, MAX_MESSAGE_LEN))
-		if (!message)
-			return
-
-		if (dd_hasprefix(message, "*"))
-			return src.emote(copytext(message, 2),1)
-
-		if (src.client && src.client.ismuted())
-			boutput(src, "You are currently muted and may not speak.")
-			return
-
-		. = src.say_dead(message, 1)
-
-	emote(var/act, var/voluntary = 0, var/emoteTarget = null)
+	emote(var/act, var/voluntary = 0, var/emoteTarget = null, var/dead_check = TRUE)
 		if(isghost)
 			if (findtext(act, " ", 1, null))
 				var/t1 = findtext(act, " ", 1, null)
@@ -89,15 +87,9 @@
 				return
 		..()
 
-	whisper(message as text, forced=FALSE)
-		if (isghost)
-			boutput(usr, "You may not use that emote as a Virtual Spectre.")
-			return
-		..()
 
 
-
-/datum/abilityHolder/virtual
+/datum/abilityHolder/mutantrace/virtual
 	usesPoints = 0
 	regenRate = 0
 	tabName = "Virtual"
@@ -107,7 +99,7 @@
 /datum/targetable/virtual
 	pointCost = 0
 	targeted = 0
-	preferred_holder_type = /datum/abilityHolder/virtual
+	preferred_holder_type = /datum/abilityHolder/mutantrace/virtual
 	icon = 'icons/misc/kudzu_plus.dmi'
 	icon_state = "kudzu-template"
 
@@ -119,7 +111,8 @@
 	targeted = 0
 	target_anything = 0
 	interrupt_action_bars = 0
-	dont_lock_holder = 1
+	lock_holder = FALSE
+	do_logs = FALSE
 
 	//castcheck()
 		//if (!holder)
@@ -127,9 +120,10 @@
 
 	cast()
 		// Won't delete the VR character otherwise, which can be confusing (detective's goggles sending you to the existing body in the bomb VR etc).
+		. = ..()
 		var/mob/M = holder.owner
 		setdead(M)
-		M.death(0)
+		M.death(FALSE)
 
 		Station_VNet.Leave_Vspace(M)
 
@@ -158,7 +152,7 @@
 			owner.holder.owner.targeting_ability = owner
 			owner.holder.owner.update_cursor()
 		else
-			SPAWN_DBG(0)
+			SPAWN(0)
 				spell.handleCast()
 		return
 		*/

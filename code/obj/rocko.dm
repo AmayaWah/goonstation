@@ -1,13 +1,14 @@
 
 // CE's pet rock! A true hellburn companion
-obj/item/rocko
+/obj/item/rocko
 	name = "Rocko"
-	icon = 'icons/obj/materials.dmi'
+	icon = 'icons/obj/items/materials/rocks.dmi'
 	icon_state = "rock1"
 	w_class = W_CLASS_TINY
 	force = 10
 	throwforce = 15
 	throw_range = 3
+	can_arcplate = FALSE
 
 	var/static/list/rocko_is
 	var/smile = TRUE
@@ -20,38 +21,19 @@ obj/item/rocko
 		. = ..()
 		if(prob(20))
 			src.bright = TRUE
-
-		src.chat_text = new
-		src.vis_contents += src.chat_text
-
-		src.icon_state = "rock[pick(1,3)]"
-		src.transform = matrix(1.3,0,0,0,1.3,-3) // Scale 1.3 and Shift Down 3
-		src.color = "#CCC" // Darken slightly to allow lighter colors to be more visibile
-
 		src.rocko_is = list("a great listener", "a good friend", "trustworthy", "wise", "sweet", "great at parties")
 		src.hat = new /obj/item/clothing/head/helmet/hardhat(src)
-		update_icon()
-		START_TRACKING_CAT(TR_CAT_PETS)
-		processing_items |= src
 
-	set_loc(newloc as turf|mob|obj in world)
-		var/atom/oldloc = src.loc
-		src.holder = null
-		. = ..()
-		if(src && !src.disposed && src.loc && (!istype(src.loc, /turf) || !istype(oldloc, /turf)))
-			if(src.chat_text.vis_locs.len)
-				var/atom/movable/AM = src.chat_text.vis_locs[1]
-				AM.vis_contents -= src.chat_text
-			if(istype(src.loc, /turf))
-				src.vis_contents += src.chat_text
-			if(ismob(src.loc))
-				src.holder = src.loc
+		choose_rocko_material()
+		UpdateIcon()
+		START_TRACKING_CAT(TR_CAT_PETS)
+		src.AddElement(/datum/element/ghost_observable)
+		processing_items |= src
 
 	disposing()
 		processing_items -= src
-		qdel(chat_text)
-		chat_text = null
 		STOP_TRACKING_CAT(TR_CAT_PETS)
+		GHOST.MESSAGE.send("[GHOST.MESSAGE.format_atom(src, plaintext = TRUE)] has died at [GHOST.MESSAGE.format_loc(src)].")
 		..()
 
 	proc/can_mob_observe(mob/M)
@@ -64,7 +46,7 @@ obj/item/rocko
 			view_chance += 2
 			if(src.holder == M)
 				view_chance += 5
-		else if(M.job in list("Engineer", "Mechanic"))
+		else if(M.job in list("Engineer"))
 			view_chance += 1
 			if(src.holder == M)
 				view_chance += 1
@@ -91,37 +73,30 @@ obj/item/rocko
 			if(4)
 				emote("<B>[src]</B> rants about job site safety.", "<I>Goes on about job safety</I>")
 			if(5)
-				speak("We really need to do something about the [pick("captain", "head of personnel", "clown", "research director", "head of security", "medical director", "AI")].")
+				if (!src.holder)
+					return
+				src.say("We really need to do something about the [pick("captain", "head of personnel", "clown", "research director", "head of security", "medical director", "AI")].", atom_listeners_override = list(src.holder))
 
-	proc/speak(message)
-		var/list/targets
-		var/image/chat_maptext/chat_text = null
+	emote(message, maptext_out)
+		. = ..()
 
-		if(!src.holder)
-			targets = hearers(src, null)
-			chat_text = make_chat_maptext(src, message, "color: ["#bfd6d8"];", alpha = 200)
-		else
-			targets = list(src.holder)
-
-		for(var/mob/O in targets)
-			if(src.can_mob_observe(O))
-				O.show_message("<span class='game say bold'><span class='name'>[src.name]</span> says, <span class='message'>\"[message]\"</span></span>", 2, assoc_maptext = chat_text)
-
-	proc/emote(message, maptext_out)
-		var/list/targets
-		var/image/chat_maptext/chat_text = null
-
+		var/list/mob/targets
 		if(!src.holder)
 			targets = viewers(src, null)
-			chat_text = make_chat_maptext(src, maptext_out, "color: #C2BEBE;", alpha = 120)
 		else
 			targets = list(src.holder)
 
-		for (var/mob/O in targets)
-			if(src.can_mob_observe(O))
-				O.show_message("<span class='emote'>[message]</span>", assoc_maptext = chat_text)
+		var/list/mob/recipients = list()
+		for (var/mob/M as anything in targets)
+			if(!src.can_mob_observe(M))
+				continue
 
-	proc/update_icon()
+			recipients += M
+			M.show_message(SPAN_EMOTE("[message]"))
+
+		DISPLAY_MAPTEXT(src, recipients, MAPTEXT_MOB_RECIPIENTS_WITH_OBSERVERS, /image/maptext/emote, maptext_out)
+
+	update_icon()
 		var/image/smiley = image('icons/misc/rocko.dmi', src.smile ? "smile" : "frown")
 		if(bright)
 			painted = pick(list("#EE2","#2EE", "#E2E","#EEE"))
@@ -129,7 +104,7 @@ obj/item/rocko
 			painted = pick(list("#000","#151","#514","#511","#218"))
 
 		smiley.color = painted
-		smiley.appearance_flags = RESET_COLOR | RESET_ALPHA | RESET_TRANSFORM
+		smiley.appearance_flags = RESET_COLOR | RESET_ALPHA | RESET_TRANSFORM | PIXEL_SCALE
 
 		src.UpdateOverlays(smiley, "face")
 		update_hat()
@@ -139,7 +114,7 @@ obj/item/rocko
 			var/icon/working_icon = icon(src.hat.wear_image_icon, src.hat.icon_state, SOUTH )
 			working_icon.Shift(SOUTH, 10)
 			var/image/working_hat = image(working_icon)
-			working_hat.appearance_flags = RESET_COLOR | RESET_ALPHA | RESET_TRANSFORM
+			working_hat.appearance_flags = RESET_COLOR | RESET_ALPHA | RESET_TRANSFORM | PIXEL_SCALE
 			src.UpdateOverlays(working_hat, "hat")
 		else
 			src.UpdateOverlays(null, "hat")
@@ -147,10 +122,13 @@ obj/item/rocko
 	get_desc(dist, mob/user)
 		if(ismob(user) &&	user.job == "Chief Engineer")
 			. = "A rock but also [pick(rocko_is)]."
-		else if(ismob(user) && (user.job in list("Engineer", "Mechanic", "Quartermaster", "Captain")))
+		else if(ismob(user) && (user.job in list("Engineer", "Quartermaster", "Captain")))
 			. = "The Chief Engineer loves this rock.  Maybe it's to make up for their lack of a pet."
 		else
 			. = "A rock with a [src.smile ? "smiley" : "frowny"] face painted on it."
+
+		if (src.material?.getID() != "rock")
+			. += "<br>Wait, that isn't a rock. It's a [pick("hunk", "chunk")] of [src.material.getName()]!"
 
 	attackby(obj/item/W, mob/living/user)
 		if(istype(W,/obj/item/clothing/head))
@@ -162,6 +140,11 @@ obj/item/rocko
 			W.set_loc(src)
 			user.visible_message("[user] manages to fit [W] snugly on top of [src].")
 			update_hat()
+		if(istype(W, /obj/item/pet_carrier))
+			var/obj/item/pet_carrier/carrier = W
+			carrier.trap_mob(src, user)
+			user.visible_message(SPAN_ALERT("[user] places [src] into [carrier]."))
+			return
 		. = ..()
 
 	attack_self(mob/user as mob)
@@ -176,6 +159,48 @@ obj/item/rocko
 	afterattack(atom/target, mob/user, reach, params)
 		if(src.smile && ismob(target) && prob(10))
 			src.smile = FALSE
-			update_icon()
+			UpdateIcon()
 
+	proc/choose_rocko_material()
+		src.icon_state = pick("rock1","rock1b","rock1c","rock1d")
+		src.transform = matrix(1.3,0,0,0,1.3,-3) // Scale 1.3 and Shift Down 3
+		src.color = "#CCC" // Darken slightly to allow lighter colors to be more visibile
+		if(prob(90))
+			src.setMaterial(getMaterial("rock"), appearance = FALSE, setname = FALSE)
+			return
+
+		// Give rocko a random material
+		var/new_material = pick(childrentypesof(/datum/material/metal))
+		var/datum/material/dummy = new new_material
+		src.setMaterial(getMaterial(dummy.getID()), setname = FALSE)
+
+		// Use ore sprites if available
+		var/list/rock_list = list("bohrum","cerenkite","cobryl","gold","mauxite","pharosium","syreline","plutonium","veranium","batiline")
+		if(!rock_list.Find(src.material.getID()))
+			return
+		src.icon = src.material.getIconFile()
+		var/sprite_prefix = "ore"
+		var/sprite_value = pick(1,2,3,4,5,6)
+		var/list/sprite_variants = list("")
+		switch(src.material.getID())
+			if("bohrum")
+				sprite_value = pick(1,2,3,4) // Larger bohrum stack sizes are more piles of rocks than rocks
+			if("plutonium")
+				sprite_prefix = "scrap"
+		// Include variants of ores if they exist
+		for(var/letter in list("b","c","d"))
+			if(is_valid_icon_state("[sprite_prefix][sprite_value][letter]_$$[src.material.getID()]"))
+				sprite_variants += letter
+			else
+				break
+		src.icon_state = "[sprite_prefix][sprite_value][pick(sprite_variants)]_$$[src.material.getID()]"
+		var/scale = 1 // Scale depending on chosen ore size
+		switch(sprite_value)
+			if(1) scale = 1.3
+			if(2) scale = 1.2
+			if(3) scale = 1
+			if(4) scale = 0.9
+			if(5) scale = 0.85
+			if(6) scale = 0.8
+		src.transform = matrix(scale,0,0,0,scale,-3)
 

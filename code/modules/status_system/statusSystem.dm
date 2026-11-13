@@ -8,7 +8,7 @@ var/global/list/statusGroupLimits = list("Food"=4)
 
 /proc/testStatus()
 	var/inp = input(usr,"Which status?","Test status","airrit") as text
-	SPAWN_DBG(0)
+	SPAWN(0)
 		for(var/datum/statusEffect/status as anything in usr.statusEffects)
 			usr.delStatus(status)
 		usr.changeStatus(inp, 15 MINUTES)
@@ -24,6 +24,7 @@ var/global/list/statusGroupLimits = list("Food"=4)
 
 	var/datum/statusEffect/ownerStatus = null
 	var/image/overImg = null
+	var/mob/living/owner_mob = null
 
 	New()
 		overImg = image('icons/ui/statussystem.dmi')
@@ -40,30 +41,49 @@ var/global/list/statusGroupLimits = list("Food"=4)
 		ownerStatus = S
 		src.name = S.name
 		overImg.icon_state = S.icon_state
+		LAZYLISTADD(S.hud_elements, src)
+#ifdef SHOW_ME_STATUSES
+		src.owner_mob = C
+		src.owner_mob.vis_contents |= src
+		src.pixel_x = (length(src.owner_mob.statusEffects) - 1) * 16
+		src.appearance_flags |= RESET_TRANSFORM
+#endif
+
+	disposing()
+#ifdef SHOW_ME_STATUSES
+		src.owner_mob.vis_contents -= src
+		for (var/atom/movable/screen/statusEffect/effect_obj in src.owner_mob?.vis_contents)
+			if (effect_obj.pixel_x > src.pixel_x)
+				effect_obj.pixel_x -= 16
+		src.owner_mob = null
+#endif
+		LAZYLISTREMOVE(src.ownerStatus.hud_elements, src)
+		src.ownerStatus = null
+		. = ..()
 
 	clicked(list/params)
 		if (ownerStatus)
 			ownerStatus.clicked(params)
 
 	MouseEntered(location, control, params)
-		if (usr.client.tooltipHolder && ownerStatus)
-			usr.client.tooltipHolder.showHover(src, list(
-				"params" = params,
-				"title" = ownerStatus.name,
-				"content" = ownerStatus.getTooltip() + "<br>[ownerStatus.duration != null ? "[round(ownerStatus.duration/10)] sec.":""]",
-				"theme" = "stamina"
-			))
+		if (usr.client.tooltips && ownerStatus)
+			usr.client.tooltips.show(
+				TOOLTIP_HOVER, src,
+				mouse = params,
+				title = ownerStatus.name,
+				content = ownerStatus.getTooltip() + "<br>[ownerStatus.duration != null ? "[round(ownerStatus.duration/10)] sec.":""]",
+				theme = "stamina"
+			)
 
 	MouseExited()
-		usr.client.tooltipHolder?.hideHover()
+		usr.client.tooltips?.hide(TOOLTIP_HOVER)
 
 	proc/update_value()
 		if(!ownerStatus)
 			return
 
-		src.overlays.Cut()
 		overImg.icon_state = ownerStatus.icon_state
-		src.overlays += overImg
+		src.UpdateOverlays(overImg, "status_icon")
 
 		if (ownerStatus.duration <= (5 SECONDS) && !isnull(ownerStatus.duration))
 			src.alpha = 175
@@ -126,12 +146,12 @@ var/global/list/statusGroupLimits = list("Food"=4)
 	if(!globalInstance.preCheck(src))
 		return
 
-	if(hasStatus(statusId))
-		var/datum/statusEffect/S = hasStatus(statusId)
+	var/datum/statusEffect/S = hasStatus(statusId)
+	if(S)
 		setStatus(statusId, (isnull(S.maxDuration) ? (S.duration + duration):(min(S.duration + duration, S.maxDuration))), optional)
 		return S
 	else
-		if(duration > 0)
+		if(isnull(duration) || duration > 0)
 			return setStatus(statusId, (isnull(globalInstance.maxDuration) ? (duration):(min(duration, globalInstance.maxDuration))), optional)
 
 /**
@@ -188,7 +208,7 @@ var/global/list/statusGroupLimits = list("Food"=4)
 					localInstance.owner = src
 					if (duration)
 						duration = localInstance.duration + localInstance.modify_change(duration - localInstance.duration)
-						if (!duration) //if we ended up reducing it to 0, just clear it without ever applying
+						if (duration <= 0) //if we ended up reducing it to or past 0, just clear it without ever applying
 							localInstance.owner = null
 							return null
 					localInstance.duration = (isnull(localInstance.maxDuration) ? (duration):(min(duration, localInstance.maxDuration)))
@@ -209,7 +229,7 @@ var/global/list/statusGroupLimits = list("Food"=4)
 
 				if (duration)
 					duration = localInstance.duration + localInstance.modify_change(duration - localInstance.duration)
-					if (!duration) //if we ended up reducing it to 0, just clear it without ever applying
+					if (duration <= 0) //if we ended up reducing it to 0, just clear it without ever applying
 						localInstance.owner = null
 						return null
 
@@ -225,6 +245,10 @@ var/global/list/statusGroupLimits = list("Food"=4)
 	else
 		throw EXCEPTION("Unknown status type passed: [statusId]")
 		return null
+
+// Sets the status duration of the passed statusId to the larger of the existing status of that ID and the passed {maxDuration}
+/atom/proc/setStatusMin(statusId, minDuration, optional) //this is probably inefficient
+	src.setStatus(statusId, max(src.getStatusDuration(statusId), minDuration), optional)
 
 /**
 	* Returns duration of status with given {statusId}, or null if not found.
@@ -266,22 +290,25 @@ var/global/list/statusGroupLimits = list("Food"=4)
 /**
 	* Returns a list of all the datum/statusEffect on source atom.
 	*
+	* {statusId} optional status ID to match, otherwise matches any status type
 	* {optionalArgs} can be passed in for additional checks that are handled in the effects .onCheck proc.
 	* Useful if you want to check some custom conditions on status effects.
 	*/
-/atom/proc/getStatusList(optionalArgs = null)
+/atom/proc/getStatusList(statusId = null, optionalArgs = null)
 	. = list()
 	if (statusEffects)
 		for(var/datum/statusEffect/status as anything in statusEffects)
-			if((!optionalArgs) || (optionalArgs && status.onCheck(optionalArgs)))
+			if( (!optionalArgs || status.onCheck(optionalArgs)) && (!statusId || (statusId == status.id)) )
 				.[status.id] = status
 
 /**
 	* Deletes the given status from the atom.
 	*
 	* {status} can either be a reference to a status effect or a status effect ID.
+	*
+	{optional} will be passed into .onRemove. Useful for custom behaviour.
 	*/
-/atom/proc/delStatus(status)
+/atom/proc/delStatus(status, optional)
 	. = null
 	if(statusEffects == null)
 		return
@@ -291,12 +318,12 @@ var/global/list/statusGroupLimits = list("Food"=4)
 			if(statcurr.id == status)
 				globalStatusInstances -= statcurr
 				statusEffects -= statcurr
-				statcurr.onRemove()
+				statcurr.onRemove(optional)
 	else if(istype(status, /datum/statusEffect)) //Instance was passed in.
 		var/datum/statusEffect/S = status
 		if(S in statusEffects)
 			globalStatusInstances -= S
 			statusEffects -= S
-			S.onRemove()
+			S.onRemove(optional)
 
 	src.updateStatusUi()

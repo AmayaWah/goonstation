@@ -19,7 +19,7 @@
 		return
 	counter = 0
 
-	angle = ((rate*world.realtime/100)%360 + 360)%360
+	angle = ((rate*TIME/100)%360 + 360)%360
 	// gives about a 60 minute rotation time
 	// now 45 - 75 minutes, depending on rate
 
@@ -54,6 +54,8 @@
 
 // for a solar panel, trace towards sun to see if we're in shadow
 /datum/sun/proc/occlusion(var/obj/machinery/power/solar/S)
+	if (!isturf(S.loc))
+		return
 
 	var/ax = S.x		// start at the solar panel
 	var/ay = S.y

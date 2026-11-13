@@ -4,6 +4,7 @@
 /datum/targetable/critter/bite
 	name = "Chomp"
 	desc = "Chomp down on a mob, causing damage and a short stun."
+	icon_state = "critter_bite"
 	cooldown = 150
 	targeted = 1
 	target_anything = 1
@@ -15,8 +16,7 @@
 	var/verb_self = "bite"
 	var/hit_type = DAMAGE_CRUSH
 	var/bleed = 0
-
-	var/datum/projectile/slam/proj = new
+	var/gibs = FALSE
 
 	cast(atom/target)
 		if (..())
@@ -26,12 +26,12 @@
 		if (isturf(target))
 			target = locate(/mob/living) in target
 			if (!target)
-				boutput(holder.owner, __red("Nothing to bite there."))
+				boutput(holder.owner, SPAN_ALERT("Nothing to bite there."))
 				return 1
 		if (target == holder.owner)
 			return 1
-		if (get_dist(holder.owner, target) > 1)
-			boutput(holder.owner, __red("That is too far away to bite."))
+		if (BOUNDS_DIST(holder.owner, target) > 0)
+			boutput(holder.owner, SPAN_ALERT("That is too far away to bite."))
 			return 1
 		playsound(target, src.sound_bite, sound_volume, 1, -1)
 		var/mob/MT = target
@@ -39,16 +39,21 @@
 		MT.changeStatus("stunned", stun_duration)
 		if(bleed)
 			take_bleeding_damage(MT, null, bleed, DAMAGE_CUT, bleed-5, get_turf(MT))
-
-		holder.owner.visible_message("<span class='combat'><b>[holder.owner] bites [MT]!</b></span>", "<span class='combat'>You bite [MT]!</span>")
+		if(gibs && !issilicon(MT))
+			var/gib = make_cleanable(/obj/decal/cleanable/blood/gibs, get_turf(target))
+			playsound(holder.owner.loc, 'sound/impact_sounds/Flesh_Break_2.ogg', 50, 1)
+			eat_twitch(holder.owner)
+			ThrowRandom(gib, rand(2,6), thrown_from = MT)
+		holder.owner.visible_message(SPAN_COMBAT("<b>[holder.owner] [verb_other] [MT]!</b>"), SPAN_COMBAT("You [verb_self] [MT]!"))
 		return 0
 
 /datum/targetable/critter/bite/big
 	name = "Bite"
 	desc = "Bite down on a mob, causing some damage."
-	cooldown = 100
+	cooldown = 30 SECONDS
 	sound_bite = 'sound/impact_sounds/Flesh_Crush_1.ogg'
-	brute_damage = 36
+	brute_damage = 30
+	bleed = 15
 	sound_volume = 100
 	verb_other = "savagely bites"
 	verb_self = "savagely bite"
@@ -90,3 +95,15 @@
 	sound_bite = 'sound/impact_sounds/Flesh_Crush_1.ogg'
 	bleed = 15
 	brute_damage = 8
+
+/datum/targetable/critter/bite/hippo
+	name = "Crush"
+	desc = "Crush a target with your colossal bite force"
+	verb_other = "savagely crushes"
+	verb_self = "savagely crush"
+	cooldown = 20 SECONDS
+	sound_bite = 'sound/impact_sounds/Flesh_Crush_1.ogg'
+	sound_volume = 100
+	brute_damage = 40
+	bleed = 50
+	gibs = TRUE

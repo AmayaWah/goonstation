@@ -1,4 +1,4 @@
-/mob/
+/mob
 	var/list/stun_resist_mods = list()
 
 
@@ -22,10 +22,9 @@
 /mob/living/add_stam_mod_max(var/key, var/value)
 	if (!src.use_stamina) return
 	if(!isnum(value)) return
-	if(key in stamina_mods_max)
+	if(!isnull(src.stamina_mods_max[key]))
 		return 0
-	stamina_mods_max.Add(key)
-	stamina_mods_max[key] = value
+	src.stamina_mods_max[key] = value
 	return 1
 
 ///Removes a stamina max modifier with the given key.
@@ -34,10 +33,7 @@
 
 /mob/living/remove_stam_mod_max(var/key)
 	if (!src.use_stamina) return
-	if(!(key in stamina_mods_max))
-		return 0
-	stamina_mods_max.Remove(key)
-	return 1
+	return src.stamina_mods_max.Remove(key)
 
 ///Returns the total modifier for stamina max
 /mob/proc/get_stam_mod_max()
@@ -45,45 +41,18 @@
 
 /mob/living/get_stam_mod_max()
 	if (!src.use_stamina) return
-	var/val = 0
-	for(var/x in stamina_mods_max)
-		val += stamina_mods_max[x]
+	var/val = values_sum(src.stamina_mods_max)
 
 	var/stam_mod_items = 0
 	for (var/obj/item/C as anything in src.get_equipped_items())
-		stam_mod_items += C.getProperty("stammax")
+		if (C.properties)
+			stam_mod_items += C.getProperty("stammax")
 
 	return (val + stam_mod_items)
 
-/mob/proc/add_stun_resist_mod(var/key, var/value)
-	if(!isnum(value)) return
-	if(stun_resist_mods.Find(key)) return 0
-	stun_resist_mods.Add(key)
-	stun_resist_mods[key] = value
-	return 1
-
-//Removes a stamina max modifier with the given key.
-/mob/proc/remove_stun_resist_mod(var/key)
-	if(!stun_resist_mods.Find(key)) return 0
-	stun_resist_mods.Remove(key)
-	return 1
-
 //Returns the total modifier for stamina max
 /mob/proc/get_stun_resist_mod()
-	.= 0
-	var/highest = 0
-	for(var/x in stun_resist_mods)
-		. += stun_resist_mods[x]
-		if (stun_resist_mods[x] > highest)
-			highest = stun_resist_mods[x]
-
-
-	var/max_allowed = 80 //basically if we dont have a singular 100% or above protection moddifier, we wont allow the user to completely ignore stuns
-	if (highest > 80)
-		max_allowed = min(highest, 100)
-
-	.= clamp(., 0, max_allowed)
-
+	return min(GET_ATOM_PROPERTY(src, PROP_MOB_STUN_RESIST), clamp(GET_ATOM_PROPERTY(src, PROP_MOB_STUN_RESIST_MAX), 80, 100)) + 0
 
 //Restores stamina
 /mob/proc/add_stamina(var/x)
@@ -92,9 +61,9 @@
 /mob/living/add_stamina(var/x as num)
 	if(!src.use_stamina) return
 	if(!isnum(x)) return
-	if(prob(20) && ishellbanned(src)) return //Stamina regenerates 20% slower for you. RIP
 	stamina = min(stamina_max, stamina + x)
-	if(src.stamina_bar.last_update != TIME) src.stamina_bar.update_value(src)
+	if(src.stamina_bar && src.stamina_bar.last_update != TIME)
+		src.stamina_bar.update_value(src)
 	return
 
 //Removes stamina
@@ -104,15 +73,11 @@
 /mob/living/remove_stamina(var/x)
 	if(!src.use_stamina) return
 	if(!isnum(x)) return
-	if(prob(4) && ishellbanned(src)) //Chances are this will happen during combat
-		SPAWN_DBG(rand(5, 80)) //Detach the cause (hit, reduced stamina) from the consequence (disconnect)
-			var/dur = src.client.fake_lagspike()
-			sleep(dur)
-			del(src.client)
 
 	var/stam_mod_items = 0
 	for (var/obj/item/C as anything in src.get_equipped_items())
-		stam_mod_items += C.getProperty("stamcost")
+		if (C.properties)
+			stam_mod_items += C.getProperty("stamcost")
 
 	var/percReduction = 0
 	if(stam_mod_items)
@@ -122,15 +87,31 @@
 	if(src.stamina_bar?.last_update != TIME) src.stamina_bar?.update_value(src)
 	return
 
+/// Adds 'get up' stun reduction, from taking beatdown damage.
+/mob/proc/revenge_stun_reduction(stamina_damage, brute, burn, damage_type )
+	return
+
+/mob/living/revenge_stun_reduction(stamina_damage, brute, burn, damage_type )
+	. = ..()
+	if (src.hasStatus("knockdown") && !src.hasStatus("unconscious") && (brute > 0 || burn >= 5))
+
+		var/stun_duration = src.getStatusDuration("knockdown")
+		if (stun_duration > 3 SECONDS) //if we have a big stun, we can kick it down a lot
+			var/stun_reduction = min(stun_duration-3 SECONDS,(brute + burn)*0.6 SECONDS) // let's saaay 1 full stun is 50 health.
+			var/stunres_penalty = clamp(1-(get_stun_resist_mod()/2)/100,0,1)
+			src.setStatus("knockdown", stun_duration-max(1,stun_reduction*stunres_penalty))
+		else if (stun_duration > 0 SECONDS)  // but we also still need a penalty for getting stamcrit which is 5s.
+			src.setStatus("knockdown", stun_duration-1)
+
 /mob/living/carbon/human/remove_stamina(var/x)
 	..()
 	if (x >= 30 && src.hud && src.hud.stamina_back)
-		flick("stamina_back", src.hud.stamina_back)
+		FLICK("stamina_back", src.hud.stamina_back)
 
 /mob/living/critter/remove_stamina(var/x)
 	..()
 	if (x >= 30 && src.hud && src.hud.stamina_back)
-		flick("stamina_back", src.hud.stamina_back)
+		FLICK("stamina_back", src.hud.stamina_back)
 
 
 //Sets stamina
@@ -140,7 +121,7 @@
 /mob/living/set_stamina(var/x)
 	if(!src.use_stamina) return
 	if(!isnum(x)) return
-	stamina = max(min(stamina_max, x), STAMINA_NEG_CAP)
+	stamina = clamp(x, STAMINA_NEG_CAP, stamina_max)
 	if(src.stamina_bar) src.stamina_bar.update_value(src)
 	return
 
@@ -150,14 +131,13 @@
 //STAMINA UTILITY PROCS
 
 ///Responsible for executing critical hits to stamina
-/mob/proc/handle_stamina_crit(var/damage)
+/mob/proc/handle_stamina_crit()
 	. = 0
 
 //ddoub le dodbleu
-/mob/living/handle_stamina_crit(var/damage)
+/mob/living/handle_stamina_crit()
 	if(!src.use_stamina) return
-	damage = max(damage,10)
-	damage *= 4
+	var/damage = STAMINA_CRIT_DAMAGE
 	if(src.stamina >= 1 )
 		#if STAMINA_CRIT_DROP == 1
 		src.set_stamina(min(src.stamina,STAMINA_CRIT_DROP_NUM))
@@ -179,9 +159,9 @@
 		src.changeStatus("stunned", STAMINA_STUN_ON_CRIT_SEV)
 		#endif
 		#if STAMINA_NEG_CRIT_KNOCKOUT == 1
-		if(!src.getStatusDuration("weakened"))
-			src.visible_message("<span class='alert'>[src] collapses!</span>")
-			src.changeStatus("weakened", (STAMINA_STUN_CRIT_TIME) SECONDS)
+		if(!src.getStatusDuration("knockdown") && isalive(src))
+			src.visible_message(SPAN_ALERT("[src] collapses!"))
+			src.changeStatus("knockdown", (STAMINA_STUN_CRIT_TIME) SECONDS)
 		#endif
 	stamina_stun() //Just in case.
 	return
@@ -199,60 +179,59 @@
 	return
 
 /mob/living/stamina_stun(stunmult = 1)
-	if(!src.use_stamina) return
+	if(!src.use_stamina || src.no_stamina_stuns)
+		return
 	if(src.stamina <= 0)
 		var/chance = STAMINA_SCALING_KNOCKOUT_BASE
 		chance += (src.stamina / STAMINA_NEG_CAP) * STAMINA_SCALING_KNOCKOUT_SCALER
 		if(prob(chance))
-			if(!src.getStatusDuration("weakened"))
-				src.visible_message("<span class='alert'>[src] collapses!</span>")
-				src.changeStatus("weakened", (STAMINA_STUN_TIME * stunmult) SECONDS)
+			if(!src.getStatusDuration("knockdown") && isalive(src))
+				src.visible_message(SPAN_ALERT("[src] collapses!"))
+				src.changeStatus("knockdown", (STAMINA_STUN_TIME * stunmult) SECONDS)
 				src.force_laydown_standup()
 
 //new disorient thing
 
-#define DISORIENT_BODY 1
-#define DISORIENT_EYE 2
-#define DISORIENT_EAR 4
-
 /mob/proc/get_disorient_protection()
-	return clamp(GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_BODY), 90, GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_BODY_MAX))
+	return min(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_BODY), clamp(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_BODY_MAX), 90, 100)) + 0
 
 /mob/proc/get_disorient_protection_eye()
-	return clamp(GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_EYE), 90, GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_EYE_MAX))
+	return min(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_EYE), clamp(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_EYE_MAX), 90, 100)) + 0
 
 /mob/proc/get_disorient_protection_ear()
-	return clamp(GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_EAR), 90, GET_MOB_PROPERTY(src, PROP_DISORIENT_RESIST_EAR_MAX))
+	return min(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_EAR), clamp(GET_ATOM_PROPERTY(src, PROP_MOB_DISORIENT_RESIST_EAR_MAX), 90, 100)) + 0
 
 
 /mob/proc/force_laydown_standup() //the real force laydown lives in Life.dm
 	.=0
 
-/mob/proc/do_disorient(var/stamina_damage, var/weakened, var/stunned, var/paralysis, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
+/mob/proc/do_disorient(var/stamina_damage, var/knockdown, var/stunned, var/unconscious, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
 	.= 1
+	if (src.no_stamina_stuns)
+		return FALSE
 	if (stunned)
 		if(stack_stuns)
 			src.changeStatus("stunned", stunned)
 		else if(stunned >= src.getStatusDuration("stunned"))
 			src.setStatus("stunned", stunned)
-	if (weakened)
+	if (knockdown)
 		if(stack_stuns)
-			src.changeStatus("weakened", weakened)
-		else if(weakened >= src.getStatusDuration("weakened"))
-			src.setStatus("weakened", weakened)
-	if (paralysis)
+			src.changeStatus("knockdown", knockdown)
+		else if(knockdown >= src.getStatusDuration("knockdown"))
+			src.setStatus("knockdown", knockdown)
+	if (unconscious)
 		if(stack_stuns)
-			src.changeStatus("paralysis", paralysis)
-		else if(paralysis >= src.getStatusDuration("paralysis"))
-			src.setStatus("paralysis", paralysis)
+			src.changeStatus("unconscious", unconscious)
+		else if(unconscious >= src.getStatusDuration("unconscious"))
+			src.setStatus("unconscious", unconscious)
 
 	src.force_laydown_standup()
 
 	if (src.canmove)
 		.= 0
 
-//Do stamina damage + disorient above 0 stamina. Stun/Weaken/Paralyze when we hit or drop below 0.
-/mob/living/do_disorient(var/stamina_damage, var/weakened, var/stunned, var/paralysis, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
+//Do stamina damage + disorient above 0 stamina. Stun/knockdown/Paralyze when we hit or drop below 0.
+/mob/living/do_disorient(var/stamina_damage, var/knockdown, var/stunned, var/unconscious, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
 	if(!src.use_stamina) return ..()
 	var/protection = 0
 
@@ -285,9 +264,9 @@
 		.= 0
 		src.changeStatus("disorient", disorient)
 
-/mob/living/silicon/do_disorient(var/stamina_damage, var/weakened, var/stunned, var/paralysis, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
+/mob/living/silicon/do_disorient(var/stamina_damage, var/knockdown, var/stunned, var/unconscious, var/disorient = 60, var/remove_stamina_below_zero = 0, var/target_type = DISORIENT_BODY, stack_stuns = 1)
 	// Apply the twitching disorient animation for as long as the maximum stun duration is.
-	src.changeStatus("cyborg-disorient", max(weakened, stunned, paralysis))
+	src.changeStatus("cyborg-disorient", max(knockdown, stunned, unconscious, disorient))
 	. = ..()
 
 //STAMINA UTILITY PROCS

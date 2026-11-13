@@ -22,6 +22,11 @@
  * 	Allows for input/output of enviromental air and will convert objects made of materials that produce gas to.. gas.
  * 	Once sufficient pressure has been reached it can be released spreading it across the current airgroup with a minor stun explosion.
   */
+TYPEINFO(/obj/machinery/portable_atmospherics/pressurizer)
+	mats = list("metal" = 15,
+				"metal_dense" = 3,
+				"insulated" = 3,
+				"conductive" = 10)
 /obj/machinery/portable_atmospherics/pressurizer
 	name = "Extreme-Pressure Pressurization Device"
 	desc = "Some kind of nightmare contraption to make a lot of noise or pressurize rooms."
@@ -30,7 +35,7 @@
 	icon_state = "pressurizer"
 	density = 1
 	status = REQ_PHYSICAL_ACCESS
-	flags = FPRINT | CONDUCT | TGUI_INTERACTIVE
+	flags = CONDUCT | TGUI_INTERACTIVE
 	requires_power = FALSE //power only required for material processing
 	p_class = 3
 
@@ -51,7 +56,6 @@
 	var/process_rate = 2
 	var/powconsumption = 0
 	var/emagged = 0
-	mats = list("MET-1" = 15, "MET-2" = 3, "INS-1" = 3, "CON-1" = 10)
 
 	deconstruct_flags = DECON_SCREWDRIVER | DECON_WRENCH | DECON_WELDER | DECON_MULTITOOL
 
@@ -80,11 +84,10 @@
 			src.process_raw_materials()
 			src.updateDialog()
 
-		src.update_icon()
+		src.UpdateIcon()
 		return
 
 	update_icon()
-		. = ..()
 		if(src.fan_state != FAN_OFF)
 			UpdateOverlays(image_fan, "fan")
 		else
@@ -107,7 +110,7 @@
 		else
 			UpdateOverlays(null, "armed")
 
-	return_air()
+	return_air(direct = FALSE)
 		return air_contents
 
 	proc/process_fan()
@@ -145,7 +148,7 @@
 			material_progress = 0
 			if(length(src.contents))
 				target_material = pick(src.contents)
-				if((target_material.amount > 1) && (target_material.material?.name in src.whitelist))
+				if((target_material.amount > 1) && (target_material.material?.getName() in src.whitelist))
 					var/atom/movable/splitStack = target_material.split_stack(target_material.amount-1)
 					splitStack.set_loc(src)
 				target_material.set_loc(null)
@@ -161,8 +164,8 @@
 			var/progress = min(src.process_rate * 5,100-material_progress)
 			var/datum/gas_mixture/GM = new /datum/gas_mixture
 			GM.temperature = T20C
-			if(target_material.material?.name in src.whitelist)
-				switch(target_material.material.name)
+			if(target_material.material?.getName() in src.whitelist)
+				switch(target_material.material.getName())
 					if("molitz")
 						GM.oxygen += 1500 * progress / 100
 					if("viscerite")
@@ -188,7 +191,7 @@
 		if (!src.emagged)
 			if (user)
 				user.show_text("You short out the material processor on [src].", "red")
-			src.audible_message("<span class='combat'><B>[src] buzzes oddly!</B></span>")
+			src.audible_message(SPAN_COMBAT("<B>[src] buzzes oddly!</B>"))
 			playsound(src.loc, "sparks", 50, 1, -1)
 			whitelist += blacklist
 			src.emagged = TRUE
@@ -212,33 +215,32 @@
 		if(iswrenchingtool(I) || istype(I,/obj/item/device/analyzer/atmospheric) || istype(I,/obj/item/card/emag))
 			..()
 			return
-		if(istype(I,/obj/item/electronics/scanner) || istype(I,/obj/item/deconstructor) || (istype(I,/obj/item/device/pda2)))
-			user.visible_message("<span class='alert'><B>[user] hits [src] with [I]!</B></span>")
+		if(istype(I,/obj/item/device/pda2))
+			user.visible_message(SPAN_ALERT("<B>[user] hits [src] with [I]!</B>"))
 			return
 		if (istype(I,/obj/item/satchel/) && I.contents.len)
 			var/obj/item/satchel/S = I
 			for(var/obj/item/O in S.contents) O.set_loc(src)
-			S.satchel_updateicon()
+			S.UpdateIcon()
+			S.tooltip_rebuild = TRUE
 			user.visible_message("<b>[user.name]</b> dumps out [S] into [src].")
 			return
-		if (istype(I,/obj/item/storage/) && I.contents.len)
-			var/obj/item/storage/S = I
-			for(var/obj/item/O in S)
-				O.set_loc(src)
-				S.hud.remove_object(O)
-			user.visible_message("<b>[user.name]</b> dumps out [S] into [src].")
+		if (length(I.storage?.get_contents()))
+			for(var/obj/item/O in I.storage.get_contents())
+				I.storage.transfer_stored_item(O, src, user = user)
+				user.visible_message("<b>[user.name]</b> dumps out [I] into [src].")
 			return
 
 		var/obj/item/grab/G = I
 		if(istype(G))	// handle grabbed mob
 			if(ismob(G.affecting))
-				boutput(user, "<span class='alert'>That won't fit!</span>")
+				boutput(user, SPAN_ALERT("That won't fit!"))
 				return
 		else
 			if(!user.drop_item())
 				return
 			else if(I.w_class > W_CLASS_NORMAL)
-				boutput(user, "<span class='alert'>That won't fit!</span>")
+				boutput(user, SPAN_ALERT("That won't fit!"))
 				return
 			I.set_loc(src)
 			user.visible_message("[user.name] places \the [I] into \the [src].",\
@@ -256,7 +258,7 @@
 		else
 			var/blast_key = rand()
 			blast_armed = blast_key
-			SPAWN_DBG(blast_delay)
+			SPAWN(blast_delay)
 				if(src.blast_armed == blast_key && src.is_air_safe())
 					blast_release()
 
@@ -276,8 +278,8 @@
 						air_contents.oxygen/TOTAL_MOLES(air_contents)*255,	\
 						air_contents.oxygen+air_contents.toxins/TOTAL_MOLES(air_contents)*255)
 		poof.alpha = clamp(MIXTURE_PRESSURE(src.air_contents)/src.maximum_pressure*180, 90, 220)
-		flick("pressurizer-poof", poof)
-		SPAWN_DBG(0.8 SECONDS)
+		FLICK("pressurizer-poof", poof)
+		SPAWN(0.8 SECONDS)
 			if(poof) qdel(poof)
 
 	proc/blast_release()
@@ -286,7 +288,7 @@
 
 		// Flashbang pressure wave is 30,000 psi thus 206 MPa
 		var/volume = clamp(pressure KILO PASCALS / 206 MEGA PASCAL * 35, 15, 70)
-		playsound(src, "sound/effects/exlow.ogg", volume, 1)
+		playsound(src, 'sound/effects/exlow.ogg', volume, 1)
 
 		var/turf/simulated/T = get_turf(src)
 		if(T && istype(T))
@@ -301,7 +303,7 @@
 						if(count>1)
 							temp = temp.remove_ratio(1/count)
 						var/datum/gas_mixture/GM
-						for(var/turf/simulated/MT as() in T.parent.members)
+						for(var/turf/simulated/MT as anything in T.parent.members)
 							GM = new /datum/gas_mixture
 							GM.copy_from(temp)
 							MT.assume_air(GM)
@@ -309,8 +311,8 @@
 						T.assume_air(temp)
 
 			if(pressure > (maximum_pressure * BLAST_EFFECT_RATIO))
-				for(var/mob/living/HH in range(8, src))
-					var/checkdist = get_dist(HH.loc, T)
+				for(var/mob/living/HH in hearers(8, T))
+					var/checkdist = GET_DIST(HH.loc, T)
 
 					// Reduced sonic boom effect with increased misstep from shockwave
 					var/misstep = clamp(1 + 10 * (5 - checkdist), 0, 40)
@@ -320,7 +322,7 @@
 					HH.apply_sonic_stun(0, 0, misstep, 0, 2, ear_damage, ear_tempdeaf, stamina)
 
 		src.blast_armed = FALSE
-		update_icon()
+		UpdateIcon()
 
 	proc/set_release_pressure(pressure as num)
 		src.release_pressure = clamp(pressure, PORTABLE_ATMOS_MIN_RELEASE_PRESSURE, PORTABLE_ATMOS_MAX_RELEASE_PRESSURE)
@@ -381,13 +383,13 @@
 			if(MIXTURE_PRESSURE(src.air_contents) < (maximum_pressure * min_blast_ratio) || !is_air_safe())
 				return
 			src.arm_blast()
-			src.update_icon()
+			src.UpdateIcon()
 			. = TRUE
 
 		if("fan")
 			var/target_mode = params["fanState"]
 			src.fan_state = target_mode
-			src.update_icon()
+			src.UpdateIcon()
 			. = TRUE
 
 		if("eject-materials")

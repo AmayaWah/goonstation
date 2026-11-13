@@ -1,17 +1,77 @@
+
+TYPEINFO(/obj/storage/closet)
+	mat_appearances_to_ignore = list("steel")
+
 /obj/storage/closet
 	name = "closet"
 	desc = "It's a closet! This one can be opened AND closed."
-	soundproofing = 3
+	icon = 'icons/obj/storage/locker.dmi'
+	object_flags = NO_GHOSTCRITTER
+	soundproofing = SOUNDPROOFING_STORAGE
 	can_flip_bust = 1
 	p_class = 3
+	open_sound = 'sound/misc/locker_open.ogg'
+	close_sound = 'sound/misc/locker_close.ogg'
+	volume = 70
+	_max_health = LOCKER_HEALTH_WEAK
+	_health = LOCKER_HEALTH_WEAK
+	material_amt = MATERIAL::AMOUNT::SHEET * 2
+	///Will this locker auto-close when someone is flung into it
+	var/auto_close = TRUE
 
 	New()
 		. = ..()
 		START_TRACKING
+		src.AddComponent(/datum/component/bullet_holes, 10, 0)
 
 	disposing()
 		. = ..()
 		STOP_TRACKING
+
+	attackby(obj/item/I, mob/user)
+		if (I?.force > 0 && user.a_intent == INTENT_HARM && !src.open)
+			user.lastattacked = get_weakref(src)
+			src.bash(I, user)
+		else
+			..()
+
+	bullet_act(var/obj/projectile/P)
+		var/damage = 0
+		if (!P || !istype(P.proj_data,/datum/projectile/))
+			return
+		damage = round((P.power*P.proj_data.ks_ratio), 1.0)
+		if (damage < 1)
+			return
+
+		switch(P.proj_data.damage_type)
+			if(D_KINETIC)
+				take_damage(damage, null, null, P)
+			if(D_PIERCING)
+				take_damage(damage, null, null, P)
+			if(D_ENERGY)
+				take_damage(damage / 2, null, null, P)
+		return
+
+	Crossed(atom/movable/AM)
+		. = ..()
+		if (src.auto_close && src.open && ismob(AM) && AM.throwing)
+			var/datum/thrown_thing/thr = global.throwing_controller.throws_of_atom(AM)[1]
+			AM.throw_impact(src, thr)
+			AM.throwing = FALSE
+			AM.changeStatus("knockdown", 1 SECOND)
+			AM.set_loc(src.loc)
+			src.close()
+
+	get_help_message(dist, mob/user)
+		if (src.open)
+			. = " You can use a <b>wrench</b> to dismantle the closet. [src.can_leghole && !src.legholes ? "You can use a <b>welding tool</b> to cut foot holes in the bottom. " : ""]"
+		else
+			if (src.welded)
+				. += " You can use a <b>welding tool</b> to remove the weld and allow it to open."
+			else
+				. += " You can use a <b>welding tool</b> to weld it shut and prevent it being opened."
+			if (src.can_flip_bust)
+				. += " Anyone locked inside can <b>flip</b> to try to break out."
 
 /obj/storage/closet/emergency
 	name = "emergency supplies closet"
@@ -36,8 +96,9 @@
 			if (prob(2))
 				new /obj/item/clothing/mask/gas/emergency(src)
 			for (var/i=rand(2,3), i>0, i--)
+				new /obj/item/tank/pocket/oxygen(src)
 				if (prob(40))
-					new /obj/item/tank/emergency_oxygen(src)
+					new /obj/item/tank/mini/oxygen(src)
 				if (prob(40))
 					new /obj/item/clothing/mask/breath(src)
 
@@ -57,7 +118,7 @@
 			if (prob(50))
 				new /obj/item/clothing/head/helmet/firefighter(src)
 			if (prob(30))
-				new /obj/item/clothing/suit/fire(src)
+				new /obj/item/clothing/suit/hazard/fire(src)
 				new /obj/item/clothing/mask/gas/emergency(src)
 			if (prob(10))
 				new /obj/item/storage/firstaid/fire(src)
@@ -70,17 +131,15 @@
 	desc = "It's a closet! This one can be opened AND closed. Comes with janitor's clothes and biohazard gear."
 	spawn_contents = list(/obj/item/storage/box/biohazard_bags,
 							/obj/item/storage/box/trash_bags = 2,
-							/obj/item/clothing/suit/bio_suit,
+							/obj/item/clothing/suit/hazard/bio_suit,
 							/obj/item/clothing/head/bio_hood,
-							/obj/item/clothing/under/rank/janitor = 2,
-							/obj/item/clothing/shoes/black = 2,
 							/obj/item/device/light/flashlight,
 							/obj/item/clothing/shoes/galoshes,
 							/obj/item/reagent_containers/glass/bottle/cleaner,
 							/obj/item/storage/box/body_bag,
 							/obj/item/caution = 6,
-							/obj/item/clothing/gloves/long,
-							/obj/item/handheld_vacuum)
+							/obj/item/storage/box/clothing/janitor,
+							/obj/item/disk/data/floppy/manudrive/cleaner_grenade)
 
 /obj/storage/closet/law
 	name = "\improper Legal closet"
@@ -92,14 +151,23 @@
 	/obj/item/clothing/shoes/black,
 	/obj/item/storage/briefcase = 2)
 
+TYPEINFO(/obj/storage/closet/coffin)
+	mat_appearances_to_ignore = list("wood")
 /obj/storage/closet/coffin
 	name = "coffin"
 	desc = "A burial receptacle for the dearly departed."
+	icon = 'icons/obj/storage/coffin.dmi'
 	icon_state = "coffin"
 	icon_closed = "coffin"
 	icon_opened = "coffin-open"
 	layer = 2.5
 	icon_welded = "welded-coffin-4dirs"
+	open_sound = 'sound/misc/coffin_open.ogg'
+	close_sound = 'sound/misc/coffin_close.ogg'
+	volume = 70
+	auto_close = FALSE
+	can_leghole = FALSE
+	default_material = "wood"
 
 	wood
 		icon_closed = "woodcoffin"
@@ -114,7 +182,7 @@
 	icon_closed = "bio"
 	icon_opened = "bio-open"
 	spawn_contents = list(/obj/item/storage/box/biohazard_bags,
-	/obj/item/clothing/suit/bio_suit = 2,
+	/obj/item/clothing/suit/hazard/bio_suit = 2,
 	/obj/item/clothing/under/color/white = 2,
 	/obj/item/clothing/shoes/white = 2,
 	/obj/item/clothing/head/bio_hood = 2)
@@ -126,34 +194,39 @@
 	icon_closed = "syndicate"
 	icon_opened = "syndicate-open"
 
+	New()
+		START_TRACKING_CAT(TR_CAT_NUKE_OP_STYLE)
+		..()
+
+	disposing()
+		STOP_TRACKING_CAT(TR_CAT_NUKE_OP_STYLE)
+		..()
+
 /obj/storage/closet/syndicate/personal
 	desc = "Gear preperations closet."
 	spawn_contents = list(
 	/obj/item/clothing/mask/breath,
 	/obj/item/clothing/under/misc/syndicate,
-#if defined(MAP_OVERRIDE_MANTA)
 	/obj/item/tank/jetpack/syndicate,
-#else
-	/obj/item/tank/jetpack,
-#endif
 	/obj/item/clothing/under/misc/syndicate,
 #ifdef XMAS
-	/obj/item/clothing/head/helmet/space/santahat,
-	/obj/item/clothing/suit/space/santa,
+	/obj/item/clothing/head/helmet/space/santahat/noslow,
+	/obj/item/clothing/suit/space/santa/noslow,
 #else
 	/obj/item/clothing/head/helmet/space/syndicate,
 	/obj/item/clothing/suit/space/syndicate,
 #endif
 	/obj/item/crowbar,
 	/obj/item/cell/supercell/charged,
-	/obj/item/device/multitool)
+	/obj/item/device/multitool,
+	/obj/item/storage/backpack/syndie)
 
 /obj/storage/closet/syndicate/nuclear
 	desc = "Nuclear preperations closet."
 	spawn_contents = list(/obj/item/storage/box/handcuff_kit,
 	/obj/item/storage/box/flashbang_kit,
 	/obj/item/pinpointer/nuke = 5,
-	/obj/item/device/pda2/syndicate)
+	/obj/item/device/pda2/syndicate/nuclear)
 
 /obj/storage/closet/syndicate/malf
 	desc = "Gear preperations closet."
@@ -168,7 +241,7 @@
 /obj/storage/closet/thunderdome
 	name = "\improper Thunderdome closet"
 	desc = "Everything you need!"
-	anchored = 1
+	anchored = ANCHORED
 
 /* let us never forget this - haine
 /obj/closet/thunderdome/New()
@@ -182,8 +255,8 @@
 	spawn_contents = list(/obj/item/clothing/under/jersey/red,
 	/obj/item/clothing/under/jersey/red,
 	/obj/item/clothing/shoes/black = 2,
-	/obj/item/knife/butcher/predspear = 2,
-	/obj/item/gun/energy/laser_gun/pred = 2,
+	/obj/item/knife/butcher/hunterspear = 2,
+	/obj/item/gun/energy/plasma_gun = 2,
 	/obj/item/stimpack = 2,
 	/obj/item/storage/belt/wrestling = 2,
 	/obj/item/storage/box/kendo_box = 1,
@@ -196,8 +269,8 @@
 	spawn_contents = list(/obj/item/clothing/under/jersey/green,
 	/obj/item/clothing/under/jersey/green,
 	/obj/item/clothing/shoes/black = 2,
-	/obj/item/knife/butcher/predspear = 2,
-	/obj/item/gun/energy/laser_gun/pred = 2,
+	/obj/item/knife/butcher/hunterspear = 2,
+	/obj/item/gun/energy/plasma_gun = 2,
 	/obj/item/stimpack = 2,
 	/obj/item/storage/belt/wrestling = 2,
 	/obj/item/storage/box/kendo_box = 1,
@@ -219,7 +292,7 @@
 	name = "wrestling supplies closet"
 	desc = "A handy closet full of everything an aspiring fake showboater wrestler needs to launch his career."
 	spawn_contents = list(/obj/item/storage/belt/wrestling/fake = 3,
-	/obj/item/clothing/under/shorts/random = 3,
+	/obj/item/clothing/under/shorts/random_color = 3,
 	/obj/item/clothing/mask/wrestling/black = 1,
 	/obj/item/clothing/mask/wrestling/blue = 1,
 	/obj/item/clothing/mask/wrestling/green = 1)
@@ -276,7 +349,7 @@
 			B9.pixel_y = 0
 			B9.pixel_x = 6
 
-			var/obj/item/folder/B10 = new /obj/item/canvas(src)
+			var/obj/item/canvas/B10 = new /obj/item/canvas(src)
 			B10.pixel_y = 0	// everything else does it i guess
 			B10.pixel_x = 0
 
@@ -328,16 +401,16 @@
 	icon_welded = "mantacontainerleft-welded"
 	bound_height = 96
 	bound_width = 32
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
-	open(var/entangleLogic)
+	open(var/entangleLogic, mob/user)
 		if (src.open)
 			return 0
 		if (!src.can_open())
 			return 0
 
 		if(entangled && !entangleLogic && !entangled.can_close())
-			visible_message("<span class='alert'>It won't budge!</span>")
+			visible_message(SPAN_ALERT("It won't budge!"))
 			return 0
 
 		if(entangled && !entangleLogic)
@@ -348,22 +421,24 @@
 
 		src.dump_contents()
 		src.open = 1
-		src.update_icon()
+		src.gas_impermeable = FALSE
+		src.UpdateIcon()
 		p_class = initial(p_class)
 		playsound(src.loc, 'sound/effects/cargodoor.ogg', 15, 1, -3)
 		return 1
 
-	close(var/entangleLogic)
+	close(var/entangleLogic, mob/user)
 		if (!src.open)
 			return 0
 		if (!src.can_close())
 			return 0
 
 		if(entangled && !entangleLogic && !entangled.can_open())
-			visible_message("<span class='alert'>It won't budge!</span>")
+			visible_message(SPAN_ALERT("It won't budge!"))
 			return 0
 
 		src.open = 0
+		src.gas_impermeable = TRUE
 
 		for (var/obj/O in get_turf(src))
 			if (src.is_acceptable_content(O))
@@ -390,7 +465,7 @@
 				M.playsound_local(M.loc, "warp", 50, 1)
 				continue
 #endif
-			if (isobserver(M) || iswraith(M) || isintangible(M) || istype(M, /mob/living/object))
+			if (isobserver(M) || iswraith(M) || isintangible(M) || islivingobject(M))
 				continue
 			if (src.crunches_contents)
 				src.crunch(M)
@@ -403,26 +478,36 @@
 			entangled.contents = src.contents
 			entangled.open(1)
 
-		src.update_icon()
-		playsound(src.loc, "sound/effects/cargodoor.ogg", 15, 1, -3)
+		src.UpdateIcon()
+		playsound(src.loc, 'sound/effects/cargodoor.ogg', 15, 1, -3)
+		SEND_SIGNAL(src, COMSIG_OBJ_STORAGE_CLOSED)
 		return 1
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (istype(W, /obj/item/cargotele))
 			return
 
 		else if (istype(W, /obj/item/satchel/))
+			if(secure && locked)
+				user.show_text("Access Denied", "red")
+				return
+			if (count_turf_items() >= max_capacity || length(contents) >= max_capacity)
+				user.show_text("[src] cannot fit any more items!", "red")
+				return
 			var/amt = length(W.contents)
 			if (amt)
-				user.visible_message("<span class='notice'>[user] dumps out [W]'s contents into [src]!</span>")
+				user.visible_message(SPAN_NOTICE("[user] dumps out [W]'s contents into [src]!"))
 				var/amtload = 0
 				for (var/obj/item/I in W.contents)
+					if(length(contents) >= max_capacity)
+						break
 					if (open)
 						I.set_loc(src.loc)
 					else
 						I.set_loc(src)
 					amtload++
-				W:satchel_updateicon()
+				W:UpdateIcon()
+				W.tooltip_rebuild = TRUE
 				if (amtload)
 					user.show_text("[amtload] [W:itemstring] dumped into [W]!", "blue")
 				else
@@ -441,10 +526,10 @@
 				return
 			if (!src.welded)
 				src.weld(1, W, user)
-				src.visible_message("<span class='alert'>[user] welds [src] closed with [W].</span>")
+				src.visible_message(SPAN_ALERT("[user] welds [src] closed with [W]."))
 			else
 				src.weld(0, W, user)
-				src.visible_message("<span class='alert'>[user] unwelds [src] with [W].</span>")
+				src.visible_message(SPAN_ALERT("[user] unwelds [src] with [W]."))
 			return
 
 		if (src.secure)
@@ -456,11 +541,11 @@
 				if (src.allowed(user) || !src.registered || (istype(W, /obj/item/card/id) && src.registered == I.registered))
 					//they can open all lockers, or nobody owns this, or they own this locker
 					src.locked = !( src.locked )
-					user.visible_message("<span class='notice'>The locker has been [src.locked ? null : "un"]locked by [user].</span>")
-					src.update_icon()
+					user.visible_message(SPAN_NOTICE("The locker has been [src.locked ? null : "un"]locked by [user]."))
+					src.UpdateIcon()
 					if (!src.registered)
 						src.registered = I.registered
-						src.name = "[I.registered]'s [src.name]"
+						src.name = "[I.registered]’s [src.name]"
 						src.desc = "Owned by [I.registered]."
 					for (var/mob/M in src.contents)
 						src.log_me(user, M, src.locked ? "locks" : "unlocks")
@@ -468,8 +553,8 @@
 			else if (!src.personal && src.allowed(user))
 				if (!src.open)
 					src.locked = !src.locked
-					user.visible_message("<span class='notice'>[src] has been [src.locked ? null : "un"]locked by [user].</span>")
-					src.update_icon()
+					user.visible_message(SPAN_NOTICE("[src] has been [src.locked ? null : "un"]locked by [user]."))
+					src.UpdateIcon()
 					for (var/mob/M in src.contents)
 						src.log_me(user, M, src.locked ? "locks" : "unlocks")
 					return
@@ -483,7 +568,7 @@
 			return
 /*
 		else if (issilicon(user))
-			if (get_dist(src, user) <= 1)
+			if (BOUNDS_DIST(src, user) == 0)
 				return src.Attackhand(user)
 */
 		else
@@ -500,38 +585,41 @@
 	icon_welded = "mantacontainerright-welded"
 	bound_height = 96
 	bound_width = 32
-	anchored = 2
+	anchored = ANCHORED_ALWAYS
 
 /obj/storage/closet/radiation
 	name = "radiation supplies closet"
-	icon = 'icons/obj/large_storage.dmi'
+	icon = 'icons/obj/storage/locker.dmi'
 	icon_closed = "radiation"
 	icon_state = "radiation"
 	icon_opened = "radiation-open"
 	desc = "A handy closet full of everything you need to protect yourself from impending doom of radioactive death."
-	spawn_contents = list(/obj/item/clothing/suit/rad = 1,
+	spawn_contents = list(/obj/item/clothing/suit/hazard/rad = 1,
 					/obj/item/clothing/head/rad_hood = 1,
 					/obj/item/storage/pill_bottle/antirad = 1,
-					/obj/item/clothing/glasses/meson = 1,
+					/obj/item/clothing/glasses/toggleable/meson = 1,
 					/obj/item/reagent_containers/emergency_injector/anti_rad = 1)
+	radiation_protection = 20
 
 /obj/storage/closet/medicalclothes
 	name = "medical clothing locker"
-	icon = 'icons/obj/large_storage.dmi'
-	icon_closed = "medical_clothes"
-	icon_state = "medical_clothes"
-	icon_opened = "secure_white-open"
+	icon = 'icons/obj/storage/locker.dmi'
+	icon_closed = "red-medical"
+	icon_state = "red-medical"
+	icon_opened = "open-white"
 	desc = "A handy medical locker for storing your doctoring apparel."
-	spawn_contents = list(/obj/item/clothing/head/nursehat = 3,
+	spawn_contents = list(/obj/item/clothing/head/nursehat = 2,
+					/obj/item/clothing/head/nursehat/blue = 2,
+					/obj/item/clothing/head/traditionalnursehat = 2,
 					/obj/item/clothing/suit/nursedress = 3,
 					/obj/item/clothing/suit/wintercoat/medical = 3,
 					/obj/item/clothing/head/headmirror = 3,
-					/obj/item/clothing/suit/labcoat/medical = 3)
+					/obj/item/clothing/suit/labcoat = 2)
 
 /obj/storage/closet/command/ruined //replacements for azones and mining level flavor
 	name = "Dented command locker"
 	desc = "This thing looks ransacked."
-	icon = 'icons/obj/large_storage.dmi'
+	icon = 'icons/obj/storage/locker.dmi'
 	icon_state = "dented_c"
 	icon_closed = "dented_c"
 	icon_opened = "dented_c-open"
@@ -542,3 +630,11 @@
 	desc = "A banged up Head of Security locker. Looks like somebody took the law into their own hands."
 	spawn_contents = list(/obj/item/clothing/shoes/brown,
 	/obj/item/paper/iou)
+
+/obj/storage/closet/mauxite
+	desc = "This thing looks pretty robust!"
+	icon = 'icons/obj/storage/locker.dmi'
+	icon_state = "closed$$mauxite"
+	default_material = "mauxite"
+	uses_default_material_appearance = TRUE
+	mat_changename = TRUE

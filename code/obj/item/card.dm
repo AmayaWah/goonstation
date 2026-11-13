@@ -9,10 +9,11 @@ GAUNTLET CARDS
 /obj/item/card
 	name = "card"
 	icon = 'icons/obj/items/card.dmi'
-	icon_state = "id"
-	wear_image_icon = 'icons/mob/mob.dmi'
+	icon_state = "id_basic"
+	wear_image_icon = 'icons/mob/clothing/card.dmi'
 	w_class = W_CLASS_TINY
-	burn_type = 1
+	object_flags = NO_GHOSTCRITTER
+	burn_remains = BURN_REMAINS_MELT
 	stamina_damage = 0
 	stamina_cost = 0
 	var/list/files = list("tools" = 1)
@@ -24,15 +25,17 @@ GAUNTLET CARDS
 				B.botcard = null
 		..()
 
+TYPEINFO(/obj/item/card/emag)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
+	mats = 8
+
 /obj/item/card/emag
 	desc = "It's a card with a magnetic strip attached to some circuitry. Commonly referred to as an EMAG"
 	name = "Electromagnetic Card"
 	icon_state = "emag"
 	item_state = "card-id"
-	flags = FPRINT | TABLEPASS | SUPPRESSATTACK
+	flags = TABLEPASS | SUPPRESSATTACK
 	layer = 6.0 // TODO fix layer
-	is_syndicate = 1
-	mats = 8
 	contraband = 6
 
 	afterattack(var/atom/A, var/mob/user)
@@ -43,12 +46,35 @@ GAUNTLET CARDS
 	attack()	//Fucking attack messages up in this joint.
 		return
 
+	throw_impact(atom/hit_atom, datum/thrown_thing/thr)
+		..()
+		if(!hit_atom || !thr)
+			return
+		hit_atom.emag_act(thr.user, src)
+
+	emag_act(mob/user, obj/item/card/emag/E)
+		. = ..()
+		if(!src.throw_return)
+			boutput(user, SPAN_ALERT("You run [E] over [src], causing an internal magnetisim feedback loop!"))
+			src.throw_return = TRUE
+			return
+
+	demag(mob/user)
+		. = ..()
+		src.throw_return = FALSE
+
+/obj/item/card/emag/attack_self(mob/user as mob)
+	if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+		return
+	playsound(src, 'sound/impact_sounds/Generic_Snap_1.ogg', 40, FALSE, pitch=1.1)
+	actions.start(new /datum/action/show_item(user, src, "id", 5, 3), user)
+
 /obj/item/card/emag/fake
 //delicious fake emag
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='combat'>Turns out that card was actually a kind of [pick("deadly chameleon","spiny anteater","Discount Dan's latest product prototype","Syndicate Top Trumps Card","bag of neckbeard shavings")] in disguise! It stabs you!</span>")
-		user.changeStatus("paralysis", 10 SECONDS)
-		SPAWN_DBG(1 SECOND)
+	attack_hand(mob/user)
+		boutput(user, SPAN_COMBAT("Turns out that card was actually a kind of [pick("deadly chameleon","spiny anteater","Discount Dan's latest product prototype","Syndicate Top Trumps Card","bag of neckbeard shavings")] in disguise! It stabs you!"))
+		user.changeStatus("unconscious", 10 SECONDS)
+		SPAWN(1 SECOND)
 			var/obj/storage/closet/C = new/obj/storage/closet(get_turf(user))
 			user.set_loc(C)
 			C.layer = OBJ_LAYER
@@ -67,18 +93,16 @@ GAUNTLET CARDS
 
 /obj/item/card/id
 	name = "identification card"
-	icon_state = "id"
-	uses_multiple_icon_states = 1
+	icon_state = "id_basic"
 	item_state = "card-id"
 	desc = "A standardized NanoTrasen microchipped identification card that contains data that is scanned when attempting to access various doors and computers."
-	flags = FPRINT | TABLEPASS | ATTACK_SELF_DELAY
+	flags = TABLEPASS | ATTACK_SELF_DELAY | SUPPRESSATTACK
 	click_delay = 0.4 SECONDS
 	wear_layer = MOB_BELT_LAYER
 	var/datum/pronouns/pronouns = null
 	var/list/access = list()
 	var/registered = null
 	var/assignment = null
-	var/title = null
 	var/emagged = 0
 	var/datum/reagent_group_account/reagent_account = null
 	/// this determines if the icon_state of the ID changes if it is given a new job
@@ -86,14 +110,11 @@ GAUNTLET CARDS
 
 	// YOU START WITH  NO  CREDITS
 	// WOW
-	var/money = 0.0
+	var/money = 0
 	var/pin = 0000
 
-	//It's a..smart card.  Sure.
-	var/datum/computer/file/cardfile = null
-
 	proc/update_name()
-		name = "[src.registered]'s ID Card ([src.assignment])"
+		name = "[src.registered]’s ID Card ([src.assignment])"
 
 	get_desc()
 		. = ..()
@@ -105,7 +126,7 @@ GAUNTLET CARDS
 
 /obj/item/card/id/New()
 	..()
-	src.pin = rand(1000,9999)
+	src.pin = rand(PIN_MIN, PIN_MAX)
 	START_TRACKING
 
 /obj/item/card/id/disposing()
@@ -121,6 +142,9 @@ GAUNTLET CARDS
 /obj/item/card/id/research
 	icon_state = "id_res"
 
+/obj/item/card/id/medical
+	icon_state = "id_med"
+
 /obj/item/card/id/engineering
 	icon_state = "id_eng"
 
@@ -133,37 +157,52 @@ GAUNTLET CARDS
 	keep_icon = TRUE
 
 /obj/item/card/id/gold
-	name = "identification card"
-	icon_state = "gold"
+	name = "gold identification card"
+	icon_state = "id_gold"
 	item_state = "gold_id"
 	desc = "This card is important!"
 	keep_icon = TRUE
 
-/obj/item/card/id/blank_deluxe
-	name = "Deluxe ID"
-	icon_state = "gold"
-	item_state = "gold_id"
-	registered = "Member"
-	assignment = "Member"
-	keep_icon = TRUE
-
-/obj/item/card/id/captains_spare
+/obj/item/card/id/gold/captains_spare
 	name = "Captain's spare ID"
-	icon_state = "gold"
-	item_state = "gold_id"
 	registered = "Captain"
 	assignment = "Captain"
-	keep_icon = TRUE
-	var/touched = FALSE
-	New()
-		access = get_access("Captain")
-		..()
 
-	pickup(mob/user)
-		. = ..()
-		if(!touched && user.job != "Captain")
-			touched = TRUE
-			logTheThing("station", user, null, "is the first non-Captain to pick up [src] at [log_loc(src)]")
+/obj/item/card/id/gold/captains_spare/New()
+	..()
+	START_TRACKING
+	src.access = get_access("Captain")
+	src.AddComponent(/datum/component/log_item_pickup, first_time_only=TRUE, authorized_job="Captain", message_admins_too=FALSE)
+	
+/obj/item/card/id/gold/captains_spare/disposing()
+	STOP_TRACKING
+	. = ..()
+
+
+/obj/item/card/id/nanotrasen
+	name = "Nanotrasen identification card"
+	icon_state = "id_nanotrasen"
+	keep_icon = TRUE
+
+/obj/item/card/id/pirate
+	access = list(access_maint_tunnels, access_pirate)
+	assignment = "Space Pirate"
+
+	first_mate
+		assignment = "Space Pirate First Mate"
+	captain
+		assignment = "Space Pirate Captain"
+
+/obj/item/card/id/salvager
+	keep_icon = TRUE
+
+	New()
+		..()
+		var/mob/living/carbon/human/H = src.loc
+		if(istype(H))
+			src.registered = "[H.real_name]"
+			src.update_name()
+			src.pin = H.mind.remembered_pin
 
 //ABSTRACT_TYPE(/obj/item/card/id/pod_wars)
 /obj/item/card/id/pod_wars
@@ -177,7 +216,7 @@ GAUNTLET CARDS
 		else
 			var/flavor = pick("doesn't like you", "can tell you don't deserve it", "saw into your very soul and found you wanting", "hates you", "thinks you stink", "thinks you two should start seeing other people", "doesn't trust you", "finds your lack of faith disturbing", "is just not that into you", "gently weeps")
 			//stolen from Captain's Explosive Spare ID down below...
-			boutput(user, "<span class='alert'>The ID card [flavor] and <b>explodes!</b></span>")
+			boutput(user, SPAN_ALERT("The ID card [flavor] and <b>explodes!</b>"))
 			make_fake_explosion(src)
 			user.u_equip(src)
 			src.dropped(user)
@@ -186,14 +225,14 @@ GAUNTLET CARDS
 
 	nanotrasen
 		name = "NanoTrasen Pilot"
-		icon_state = "polaris"
+		icon_state = "id_nanotrasen"
 		assignment = "NanoTrasen Pilot"
 		access = list(access_heads)
 		team = 1
 
 		commander
-			name = "NanoTrasen Commander"
-			assignment = "NanoTrasen Commander"
+			name = "NanoTrasen Pod Commander"
+			assignment = "NanoTrasen Pod Commander"
 			access = list(access_heads, access_captain)
 
 	syndicate
@@ -204,9 +243,10 @@ GAUNTLET CARDS
 		team = 2
 
 		commander
-			name = "Syndicate Commander"
-			assignment = "Syndicate Commander"
+			name = "Syndicate Pod Commander"
+			assignment = "Syndicate Pod Commander"
 			access = list(access_syndicate_shuttle, access_syndicate_commander)
+
 
 /obj/item/card/id/dabbing_license
 	name = "Dabbing License"
@@ -231,37 +271,41 @@ GAUNTLET CARDS
 		People dabbed on: [dabbed_on_count]<br/>"}
 
 /obj/item/card/id/dabbing_license/attack_self(mob/user as mob)
+	if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+		return
 	user.visible_message("[user] shows you: [bicon(src)] [src.name]: [get_desc(0, user)]")
-
 	src.add_fingerprint(user)
-	return
+	playsound(src, 'sound/impact_sounds/Generic_Snap_1.ogg', 40, FALSE, pitch=0.9)
+	actions.start(new /datum/action/show_item(user, src, "id", 5, 3), user)
 
-/obj/item/card/id/captains_spare/explosive
+/obj/item/card/id/gold/captains_spare/explosive
 	pickup(mob/user)
-		boutput(user, "<span class='alert'>The ID-Card explodes.</span>")
+		boutput(user, SPAN_ALERT("The ID-Card explodes."))
 		user.transforming = 1
 		var/obj/overlay/O = new/obj/overlay(get_turf(user))
-		O.anchored = 1
+		O.anchored = ANCHORED
 		O.name = "Explosion"
 		O.layer = NOLIGHT_EFFECTS_LAYER_BASE
 		O.pixel_x = -92
 		O.pixel_y = -96
 		O.icon = 'icons/effects/214x246.dmi'
 		O.icon_state = "explosion"
-		SPAWN_DBG(3.5 SECONDS) qdel(O)
+		SPAWN(3.5 SECONDS) qdel(O)
+		logTheThing(LOG_COMBAT, user, "was gibbed by the explosive Captain's Spare at [log_loc(user)].")
 		user.gib()
 
 /obj/item/card/id/attack_self(mob/user as mob)
+	if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+		return
 	user.visible_message("[user] shows you: [bicon(src)] [src.name]: assignment: [src.assignment]", "You show off your card: [bicon(src)] [src.name]: assignment: [src.assignment]")
-
 	src.add_fingerprint(user)
-	return
+	actions.start(new /datum/action/show_item(user, src, "id", 5, 3), user)
 
 /obj/item/card/id/emag_act(var/mob/user, var/obj/item/card/emag/E)
 	if (src.emagged)
 		if (user && E)
 			user.show_text("You run [E] over [src], but nothing seems to happen.", "red")
-		return
+		return FALSE
 	src.access = list() // clear what used to be there
 	var/list/all_accesses = get_all_accesses()
 	for (var/i = rand(2,25), i > 0, i--)
@@ -270,79 +314,152 @@ GAUNTLET CARDS
 		all_accesses -= new_access
 		if (istype(src, /obj/item/card/id/syndicate)) // Nuke ops unable to exit their station (Convair880).
 			src.access += access_syndicate_shuttle
+		if (istype(src, /obj/item/card/id/syndicate/commander)) // Commander unable to play their cool tunes
+			src.access += access_syndicate_commander
 		DEBUG_MESSAGE("[get_access_desc(new_access)] added to [src]")
+	user?.show_text("You run [E] over [src], scrambling its access.", "red")
+	logTheThing(LOG_STATION, user || usr, "emagged [src], scrambling its access and granting random access at [log_loc(user || usr)].")
 	src.emagged = 1
+	return TRUE
 
-/*
-/obj/item/card/id/verb/read()
-	set src in usr
-
-	boutput(usr, "[bicon(src)] [src.name]: The current assignment on the card is [src.assignment].")
-	return
-*/
 
 /obj/item/card/id/syndicate
 	name = "agent card"
 	access = list(access_maint_tunnels, access_syndicate_shuttle)
+	HELP_MESSAGE_OVERRIDE(null)
+	SYNDICATE_STEALTH_DESCRIPTION("There's some extra circuitry soldered to the back.")
 
-/obj/item/card/id/syndicate/attack_self(mob/user as mob)
-	if(!src.registered)
-		var/reg = copytext(src.sanitize_name(input(user, "What name would you like to put on this card?", "Agent card name", ishuman(user) ? user.real_name : user.name)), 1, 100)
-		var/ass = copytext(src.sanitize_name(input(user, "What occupation would you like to put on this card?\n Note: This will not grant any access levels other than Maintenance.", "Agent card job assignment", "Staff Assistant"), 1), 1, 100)
-		var/color = input(user, "What color should the ID's color band be?\nClick cancel to abort the forging process.") as null|anything in list("clown","golden","blue","red","green","purple","yellow","No band")
-		var/datum/pronouns/pronouns = choose_pronouns(user, "What pronouns would you like to put on this card?", "Pronouns")
-		src.pronouns = pronouns
-		switch (color)
-			if ("clown")
-				src.icon_state = "id_clown"
-			if ("golden")
-				src.icon_state = "gold"
-			if ("No band")
-				src.icon_state = "id"
-			if ("blue")
-				src.icon_state = "id_civ"
-			if ("red")
-				src.icon_state = "id_sec"
-			if ("green")
-				src.icon_state = "id_com"
-			if ("purple")
-				src.icon_state = "id_res"
-			if ("yellow")
-				src.icon_state = "id_eng"
-			else
-				return // Abort process.
-		src.registered = reg
-		src.assignment = ass
-		src.name = "[src.registered]'s ID Card ([src.assignment])"
-		boutput(user, "<span class='notice'>You successfully forge the ID card.</span>")
-	else
-		..()
+	/// If FALSE, this agent card can be forged with new credentials. This value is permanently set to TRUE after that.
+	var/forged = FALSE
+	/// The possible styles that this card can adopt.
+	/// name: Human-readable name.
+	/// state: Corresponding icon state in card.dmi.
+	/// keepState: (Optional) Maintain existing icon if the job is changed in an ID console.
+	var/static/list/card_styles = list(
+		list(name = "Plain", state = "id_basic"),
+		list(name = "Civilian", state = "id_civ"),
+		list(name = "Engineering", state = "id_eng"),
+		list(name = "Research", state = "id_res"),
+		list(name = "Medical", state = "id_med"),
+		list(name = "Security", state = "id_sec"),
+		list(name = "Command", state = "id_com"),
+		list(name = "Clown", state = "id_clown", keepState = TRUE),
+		list(name = "Gold", state = "id_gold", keepState = TRUE),
+		list(name = "NanoTrasen", state = "id_nanotrasen", keepState = TRUE),
+		list(name = "Syndicate", state = "id_syndie", keepState = TRUE),
+	)
 
-/obj/item/card/id/syndicate/attackby(obj/item/W as obj, mob/user as mob)
-	var/obj/item/card/id/sourceCard = W
-	if (istype(sourceCard))
-		boutput(user, "You copy [sourceCard]'s accesses to [src].")
-		src.access |= sourceCard.access
-	else
-		return ..()
+	attack_self(mob/user)
+		if (src.forged)
+			return ..()
+		src.ui_interact(user)
 
-/obj/item/card/id/syndicate/proc/sanitize_name(var/input, var/strip_bad_stuff_only = 0)
-	input = strip_html(input, MAX_MESSAGE_LEN, 1)
-	if (strip_bad_stuff_only)
-		return input
-	var/list/namecheck = splittext(trim(input), " ")
-	for(var/i = 1, i <= namecheck.len, i++)
-		namecheck[i] = capitalize(namecheck[i])
-	input = jointext(namecheck, " ")
-	return input
+	attackby(obj/item/W, mob/user)
+		var/obj/item/card/id/sourceCard = W
+		if (istype(sourceCard))
+			boutput(user, "You copy [sourceCard]'s accesses to [src].")
+			src.access |= sourceCard.access
+		else
+			return ..()
+
+	afterattack(atom/target, mob/user, reach, params)
+		var/obj/item/card/id/sourceCard = target
+		if (istype(sourceCard))
+			boutput(user, "You copy [sourceCard]'s accesses to [src].")
+			src.access |= sourceCard.access
+		else
+			return ..()
+
+	proc/sanitize_name(input)
+		return trimtext(strip_html(input, 100, TRUE))
+
+	get_help_message(dist, mob/user)
+		if (istrainedsyndie(user) || isspythief(user))
+			return {"[!src.forged ? "Use the card in your hand to set its name, appearance, job title, and pronouns.<br/>" : ""]Use another ID on the agent card (or vice-versa) to stealthily copy the access of that ID to the agent card."}
+		return null
+
+	ui_interact(mob/user, datum/tgui/ui)
+		if (src.forged)
+			ui?.close(FALSE)
+			return
+		ui = tgui_process.try_update_ui(user, src, ui)
+		if (!ui)
+			ui = new(user, src, "AgentCard", "Agent Card")
+			ui.open()
+
+	ui_data(mob/user)
+		var/equippedIdData = null
+		var/obj/item/card/id/id
+		// we have to do this instead of user.get_id() because, hilariously,
+		// it will otherwise generally get the agent card itself (due to it being held in the active hand)
+		if (ishuman(user))
+			var/mob/living/carbon/human/H = user
+			id = get_id_card(H.get_slot(SLOT_WEAR_ID))
+		if (id != null)
+			equippedIdData = list("name" = id.registered, "assignment" = id.assignment, "icon" = id.icon_state, "pronouns" = id.pronouns?.name)
+		. = list(
+			"placeholderName" = ishuman(user) ? user.real_name : user.name,
+			"equippedId" = equippedIdData,
+		)
+
+	ui_static_data(mob/user)
+		var/list/styles = card_styles.Copy()
+		for (var/style in styles) // generate icons for each possible style so they can be shown in the UI
+			style["refIcon"] = "\ref['icons/obj/items/card.dmi']?state=[style["state"]]"
+
+		var/list/selectable_pronouns = list()
+		for (var/pronoun_type in filtered_concrete_typesof(/datum/pronouns, /proc/pronouns_filter_is_choosable))
+			var/datum/pronouns/pronouns = get_singleton(pronoun_type)
+			selectable_pronouns.Add(pronouns.name)
+
+		. = list(
+			"placeholderAssignment" = "Staff Assistant",
+			"usablePronouns" = selectable_pronouns,
+			"cardStyles" = styles,
+			"defaultCardStyle" = styles[2], // Civilian
+		)
+
+	ui_act(action, list/params, datum/tgui/ui, datum/ui_state/state)
+		. = ..()
+		if (.)
+			return
+		if (action == "forge")
+			if (src.forged) // should never happen, but, sanity check
+				boutput(ui.user, SPAN_ALERT("\The [src] seems to have been forged while you weren't looking! Huh."))
+				return FALSE
+			src.forged = TRUE
+			src.registered = sanitize_name(params["cardName"])
+			src.assignment = sanitize_name(params["cardAssignment"])
+			var/cardPronouns = params["cardPronouns"]
+			// problem: cardPronouns are tracked as a string in the UI, but pronouns themselves refer to a datum singleton
+			// solution: pass the string, and if there's a chooseable subtype with a matching name, assign the card that singleton
+			// that way e.g. "she/her" returns /datum/pronouns/sheHer
+			if (cardPronouns != null)
+				var/list/choosable = filtered_concrete_typesof(/datum/pronouns, /proc/pronouns_filter_is_choosable)
+				for (var/V in choosable)
+					var/datum/pronouns/pronouns = get_singleton(V)
+					if (pronouns?.name == cardPronouns)
+						cardPronouns = pronouns
+						break
+			src.pronouns = cardPronouns
+			var/list/cardStyle = params["cardStyle"]
+			src.icon_state = cardStyle["state"]
+			src.keep_icon = cardStyle["keepState"] || FALSE
+			src.update_name()
+			boutput(ui.user, SPAN_NOTICE("You successfully forge the ID card."))
+			ui.user.playsound_local(ui.user, "sound/machines/printer_press.ogg", 35, FALSE)
+			ui.close(FALSE)
+			return
+		. = TRUE
 
 /obj/item/card/id/syndicate/commander
 	name = "commander card"
 	access = list(access_maint_tunnels, access_syndicate_shuttle, access_syndicate_commander)
 
+
 /obj/item/card/id/temporary
 	name = "temporary identification card"
-	icon_state = "id"
+	icon_state = "id_basic"
 	item_state = "card-id"
 	desc = "A temporary NanoTrasen Identification Card. Its access will be revoked once it expires."
 	var/duration = 60 //seconds
@@ -352,7 +469,7 @@ GAUNTLET CARDS
 
 /obj/item/card/id/temporary/New()
 	..()
-	SPAWN_DBG(0) //to give time for duration and starting access to be set
+	SPAWN(0) //to give time for duration and starting access to be set
 		starting_access = access
 		end_time = ticker.round_elapsed_ticks + duration*10
 		sleep(duration * 10)
@@ -387,8 +504,8 @@ GAUNTLET CARDS
 			else
 				assignment = "loading arena matches..."
 				tag = "gauntlet-id-[user.client.key]"
-				queryGauntletMatches(1, user.client.key)
-		name = "[registered]'s ID Card ([assignment])"
+				queryGauntletMatches(user.client.key)
+		src.update_name()
 
 	proc/SetMatchCount(var/matches)
 		switch (matches)
@@ -411,42 +528,81 @@ GAUNTLET CARDS
 				icon_state = "id_com"
 				assignment = "Expert Gladiator ([matches] rounds played)"
 			if (76 to INFINITY)
-				icon_state = "gold"
+				icon_state = "id_gold"
 				assignment = "Legendary Gladiator ([matches] rounds played)"
 			else
 				assignment = "what the fuck ([matches] rounds played)"
-		name = "[registered]'s ID Card ([assignment])"
+		src.update_name()
 
 // Experimental item that may be made into a 100k spacebux reward in the future?
 /obj/item/card/license_to_kill
 	name = "License to Kill"
 	desc = "The bearer of this license is allowed to kill any player they like, but only as long as it is in their inventory. Yes, even if you arent an antag. No, you dont need to ahelp this we already know if you have it. Get to it!"
-	icon_state="fingerprint1"
+	icon_state="license_to_kill"
 	var/mob/owner = null
+	var/is_very_visible = 0
+	var/obj/maptext_junk/indicator = null
+
+	very_visible
+		is_very_visible = 1
 
 	New()
 		..()
 		processing_items.Add(src)
+		if (is_very_visible)
+			indicator = new(src)
+			indicator.maptext_x = -100
+			indicator.maptext_y = 38
+			indicator.maptext_width = 232
+			indicator.maptext_height = 64
+			var/col1 = "color: #fff; -dm-text-outline: 2px #000;"
+			var/col2 = "color: #f00; -dm-text-outline: 2px #000;"
+			var/blink1 = "<span class='c vb ps2p' style='[col1]'><span class='vga'>KILL</span>\n↓</span>"
+			var/blink2 = "<span class='c vb ps2p' style='[col2]'><span class='vga'>KILL</span>\n↓</span>"
+			indicator.maptext = blink1
+			animate(indicator, maptext = blink1, time = 3, loop = -1)
+			animate(maptext = blink2, time = 3, loop = -1)
+
+
 
 	process()
 		if(!owner) return
 		if(!owner.contains(src))
-			boutput(owner, "<h3><span class='alert'>You have lost your license to kill!</span></h3>")
-			logTheThing("combat",owner,null,"dropped their license to kill")
-			logTheThing("admin",owner,null,"dropped their license to kill")
+			boutput(owner, SPAN_ALERT("<h3>You have lost your license to kill!</h3>"))
+			logTheThing(LOG_COMBAT, owner, "dropped their license to kill")
+			logTheThing(LOG_ADMIN, owner, "dropped their license to kill")
 			message_admins("[key_name(owner)] dropped their license to kill")
+			owner.mind?.remove_antagonist(ROLE_LICENSED)
+			if (is_very_visible)
+				owner.vis_contents -= indicator
 			owner = null
 
 	pickup(mob/user as mob)
 		if(user != owner)
-			logTheThing("combat",user,null,"picked up a license to kill")
-			logTheThing("admin",user,null,"picked up a license to kill")
+			logTheThing(LOG_COMBAT, user, "picked up a license to kill")
+			logTheThing(LOG_ADMIN, user, "picked up a license to kill")
 			message_admins("[key_name(user)] picked up a license to kill")
-			boutput(user, "<h3><span class='alert'>You now have a license to kill!</span></h3>")
+			boutput(user, SPAN_ALERT("<h3>You now have a license to kill!</h3>"))
+			user.mind?.add_antagonist(ROLE_LICENSED)
+			if (is_very_visible)
+				user.vis_contents += indicator
+
 			if(owner)
 				boutput(owner, "<h2>You have lost your license to kill!</h2>")
-				logTheThing("combat",user,null,"dropped their license to kill")
-				logTheThing("admin",user,null,"dropped their license to kill")
-				message_admins("[key_name(user)] dropped their license to kill")
+				logTheThing(LOG_COMBAT, owner, "dropped their license to kill")
+				logTheThing(LOG_ADMIN, owner, "dropped their license to kill")
+				message_admins("[key_name(owner)] dropped their license to kill")
+				owner.mind?.remove_antagonist(ROLE_LICENSED)
+				if (is_very_visible)
+					owner.vis_contents -= indicator
 			owner = user
 		..()
+
+	attack_self(mob/user as mob)
+		if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+			return
+		var/showing_off = "[bicon(src)] License to Kill"
+		user.visible_message("[user] shows you [his_or_her(user)] [showing_off]!", \
+							"You show off your [showing_off]")
+		playsound(src, 'sound/impact_sounds/Generic_Snap_1.ogg', 40, FALSE, pitch=1.1)
+		actions.start(new /datum/action/show_item(user, src, "id", 5, 3), user)

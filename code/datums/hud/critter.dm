@@ -34,15 +34,14 @@
 	var/atom/movable/screen/hud/bleeding = null
 	/// resting hud element
 	var/atom/movable/screen/hud/resting = null
+	/// gravity hud element
+	var/atom/movable/screen/hud/gravity = null
 
 	/// hud owner mob
 	var/mob/living/critter/master = null
 
 	/// hud icons to use
 	var/icon/hud_icon = 'icons/mob/hud_human.dmi'
-
-	/// Assoc. List  STATUS EFFECT INSTANCE : UI ELEMENT add_screen(atom/movable/screen/S). Used to hold the ui elements since they shouldnt be on the status effects themselves.
-	var/list/statusUiElements = list()
 
 	/// offset for a screen location to the right
 	var/right_offset = 0
@@ -59,12 +58,15 @@
 /datum/hud/critter/New(M)
 	..()
 	src.master = M
+	if (istext(src.hud_icon))
+		src.hud_icon = file(src.hud_icon)
 
 	// element load order determines position in the hud
 	src.create_hand_element()
 	src.create_health_element()
 	src.create_stamina_element()
 	src.create_temperature_element()
+	src.create_gravity_element()
 
 	// these elements rely on being able to breathe
 	if (src.master.get_health_holder("oxy"))
@@ -77,8 +79,7 @@
 	if (src.master.can_bleed)
 		src.create_bleeding_element()
 
-	if (src.master.can_throw)
-		src.create_throwing_element()
+	src.create_throwing_element()
 
 	src.create_intent_element()
 	src.create_pulling_element()
@@ -95,21 +96,17 @@
 
 /// gets the leftmost screen loc
 /datum/hud/critter/proc/loc_left()
-	if (src.left_offset < -6) // wraps vertically if the magnitude of left offset is greater than 6
+	if (src.left_offset < -9) // Wraps vertically if the magnitude of left offset is greater than 9. Leave a 1 space column for storage containers.
 		src.wraparound_offset_left++
-		if (src.wraparound_offset_right < src.wraparound_offset_left)
-			src.right_offset = 0
-		else
-			src.right_offset = -1
 
 	var/next_left_offset = src.next_left()
 	var/x_offset = 0
 	var/y_offset = 0
 
 	if (next_left_offset < 0)
-		x_offset = next_left_offset
+		x_offset = next_left_offset + src.wraparound_offset_left
 	else if (next_left_offset > 0)
-		x_offset = "+[next_left_offset]"
+		x_offset = "+[next_left_offset + src.wraparound_offset_left]"
 	else
 		x_offset = ""
 
@@ -122,21 +119,17 @@
 
 /// gets the rightmost screen loc
 /datum/hud/critter/proc/loc_right()
-	if (src.right_offset > 6) // wraps vertically if the magnitude of right offset is greater than 6
+	if (src.right_offset > 9) // Wraps vertically if the magnitude of right offset is greater than 8. Leave a 1 space column for the leave pod button.
 		src.wraparound_offset_right++
-		if (src.wraparound_offset_left < src.wraparound_offset_right)
-			src.right_offset = 0
-		else
-			src.right_offset = 1
 
 	var/next_right_offset = src.next_right()
 	var/x_offset = 0
 	var/y_offset = 0
 
 	if (next_right_offset < 0)
-		x_offset = next_right_offset
+		x_offset = next_right_offset - src.wraparound_offset_right
 	else if (next_right_offset > 0)
-		x_offset = "+[next_right_offset]"
+		x_offset = "+[next_right_offset - src.wraparound_offset_right]"
 	else
 		x_offset = ""
 
@@ -173,6 +166,13 @@
 /datum/hud/critter/proc/get_left()
 	return "-[src.left_offset]"
 
+/// update the oxygen and tox indicators based on status
+/datum/hud/critter/proc/update_breathing_indicators(datum/organ_status/lung/status_updates)
+		src.set_suffocating(status_updates.show_oxy_indicator)
+		src.update_tox_indicator(status_updates.show_tox_indicator)
+		// fire indicator is handled in critter on_life
+		// src.set_breathing_fire(status_updates.show_fire_indicator)
+
 /// sets the suffocation icon on the hud to show suffocation status
 /datum/hud/critter/proc/set_suffocating(var/status)
 	if (!src.oxygen)
@@ -201,11 +201,11 @@
 		return
 	src.throwing.icon_state = "throw[src.master.in_throw_mode]"
 
-/// recieves clicks from the screen hud objects
+/// receives clicks from the screen hud objects
 /datum/hud/critter/relay_click(id, mob/user, list/params)
 	if (copytext(id, 1, 5) == "hand")
 		var/handid = text2num(copytext(id, 5))
-		src.master.active_hand = handid
+		src.master.set_hand(handid)
 		src.master.hand = handid
 		src.update_hands()
 
@@ -223,41 +223,58 @@
 				var/icon_y = text2num(params["icon-y"])
 				if (icon_x > 16)
 					if (icon_y > 16)
-						src.master.a_intent = INTENT_DISARM
+						src.master.set_a_intent(INTENT_DISARM)
 					else
-						src.master.a_intent = INTENT_HARM
+						src.master.set_a_intent(INTENT_HARM)
 				else
 					if (icon_y > 16)
-						src.master.a_intent = INTENT_HELP
+						src.master.set_a_intent(INTENT_HELP)
 					else
-						src.master.a_intent = INTENT_GRAB
-				src.update_intent()
+						src.master.set_a_intent(INTENT_GRAB)
 
 			if ("mintent")
 				if (src.master.m_intent == "run")
-					src.master.m_intent = "walk"
+					src.master.set_m_intent("walk")
 				else
-					src.master.m_intent = "run"
-				out(src.master, "You are now [src.master.m_intent == "walk" ? "walking" : "running"]")
+					src.master.set_m_intent("run")
+				boutput(src.master, "You are now [src.master.m_intent == "walk" ? "walking" : "running"]")
 				src.update_mintent()
 
 			if ("pull")
-				if (src.master.pulling)
-					global.unpull_particle(src.master, src.pulling)
-				src.master.remove_pulling()
-				src.update_pulling()
+				if (master.pulling)
+					unpull_particle(master,pulling)
+					master.remove_pulling()
+					src.update_pulling()
+				else if(!isturf(master.loc))
+					boutput(master, SPAN_NOTICE("You can't pull things while inside \a [master.loc]."))
+				else
+					var/list/atom/movable/pullable = list()
+					for(var/atom/movable/AM in range(1, get_turf(master)))
+						if(AM.anchored || !AM.mouse_opacity || AM.invisibility > master.see_invisible || AM == master)
+							continue
+						pullable += AM
+					var/atom/movable/to_pull = null
+					if(length(pullable) == 1)
+						to_pull = pullable[1]
+					else if(length(pullable) < 1)
+						boutput(master, SPAN_NOTICE("There is nothing to pull."))
+					else
+						to_pull = tgui_input_list(master, "Which do you want to pull? You can also Ctrl+Click on things to pull them.", "Which thing to pull?", pullable)
+					if(!isnull(to_pull) && BOUNDS_DIST(master, to_pull) == 0)
+						to_pull.pull(master)
 
 			if ("throw")
 				var/icon_y = text2num(params["icon-y"])
 				if (icon_y > 16 || src.master.in_throw_mode)
-					src.master.toggle_throw_mode()
+					if (src.master.can_throw)
+						src.master.toggle_throw_mode()
 				else
-					src.master.drop_item()
+					src.master.drop_item(null, TRUE)
 			if ("resist")
 				src.master.resist()
 
 			if ("health")
-				boutput(src.master, "<span class='notice'>Your health: [src.master.health]/[src.master.max_health]</span>")
+				boutput(src.master, SPAN_NOTICE("Your health: [src.master.health]/[src.master.max_health]"))
 
 			if ("rest")
 				if(ON_COOLDOWN(src.master, "toggle_rest", REST_TOGGLE_COOLDOWN))
@@ -314,41 +331,7 @@
 
 /// updates all status effect hud elements
 /datum/hud/critter/proc/update_status_effects()
-	for(var/atom/movable/screen/statusEffect/G in src.objects)
-		src.remove_screen(G)
-
-	for(var/datum/statusEffect/S as anything in src.statusUiElements) //Remove stray effects.
-		if(!src.master.statusEffects || !(S in src.master.statusEffects))
-			qdel(src.statusUiElements[S])
-			src.statusUiElements.Remove(S)
-			qdel(S)
-
-	var/spacing = 0.6
-	var/pos_x = spacing - 0.2 - 1
-
-	if(master.statusEffects)
-		for(var/datum/statusEffect/S as anything in master.statusEffects) //Add new ones, update old ones.
-			if(!S.visible) continue
-			if((S in statusUiElements) && src.statusUiElements[S])
-				var/atom/movable/screen/statusEffect/U = src.statusUiElements[S]
-				U.icon = src.hud_icon
-				U.screen_loc = "EAST[pos_x < 0 ? "":"+"][pos_x],NORTH-0.7"
-				U.update_value()
-				src.add_screen(U)
-				pos_x -= spacing
-			else
-				if(S.visible)
-					var/atom/movable/screen/statusEffect/U = new/atom/movable/screen/statusEffect(src.master, S)
-					U.init(src.master,S)
-					U.icon = src.hud_icon
-					src.statusUiElements.Add(S)
-					src.statusUiElements[S] = U
-					U.screen_loc = "EAST[pos_x < 0 ? "":"+"][pos_x],NORTH-0.7"
-					U.update_value()
-					src.add_screen(U)
-					pos_x -= spacing
-					global.animate_buff_in(U)
-	return
+	src.sync_status_effects(src.master, src.hud_icon, "NORTH-0.7", -0.6)
 
 //HUMAN COPOY PASTE
 /// updates stamina sprinting icon state
@@ -358,9 +341,10 @@
 
 /// updates bleeding hud element
 /datum/hud/critter/proc/update_blood_indicator()
-	if (!src.bleeding || isdead(src.master))
+	if (!src.bleeding) return //doesn't have a hud element to update
+	if (isdead(src.master))
 		src.bleeding.icon_state = "blood0"
-		src.bleeding.tooltipTheme = "healthDam healthDam0"
+		src.bleeding.tooltip_options = list("theme" = "healthDam0")
 		return
 
 	var/state = 0
@@ -380,7 +364,7 @@
 			theme = 6
 
 	src.bleeding.icon_state = "blood[state]"
-	src.bleeding.tooltipTheme = "healthDam healthDam[theme]"
+	src.bleeding.tooltip_options = list("theme" = "healthDam[theme]")
 
 /// updates temperature hud element
 /datum/hud/critter/proc/update_temp_indicator()
@@ -388,7 +372,7 @@
 		return
 	if(src.master.getStatusDuration("burning") && !src.master.is_heat_resistant())
 		src.bodytemp.icon_state = "tempF" // on fire
-		src.bodytemp.tooltipTheme = "tempInd tempIndF"
+		src.bodytemp.tooltip_options = list("theme" = "tempIndF")
 		src.bodytemp.desc = "OH FUCK FIRE FIRE FIRE OH GOD FIRE AAAAAAA"
 		return
 
@@ -424,7 +408,7 @@
 			src.bodytemp.desc = "The temperature feels fine."
 
 	src.bodytemp.icon_state = "temp[state]"
-	src.bodytemp.tooltipTheme = "tempInd tempInd[state]"
+	src.bodytemp.tooltip_options = list("theme" = "tempInd[state]")
 
 /// updates toxic gas hud element
 /datum/hud/critter/proc/update_tox_indicator(var/status)
@@ -433,9 +417,10 @@
 	src.toxin.icon_state = "tox[status]"
 
 /// updates radiation hud element
-/datum/hud/critter/proc/update_rad_indicator(var/status)
+/datum/hud/critter/proc/update_rad_indicator()
 	if (!src.rad) // not rad :'(
 		return
+	var/status = (TIME - src.master.last_radiation_dose_time) < LIFE_PROCESS_TICK_SPACING
 	src.rad.icon_state = "rad[status]"
 
 /// updates resting status
@@ -443,6 +428,34 @@
 	if (!src.resting)
 		return 0
 	src.resting.icon_state = "rest[src.master.hasStatus("resting") ? 1 : 0]"
+
+/// Update the gravity indicator
+/datum/hud/critter/proc/update_gravity_indicator()
+	if (!src.gravity)
+		return 0
+	var/stage
+	switch(master.gforce)
+		if (-INFINITY to GFORCE_GRAVITY_MINIMUM)
+			stage = 0
+			src.gravity.desc = GRAVITY_DESC_NONE
+		if (GFORCE_MOB_REGULAR_THRESHOLD to GFORCE_EARTH_GRAVITY)
+			stage = 2
+			src.gravity.desc = GRAVITY_DESC_NORMAL
+		if (GFORCE_GRAVITY_MINIMUM to GFORCE_MOB_REGULAR_THRESHOLD)
+			stage = 1
+			src.gravity.desc = GRAVITY_DESC_LOW
+		if (GFORCE_MOB_EXTREME_THRESHOLD to INFINITY)
+			stage = 4
+			src.gravity.desc = GRAVITY_DESC_EXTREME
+		if (GFORCE_MOB_HIGH_THRESHOLD to GFORCE_MOB_EXTREME_THRESHOLD)
+			stage = 3
+			src.gravity.desc = GRAVITY_DESC_HIGH
+		if (GFORCE_EARTH_GRAVITY to GFORCE_MOB_HIGH_THRESHOLD)
+			stage = 2
+			src.gravity.desc = GRAVITY_DESC_NORMAL
+
+	src.gravity.icon_state = "gravity[stage]"
+	src.gravity.tooltip_options = list("theme" = "gravInd[stage]")
 
 /// updates status effects on the owner's hud
 /mob/living/critter/updateStatusUi()
@@ -480,7 +493,8 @@
 	if (src.master.use_stamina)
 		var/stamloc = "EAST[src.next_topright()], NORTH"
 		src.stamina = src.create_screen("stamina","Stamina", src.hud_icon, "stamina",\
-		stamloc, HUD_LAYER, tooltipTheme = "stamina")
+		stamloc, HUD_LAYER, tooltip_options = list("theme" = "stamina"))
+		src.stamina.mouse_opacity = 2
 		src.stamina_back = src.create_screen("stamina_back","Stamina", src.hud_icon, "stamina_back",\
 		stamloc, HUD_LAYER_UNDER_1)
 		if (src.master.stamina_bar)
@@ -488,7 +502,7 @@
 
 /datum/hud/critter/proc/create_temperature_element()
 	src.bodytemp = src.create_screen("bodytemp","Temperature", src.hud_icon, "temp0",\
-	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltipTheme = "tempInd tempInd0")
+	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltip_options = list("theme" = "tempInd0"))
 	src.bodytemp.desc = "The temperature feels fine."
 
 /datum/hud/critter/proc/create_oxygen_element()
@@ -501,21 +515,25 @@
 
 /datum/hud/critter/proc/create_toxin_element()
 	src.toxin = src.create_screen("toxin","Toxic Warning",src.hud_icon, "toxin0",\
-	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltipTheme = "statusToxin")
+	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltip_options = list("theme" = "statusToxin"))
 	src.toxin.desc = "This indicator warns that you are poisoned. You will take toxic damage until the situation is remedied."
 
 /datum/hud/critter/proc/create_radiation_element()
 	src.rad = src.create_screen("rad","Radiation Warning", src.hud_icon, "rad0",\
-	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltipTheme = "statusRad")
-	src.rad.desc = "This indicator warns that you are irradiated. You will take toxic and burn damage until the situation is remedied."
+	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltip_options = list("theme" = "statusRad"))
+	src.rad.desc = "This indicator warns that you are being irradiated. You will accumulate rads and take burn damage until the situation is remedied."
 
 /datum/hud/critter/proc/create_bleeding_element()
 	src.bleeding = src.create_screen("bleeding","Bleed Warning", src.hud_icon, "blood0",\
-	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltipTheme = "healthDam healthDam0")
+	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltip_options = list("theme" = "healthDam0"))
 	src.bleeding.desc = "This indicator warns that you are currently bleeding. You will die if the situation is not remedied."
 
+/datum/hud/critter/proc/create_gravity_element()
+	src.gravity = src.create_screen("gravity","Gravity", src.hud_icon, "gravity2",\
+	"EAST[src.next_topright()], NORTH", HUD_LAYER, tooltip_options = list("theme" = "gravInd02"))
+
 /datum/hud/critter/proc/create_throwing_element()
-	src.throwing = src.create_screen("throw", "throw mode", src.hud_icon, "throw0",\
+	src.throwing = src.create_screen("throw", "throw mode", src.hud_icon, src.master.can_throw ? "throw0" : "drop0",\
 	"CENTER[src.next_right()], SOUTH", HUD_LAYER_1)
 
 /datum/hud/critter/proc/create_intent_element()

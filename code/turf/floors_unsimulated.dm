@@ -8,11 +8,14 @@
 	name = "floor"
 	icon = 'icons/turf/floors.dmi'
 	icon_state = "floor"
-	thermal_conductivity = 0.040
+	thermal_conductivity = 0.04
 	heat_capacity = 225000
+	// Related to overlay application in break/burn_tile() only
+	can_burn = TRUE
+	can_break = TRUE
+	provides_grip = FALSE
 
-
-/turf/unsimulated/floor/attackby(obj/item/C as obj, mob/user as mob, params)
+/turf/unsimulated/floor/attackby(obj/item/C, mob/user, params)
 
 	if (!C || !user)
 		return 0
@@ -32,26 +35,86 @@
 
 /////////////////////////////////////////
 
+/turf/unsimulated/floor/pryable
+	attackby(obj/item/W, mob/user)
+		if(ispryingtool(W))
+			src.name = "plating"
+			src.icon_state = "plating"
+			UpdateOverlays(null,"burn")
+			src.UpdateIcon()
+			setIntact(FALSE)
+			levelupdate()
+
+	scorched
+		New()
+			..()
+			var/image/burn_overlay = image('icons/turf/floors.dmi',"floorscorched1")
+			burn_overlay.alpha = 200
+			UpdateOverlays(burn_overlay,"burn")
+
+
+	scorched2
+		New()
+			..()
+			var/image/burn_overlay = image('icons/turf/floors.dmi',"floorscorched2")
+			burn_overlay.alpha = 200
+			UpdateOverlays(burn_overlay,"burn")
+
+
 /turf/unsimulated/floor/scorched
-	icon_state = "floorscorched1"
+
+	New()
+		..()
+		var/image/burn_overlay = image('icons/turf/floors.dmi',"floorscorched1")
+		burn_overlay.alpha = 200
+		UpdateOverlays(burn_overlay,"burn")
 
 /turf/unsimulated/floor/scorched2
-	icon_state = "floorscorched2"
+	New()
+		..()
+		var/image/burn_overlay = image('icons/turf/floors.dmi',"floorscorched2")
+		burn_overlay.alpha = 200
+		UpdateOverlays(burn_overlay,"burn")
 
 /turf/unsimulated/floor/damaged1
-	icon_state = "damaged1"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"damaged1")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/damaged2
-	icon_state = "damaged2"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"damaged2")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/damaged3
-	icon_state = "damaged3"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"damaged3")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/damaged4
-	icon_state = "damaged4"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"damaged4")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/damaged5
-	icon_state = "damaged5"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"damaged5")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /////////////////////////////////////////
 
@@ -62,22 +125,49 @@
 	layer = PLATING_LAYER
 
 /turf/unsimulated/floor/plating/scorched
-	icon_state = "panelscorched"
+
+	New()
+		..()
+		var/image/burn_overlay = image('icons/turf/floors.dmi',"panelscorched")
+		burn_overlay.alpha = 200
+		UpdateOverlays(burn_overlay,"burn")
 
 /turf/unsimulated/floor/plating/damaged1
-	icon_state = "platingdmg1"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg1")
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/plating/damaged2
-	icon_state = "platingdmg2"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg2")
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/plating/damaged3
-	icon_state = "platingdmg3"
+
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg3")
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/plating/random
+#ifdef IN_MAP_EDITOR
+	icon_state = "plating_random"
+#endif
 	New()
 		..()
 		if (prob(20))
-			src.icon_state = pick("panelscorched", "platingdmg1", "platingdmg2", "platingdmg3")
+			if (prob(50))
+				var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg[pick(1,2,3)]")
+				damage_overlay.alpha = 200
+				UpdateOverlays(damage_overlay,"damage")
+			else
+				var/image/burn_overlay = image('icons/turf/floors.dmi',"panelscorched")
+				burn_overlay.alpha = 200
+				UpdateOverlays(burn_overlay,"burn")
 		if (prob(2))
 			make_cleanable(/obj/decal/cleanable/dirt,src)
 		if (prob(2))
@@ -88,13 +178,15 @@
 			make_cleanable(/obj/decal/cleanable/dirt/dirt4,src)
 		if (prob(2))
 			make_cleanable(/obj/decal/cleanable/dirt/dirt5,src)
-		else if (prob(2))
+		if ((locate(/obj/window) in src) || (locate(/obj/mapping_helper/wingrille_spawn) in src))
+			return
+		if (prob(2))
 			var/obj/C = pick(/obj/decal/cleanable/paper, /obj/decal/cleanable/fungus, /obj/decal/cleanable/dirt, /obj/decal/cleanable/ash,\
 			/obj/decal/cleanable/molten_item, /obj/decal/cleanable/machine_debris, /obj/decal/cleanable/oil, /obj/decal/cleanable/rust)
 			make_cleanable( C ,src)
 		else if ((locate(/obj) in src) && prob(3))
 			var/obj/C = pick(/obj/item/cable_coil/cut/small, /obj/item/brick, /obj/item/cigbutt, /obj/item/scrap, /obj/item/raw_material/scrap_metal,\
-			/obj/item/spacecash, /obj/item/tile/steel, /obj/item/weldingtool, /obj/item/screwdriver, /obj/item/wrench, /obj/item/wirecutters, /obj/item/crowbar)
+			/obj/item/currency/spacecash, /obj/item/tile/steel, /obj/item/weldingtool, /obj/item/screwdriver, /obj/item/wrench, /obj/item/wirecutters, /obj/item/crowbar)
 			new C (src)
 		else if (prob(1) && prob(2)) // really rare. not "three space things spawn on destiny during first test with just prob(1)" rare.
 			var/obj/C = pick(/obj/item/space_thing, /obj/item/sticker/gold_star, /obj/item/sticker/banana, /obj/item/sticker/heart,\
@@ -258,12 +350,26 @@
 /turf/unsimulated/floor/darkblue
 	icon_state = "fulldblue"
 
+/turf/unsimulated/floor/darkblue/side
+	icon_state = "dblue"
+
+/turf/unsimulated/floor/darkblue/corner
+	icon_state = "dbluecorner"
+
 /turf/unsimulated/floor/darkblue/checker
-	icon_state = "blue-dblue"
+	icon_state = "dbluechecker"
 
-/turf/unsimulated/floor/darkblue/checker/other
-	icon_state = "blue-dblue2"
+/turf/unsimulated/floor/darkblueblack
+	icon_state = "dblueblack"
 
+/turf/unsimulated/floor/darkblueblack/corner
+	icon_state = "dblueblackcorner"
+
+/turf/unsimulated/floor/darkbluewhite
+	icon_state = "dbluewhite"
+
+/turf/unsimulated/floor/darkbluewhite/corner
+	icon_state = "dbluewhitecorner"
 /////////////////////////////////////////
 
 /turf/unsimulated/floor/darkpurple
@@ -272,6 +378,23 @@
 /turf/unsimulated/floor/darkpurple/side
 	icon_state = "dpurple"
 
+/turf/unsimulated/floor/darkpurple/corner
+	icon_state = "dpurplecorner"
+
+/turf/unsimulated/floor/darkpurple/checker
+	icon_state = "dpurplechecker"
+
+/turf/unsimulated/floor/darkpurpleblack
+	icon_state = "dpurpleblack"
+
+/turf/unsimulated/floor/darkpurpleblack/corner
+	icon_state = "dpurpleblackcorner"
+
+/turf/unsimulated/floor/darkpurplewhite
+	icon_state = "dpurplewhite"
+
+/turf/unsimulated/floor/darkpurplewhite/corner
+	icon_state = "dpurplewhitecorner"
 /////////////////////////////////////////
 
 /turf/unsimulated/floor/bluegreen
@@ -368,6 +491,24 @@
 /turf/unsimulated/floor/yellowblack/corner
 	icon_state = "yellowblackcorner"
 
+
+/turf/unsimulated/floor/yellowwhite
+	icon_state = "yellowwhite"
+
+/turf/unsimulated/floor/yellowwhite/corner
+	icon_state = "yellowwhitecorner"
+
+/////////////////////////////////////////
+
+/turf/unsimulated/floor/lightyellow
+	icon_state = "fulllyellow"
+
+/turf/unsimulated/floor/lightyellow/side
+	icon_state = "lyellow"
+
+/turf/unsimulated/floor/lightyellow/corner
+	icon_state = "lyellowcorner"
+
 /////////////////////////////////////////
 
 /turf/unsimulated/floor/orange
@@ -379,24 +520,44 @@
 /turf/unsimulated/floor/orange/corner
 	icon_state = "orangecorner"
 
+/turf/unsimulated/floor/orange/checker
+	icon_state = "orangechecker"
+
 
 /turf/unsimulated/floor/orangeblack
-	icon_state = "fullcaution"
-
-/turf/unsimulated/floor/orangeblack/side
-	icon_state = "caution"
-
-/turf/unsimulated/floor/orangeblack/side/white
-	icon_state = "cautionwhite"
+	icon_state = "orangeblack"
 
 /turf/unsimulated/floor/orangeblack/corner
+	icon_state = "orangeblackcorner"
+
+
+/turf/unsimulated/floor/orangewhite
+	icon_state = "orangewhite"
+
+/turf/unsimulated/floor/orangewhite/corner
+	icon_state = "orangewhitecorner"
+
+/////////////////////////////////////////
+
+/turf/unsimulated/floor/caution
+	icon_state = "fullcaution"
+
+/turf/unsimulated/floor/caution/side
+	icon_state = "caution"
+
+/turf/unsimulated/floor/caution/white
+	icon_state = "cautionwhite"
+
+/turf/unsimulated/floor/caution/corner
 	icon_state = "cautioncorner"
 
-/turf/unsimulated/floor/orangeblack/corner/white
+/turf/unsimulated/floor/caution/corner/white
 	icon_state = "cautionwhitecorner"
 
 /////////////////////////////////////////
 
+TYPEINFO(/turf/unsimulated/floor/circuit)
+	mat_appearances_to_ignore = list("pharosium")
 /turf/unsimulated/floor/circuit
 	name = "transduction matrix"
 	desc = "An elaborate, faintly glowing matrix of isolinear circuitry."
@@ -404,11 +565,7 @@
 	RL_LumR = 0
 	RL_LumG = 0   //Corresponds to color of the icon_state.
 	RL_LumB = 0.3
-	mat_appearances_to_ignore = list("pharosium")
-
-	New()
-		..()
-		setMaterial(getMaterial("pharosium"))
+	default_material = "pharosium"
 
 /turf/unsimulated/floor/circuit/green
 	icon_state = "circuit-green"
@@ -450,21 +607,15 @@
 
 /turf/unsimulated/floor/carpet
 	name = "carpet"
-	icon = 'icons/turf/carpet.dmi'
+	icon = 'icons/turf/floors/carpet.dmi'
 	icon_state = "red1"
-	mat_appearances_to_ignore = list("cloth")
-	mat_changename = 0
-
-	New()
-		..()
-		setMaterial(getMaterial("cloth"))
 
 /turf/unsimulated/floor/carpet/grime
-	icon = 'icons/turf/floors.dmi'
+	icon = 'icons/turf/floors/carpet.dmi'
 	icon_state = "grimy"
 
 /turf/unsimulated/floor/carpet/arcade
-	icon = 'icons/turf/floors.dmi'
+	icon = 'icons/turf/floors/carpet.dmi'
 	icon_state = "arcade_carpet"
 
 /turf/unsimulated/floor/carpet/arcade/half
@@ -474,11 +625,10 @@
 	icon_state = "arcade_carpet_blank"
 
 /turf/unsimulated/floor/carpet/office
-	icon = 'icons/turf/floors.dmi'
+	icon = 'icons/turf/floors/carpet.dmi'
 	icon_state = "office_carpet"
 
 /turf/unsimulated/floor/carpet/office/other
-	icon = 'icons/turf/floors.dmi'
 	icon_state = "office_carpet2"
 
 /////////////////////////////////////////
@@ -490,6 +640,29 @@
 	icon_state = "whiteshiny"
 
 /////////////////////////////////////////
+
+/turf/unsimulated/floor/pool/lightblue
+	icon_state = "pooltiles_lightblue"
+
+/turf/unsimulated/floor/pool/white
+	icon_state = "pooltiles_white"
+
+/turf/unsimulated/floor/pool/blue
+	icon_state = "pooltiles_blue"
+
+/turf/unsimulated/floor/pool/bluewhite
+	icon_state = "pooltiles_bluew"
+
+/turf/unsimulated/floor/pool/lightbluewhite
+	icon_state = "pooltiles_lightbluew"
+
+/turf/unsimulated/floor/pool/bluewhitecorner
+	icon_state = "pooltiles_bluewcorner"
+
+/turf/unsimulated/floor/pool/lightbluewhitecorner
+	icon_state = "pooltiles_lightbluewcorner"
+
+////////////////////////////////////////
 
 /turf/unsimulated/floor/sanitary
 	icon_state = "freezerfloor"
@@ -559,40 +732,14 @@
 
 /////////////////////////////////////////
 
-/turf/unsimulated/floor/delivery
-	icon_state = "delivery"
-
-/turf/unsimulated/floor/delivery/white
-	icon_state = "delivery_white"
-
-/turf/unsimulated/floor/delivery/caution
-	icon_state = "deliverycaution"
-
-
-/turf/unsimulated/floor/bot
-	icon_state = "bot"
-
-/turf/unsimulated/floor/bot/white
-	icon_state = "bot_white"
-
-/turf/unsimulated/floor/bot/blue
-	icon_state = "bot_blue"
-
-/turf/unsimulated/floor/bot/caution
-	icon_state = "botcaution"
-
-/turf/unsimulated/floor/bot/darkpurple
-	icon_state = "bot_dpurple"
-
-/////////////////////////////////////////
-
 /turf/unsimulated/floor/engine
 	name = "reinforced floor"
 	icon_state = "engine"
 	thermal_conductivity = 0.025
 	heat_capacity = 325000
-
-	allows_vehicles = 1
+	allows_vehicles = TRUE
+	can_burn = FALSE
+	can_break = FALSE
 
 /turf/unsimulated/floor/engine/vacuum
 	name = "vacuum floor"
@@ -672,13 +819,11 @@
 
 /////////////////////////////////////////
 
+TYPEINFO(/turf/unsimulated/floor/wood)
+	mat_appearances_to_ignore = list("wood")
 /turf/unsimulated/floor/wood
 	icon_state = "wooden-2"
-	mat_appearances_to_ignore = list("wood")
-
-	New()
-		..()
-		setMaterial(getMaterial("wood"))
+	default_material = "wood"
 
 /turf/unsimulated/floor/wood/two
 	icon_state = "wooden"
@@ -811,16 +956,32 @@
 	step_priority = STEP_PRIORITY_MED
 
 /turf/unsimulated/floor/airless/plating/scorched
-	icon_state = "panelscorched"
+	New()
+		..()
+		var/image/burn_overlay = image('icons/turf/floors.dmi',"panelscorched")
+		burn_overlay.alpha = 200
+		UpdateOverlays(burn_overlay,"burn")
 
 /turf/unsimulated/floor/airless/plating/damaged1
-	icon_state = "platingdmg1"
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg1")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/airless/plating/damaged2
-	icon_state = "platingdmg2"
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg2")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 /turf/unsimulated/floor/airless/plating/damaged3
-	icon_state = "platingdmg3"
+	New()
+		..()
+		var/image/damage_overlay = image('icons/turf/floors.dmi',"platingdmg3")
+		damage_overlay.alpha = 200
+		UpdateOverlays(damage_overlay,"damage")
 
 //////////////
 
@@ -852,6 +1013,9 @@
 /turf/unsimulated/floor/snow
 	name = "snow"
 	icon_state = "snow1"
+	step_material = "step_snow"
+	turf_flags = MOB_STEP
+	can_dig = TRUE
 
 	New()
 		..()
@@ -863,9 +1027,14 @@
 			icon_state = "snow4"
 		src.set_dir(pick(cardinal))
 
+	Uncrossed(atom/movable/AM)
+		. = ..()
+		src.snow_prints(AM)
+
 /turf/unsimulated/floor/snow/green
 	name = "snow-covered floor"
 	icon_state = "snowgreen"
+	can_dig = FALSE
 
 /turf/unsimulated/floor/snow/green/corner
 	name = "snow-covered floor"
@@ -884,20 +1053,27 @@
 
 /////////////////////////////////////////
 
+TYPEINFO(/turf/unsimulated/floor/grass)
+	mat_appearances_to_ignore = list("steel","synthrubber")
 /turf/unsimulated/floor/grass
 	name = "grass"
 	icon = 'icons/turf/outdoors.dmi'
 	icon_state = "grass"
-	mat_appearances_to_ignore = list("steel","synthrubber")
+	#ifdef SEASON_AUTUMN
+	icon_state = "grass_autumn"
+	#else
+	icon_state = "grass"
+	#endif
 	mat_changename = 0
 	mat_changedesc = 0
-
-	New()
-		..()
-		setMaterial(getMaterial("synthrubber"))
+	default_material = "synthrubber"
 
 /turf/unsimulated/floor/grass/leafy
+	#ifdef SEASON_AUTUMN
+	icon_state = "grass_leafy_autumn"
+	#else
 	icon_state = "grass_leafy"
+	#endif
 
 /turf/unsimulated/floor/grass/random
 	New()
@@ -917,22 +1093,66 @@
 
 /////////////////////////////////////////
 
+/turf/unsimulated/floor/glassblock
+	name = "glass block tiling"
+	icon = 'icons/turf/floors.dmi'
+	icon_state = "glass_small"
+	step_material = "step_wood"
+	step_priority = STEP_PRIORITY_MED
+	can_burn = FALSE
+	can_break = FALSE
+
+/turf/unsimulated/floor/glassblock/large
+	icon_state = "glass_large"
+
+/turf/unsimulated/floor/glassblock/transparent_cyan
+	icon_state = "glasstr_cyan"
+
+/turf/unsimulated/floor/glassblock/transparent_indigo
+	icon_state = "glasstr_indigo"
+
+/turf/unsimulated/floor/glassblock/transparent_red
+	icon_state = "glasstr_red"
+
+/turf/unsimulated/floor/glassblock/transparent_grey
+	icon_state = "glasstr_grey"
+
+/turf/unsimulated/floor/glassblock/transparent_purple
+	icon_state = "glasstr_purple"
+
+/////////////////////////////////////////
+
 /turf/unsimulated/floor/shuttlebay
 	name = "shuttle bay plating"
 	icon_state = "engine"
 	allows_vehicles = 1
 	step_material = "step_plating"
 	step_priority = STEP_PRIORITY_MED
+	can_burn = FALSE
+	can_break = FALSE
+
+TYPEINFO(/turf/unsimulated/floor/auto)
+	var/list/connects_to = null
+	/// must be typecache list
+	var/list/connects_to_exceptions = null
+	/// do we have wall connection overlays, ex nornwalls?
+	var/connect_overlay = 0
+	var/list/connects_with_overlay = null
+	var/list/connects_with_overlay_exceptions = null
+	var/connect_across_areas = TRUE
+	/// 0 = no diagonal sprites, 1 = diagonal only if both adjacent cardinals are present, 2 = always allow diagonals
+	var/connect_diagonal = 0
 
 /////////////////////////////////////////
-
-#define FLOOR_AUTO_EDGE_PRIORITY_DIRT 50
-#define FLOOR_AUTO_EDGE_PRIORITY_GRASS 100
-#define FLOOR_AUTO_EDGE_PRIORITY_WATER 200
-
 /turf/unsimulated/floor/auto
 	name = "auto edging turf"
+	can_burn = FALSE
+	can_break = FALSE
 
+	var/mod = null
+	var/light_mod = null
+	/// The image we're using to connect to stuff with
+	var/image/connect_image = null
 	///turf won't draw edges on turfs with higher or equal priority
 	var/edge_priority_level = 0
 	var/icon_state_edge = null
@@ -940,20 +1160,80 @@
 	New()
 		. = ..()
 		src.layer += src.edge_priority_level / 1000
-		SPAWN_DBG(0.5 SECONDS) //give neighbors a chance to spawn in
-			edge_overlays()
+		if( current_state == GAME_STATE_PREGAME && station_repair.station_generator)
+			worldgenCandidates[src] = null
+		else if (current_state > GAME_STATE_WORLD_NEW)
+			SPAWN(0) //worldgen overrides ideally
+				UpdateIcon()
+				if(istype(src))
+					update_neighbors()
+		else
+			worldgenCandidates[src] = null
+
+	generate_worldgen()
+		src.UpdateIcon()
+
+	update_icon()
+		. = ..()
+		src.edge_overlays()
+
+		if(src.mod)
+			var/typeinfo/turf/unsimulated/floor/auto/typinfo = get_typeinfo()
+			var/connectdir = get_connected_directions_bitflag(typinfo.connects_to, typinfo.connects_to_exceptions, typinfo.connect_across_areas, typinfo.connect_diagonal)
+			var/the_state = "[mod][connectdir]"
+			icon_state = the_state
+
+			// if (light_mod)
+			// 	src.RL_SetSprite("[light_mod][connectdir]")
+
+			if (typinfo.connect_overlay)
+				var/overlaydir = get_connected_directions_bitflag(typinfo.connects_with_overlay, typinfo.connects_with_overlay_exceptions, typinfo.connect_across_areas)
+				if (overlaydir)
+					if (!src.connect_image)
+						src.connect_image = image(src.icon, "connect[overlaydir]")
+					else
+						src.connect_image.icon_state = "connect[overlaydir]"
+					src.UpdateOverlays(src.connect_image, "connect")
+				else
+					src.UpdateOverlays(null, "connect")
+
+	proc/update_neighbors()
+		for (var/turf/unsimulated/floor/auto/T in orange(1,src))
+			T.UpdateIcon()
 
 	proc/edge_overlays()
-		for (var/turf/T in orange(src,1))
-			if (istype(T, /turf/unsimulated/floor/auto))
-				var/turf/unsimulated/floor/auto/TA = T
-				if (TA.edge_priority_level >= src.edge_priority_level)
-					continue
-			var/image/edge_overlay = image(src.icon, "[icon_state_edge][get_dir(T,src)]")
-			edge_overlay.appearance_flags = PIXEL_SCALE | TILE_BOUND | RESET_COLOR | RESET_ALPHA
-			edge_overlay.layer = src.layer + (src.edge_priority_level / 1000)
-			edge_overlay.plane = PLANE_FLOOR
-			T.overlays += edge_overlay
+		if(src.icon_state_edge)
+			var/connectdir = get_connected_directions_bitflag(list(src.type=TRUE), list(), TRUE, FALSE, turf_only=TRUE)
+			for (var/direction in alldirs)
+				var/turf/T = get_step(src, turn(direction, 180))
+				if(T)
+					if (istype(T, /turf/unsimulated/floor/auto))
+						var/turf/unsimulated/floor/auto/TA = T
+						if (TA.edge_priority_level >= src.edge_priority_level)
+							T.ClearSpecificOverlays("edge_[direction]") // Cull overlaps
+							continue
+					if(turn(direction, 180) & connectdir)
+						T.ClearSpecificOverlays("edge_[direction]") // Cull diagonals
+						continue
+					var/image/edge_overlay = image(src.icon, "[icon_state_edge][direction]")
+					edge_overlay.appearance_flags = PIXEL_SCALE | TILE_BOUND | RESET_COLOR | RESET_ALPHA
+					edge_overlay.layer = src.layer + (src.edge_priority_level / 1000)
+					edge_overlay.plane = PLANE_FLOOR
+					T.UpdateOverlays(edge_overlay, "edge_[direction]")
+
+/turf/unsimulated/floor/auto/grass
+	name = "grass"
+	icon = 'icons/turf/outdoors.dmi'
+	#ifdef SEASON_AUTUMN
+	icon_state = "grass_autumn"
+	#else
+	icon_state = "grass"
+	#endif
+	mat_changename = 0
+	mat_changedesc = 0
+	step_material = "step_outdoors"
+	step_priority = STEP_PRIORITY_MED
+	can_dig = TRUE
 
 /turf/unsimulated/floor/auto/grass/swamp_grass
 	name = "swamp grass"
@@ -971,9 +1251,14 @@
 	name = "grass"
 	desc = "some leafy grass."
 	icon = 'icons/turf/outdoors.dmi'
+	#ifdef SEASON_AUTUMN
+	icon_state = "grass_leafy_autumn"
+	icon_state_edge = "grass_leafyedge_autumn"
+	#else
 	icon_state = "grass_leafy"
-	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_GRASS - 1
 	icon_state_edge = "grass_leafyedge"
+	#endif
+	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_GRASS - 1
 
 /turf/unsimulated/floor/auto/dirt
 	name = "dirt"
@@ -982,27 +1267,49 @@
 	icon_state = "dirt"
 	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_DIRT
 	icon_state_edge = "dirtedge"
+	step_material = "step_outdoors"
+	step_priority = STEP_PRIORITY_MED
+	can_dig = TRUE
 
 /turf/unsimulated/floor/auto/sand
 	name = "sand"
 	desc = "finest earth."
 	icon = 'icons/turf/outdoors.dmi'
 	icon_state = "sand_other"
-	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_DIRT
+	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_DIRT + 1
 	icon_state_edge = "sand_edge"
+	var/tuft_prob = 2
+	can_dig = TRUE
 
 	New()
 		..()
-		switch(rand(1,3))
-			if(1)
-				icon_state = "sand_other_texture"
-				src.set_dir(pick(alldirs))
-			if(2)
-				icon_state = "sand_other_texture2"
-				src.set_dir(pick(alldirs))
-			if(3)
-				icon_state = "sand_other_texture3"
-				src.set_dir(pick(cardinal))
+		src.set_dir(pick(cardinal))
+
+		if(prob(tuft_prob))
+			var/rand_x = rand(-5,5)
+			var/rand_y = rand(-5,5)
+			var/image/tuft
+			var/hue_shift = rand(80,95)
+
+			tuft = image('icons/turf/outdoors.dmi', "grass_tuft", src, pixel_x=rand_x, pixel_y=rand_y)
+			tuft.color = hsv_transform_color_matrix(h=hue_shift)
+			UpdateOverlays(tuft,"grass_turf")
+
+	rough
+		tuft_prob = 0.8
+		New()
+			..()
+			icon_state_edge = "sand_r_edge"
+			edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_DIRT + 2
+			switch(rand(1,3))
+				if(1)
+					icon_state = "sand_other_texture"
+					src.set_dir(pick(alldirs))
+				if(2)
+					icon_state = "sand_other_texture2"
+					src.set_dir(pick(alldirs))
+				if(3)
+					icon_state = "sand_other_texture3"
 
 
 /turf/unsimulated/floor/auto/water
@@ -1019,18 +1326,16 @@
 			src.icon_state = "swamp[rand(1, 4)]"
 
 
+TYPEINFO(/turf/unsimulated/floor/auto/water/ice)
+	mat_appearances_to_ignore = list("ice")
 /turf/unsimulated/floor/auto/water/ice
 	name = "ice"
 	desc = "Frozen water."
 	icon = 'icons/turf/water.dmi'
 	icon_state = "ice"
 	icon_state_edge = "ice_edge"
-	mat_appearances_to_ignore = list("ice")
-
-	New()
-		..()
-		setMaterial(getMaterial("ice"))
-		name = initial(name)
+	default_material = "ice"
+	mat_changename = FALSE
 
 /turf/unsimulated/floor/auto/water/ice/rough
 	name = "ice"
@@ -1074,13 +1379,19 @@
 	icon_state = "snow1"
 	edge_priority_level = FLOOR_AUTO_EDGE_PRIORITY_GRASS + 1
 	icon_state_edge = "snow_edge"
-	step_material = "step_outdoors"
+	step_material = "step_snow"
 	step_priority = STEP_PRIORITY_MED
+	turf_flags = MOB_STEP
+	can_dig = TRUE
 
 	New()
 		. = ..()
 		if(src.type == /turf/unsimulated/floor/auto/snow && prob(10))
 			src.icon_state = "snow[rand(1,5)]"
+
+	Uncrossed(atom/movable/AM)
+		. = ..()
+		src.snow_prints(AM)
 
 /turf/unsimulated/floor/auto/snow/rough
 	name = "snow"
@@ -1094,7 +1405,3 @@
 		. = ..()
 		if(prob(10))
 			src.icon_state = "snow_rough[rand(1,3)]"
-
-#undef FLOOR_AUTO_EDGE_PRIORITY_DIRT
-#undef FLOOR_AUTO_EDGE_PRIORITY_GRASS
-#undef FLOOR_AUTO_EDGE_PRIORITY_WATER

@@ -8,7 +8,38 @@
 	human_only = 1
 	can_use_in_container = 1
 	interrupt_action_bars = 0
+	do_logs = FALSE
+	interrupt_action_bars = FALSE
 	var/last_mimiced_name = ""
+	var/headset_icon_labels = list( // list for what changelings can mimic over radio, key refers to headset.icon_tooltip and is used in the selection menu and value refers to associated headset.icon_override, check headsets.dm
+		"Captain" = "cap",
+		"Head of Personnel" = "hop",
+		"Head of Security" = "hos",
+		"Head of Staff" = "head",
+		"Research Director" = "rd",
+		"Medical Director" = "md",
+		"Chief Engineer" = "ce",
+		"NanoTrasen Security Consultant" = "nt",
+		"Security" = "sec",
+		"Detective" = "det",
+		"Scientist" = "sci",
+		"Medical" = "med",
+		"Pharmacist" = "pharmacist",
+		"Engineer" = "eng",
+		"Quartermaster" = "qm",
+		"Miner" = "Min",
+		"Civilian" = "civ",
+		"Chaplain" = "chaplain",
+		"Hydroponics" = "hydroponics",
+		"Catering" = "catering",
+		"Janitor" = "janitor",
+		"Radio Show Host" = "rh",
+		"Mail Courier" = "mail",
+		"Clown" = "clown",
+		"Blue Clown" = "clown_blue",
+		"Inspector" = "inspector",
+		"Ghost Buster" = "hunter_ghost")
+
 	cast(atom/target)
 		if (..())
 			return 1
@@ -29,15 +60,24 @@
 		if (ishuman(holder.owner))
 			H = holder.owner
 
-
+		var/headset_was_comic = FALSE
 		if (H?.ears && istype(H.ears,/obj/item/device/radio/headset))
 			var/obj/item/device/radio/headset/headset = H.ears
 			if (headset.icon_override && findtext(mimic_message,";") || findtext(mimic_message,":"))
-				var/radio_override = input("Select a radio frequency to disguise as...", "Mimic Radio Message.", null, null) as null|anything in list("head","sec","eng","sci","med","qm","civ","cap","rd","md","ce","hop","hos","clown")
-				if (radio_override)
+				var/radio_tooltip = input("Select a radio frequency to disguise as...", "Mimic Radio Message.", null, null) as null|anything in headset_icon_labels
+				if (radio_tooltip)
+					var/radio_override = headset_icon_labels[radio_tooltip]
 					headset.icon_override = radio_override
+					headset.icon_tooltip = radio_tooltip
+					headset_was_comic = headset.ensure_listen_tree().GetModifierByID(LISTEN_MODIFIER_COMIC_SANS)
+					//This is heavily jank but I'm not aware of anything better without a complete refactor of this ability
+					if((radio_tooltip == "Clown" || radio_tooltip == "Blue Clown") && !headset_was_comic)
+						headset.ensure_listen_tree().AddListenModifier(LISTEN_MODIFIER_COMIC_SANS)
+					else if(headset_was_comic)
+						headset.ensure_listen_tree().RemoveListenModifier(LISTEN_MODIFIER_COMIC_SANS)
+						headset_was_comic = TRUE
 
-		logTheThing("say", holder.owner, mimic_name, "[mimic_message] (<b>Mimicing ([constructTarget(mimic_name,"say")])</b>)")
+		logTheThing(LOG_SAY, holder.owner, "[mimic_message] (<b>Mimicing ([constructTarget(mimic_name,"say")])</b>)")
 		var/original_name = holder.owner.real_name
 		holder.owner.real_name = copytext(mimic_name, 1, MOB_NAME_MAX_LENGTH)
 		holder.owner.say(mimic_message)
@@ -47,5 +87,10 @@
 			var/obj/item/device/radio/headset/headset = H.ears
 			if (headset.icon_override)
 				headset.icon_override = initial(headset.icon_override)
+				headset.icon_tooltip = initial(headset.icon_tooltip)
+				if(!headset_was_comic)
+					headset.ensure_listen_tree().RemoveListenModifier(LISTEN_MODIFIER_COMIC_SANS)
+				else
+					headset.ensure_listen_tree().AddListenModifier(LISTEN_MODIFIER_COMIC_SANS)
 
 		return 0

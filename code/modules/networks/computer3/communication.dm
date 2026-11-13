@@ -10,8 +10,6 @@
 	req_access = list(access_heads)
 	var/tmp/menu = MENU_MAIN
 	var/tmp/transmit_type
-	var/tmp/authenticated = null //Are we currently logged in?
-	var/datum/computer/file/user_data/account = null
 	var/obj/item/peripheral/network/radio/radiocard = null
 	var/obj/item/peripheral/network/powernet_card/pnet_card = null
 	var/tmp/comm_net_id = null //The net id of our linked ~comm dish~
@@ -19,16 +17,10 @@
 
 	var/transmit_title = null
 
-	var/setup_acc_filepath = "/logs/sysusr"//Where do we look for login data?
-
 	initialize()
-
-		src.authenticated = null
+		if (..())
+			return TRUE
 		src.master.temp = null
-		if(!src.find_access_file()) //Find the account information, as it's essentially a ~digital ID card~
-			src.print_text("<b>Error:</b> Cannot locate user file.  Quitting...")
-			src.master.unload_program(src) //Oh no, couldn't find the file.
-			return
 
 		src.radiocard = locate() in src.master.peripherals
 		if(!radiocard || !istype(src.radiocard))
@@ -40,14 +32,9 @@
 			src.pnet_card = null
 			src.print_text("<b>Warning:</b> No network adapter detected.")
 
-		if(!src.check_access(src.account.access))
-			src.print_text("User [src.account.registered] does not have needed access credentials.<br>Quitting...")
-			src.master.unload_program(src)
-			return
-
 		src.reply_wait = -1
-		src.authenticated = src.account.registered
 
+		menu = MENU_MAIN
 		src.print_shuttle_status()
 		src.print_intro_text()
 
@@ -69,8 +56,6 @@
 
 	input_text(text)
 		if(..())
-			return
-		if(isghostdrone(usr))
 			return
 
 		var/list/command_list = parse_string(text)
@@ -103,7 +88,7 @@
 
 						if(!src.comm_net_id)
 							src.detect_comm_dish()
-							sleep(0.8 SECONDS)
+							sleep(0.9 SECONDS) // gives enough time for comm dish detection
 							if (!src.comm_net_id)
 								src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 								return
@@ -120,13 +105,13 @@
 							src.master.add_fingerprint(usr)
 							return
 
-						if(isAI(usr) || src.authenticated == "AIUSR")
+						if(issilicon(usr) || isAIeye(usr) || src.authenticated == "AIUSR")
 							src.print_text("<b>Error:</b> Shuttle recall from AIUSR blocked by Central Command.")
 							return
 
 						if(!src.comm_net_id)
 							src.detect_comm_dish()
-							sleep(0.8 SECONDS)
+							sleep(0.9 SECONDS)
 							if (!src.comm_net_id)
 								src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 								return
@@ -145,7 +130,7 @@
 
 						if(!src.comm_net_id)
 							src.detect_comm_dish()
-							sleep(0.8 SECONDS)
+							sleep(0.9 SECONDS)
 							if (!src.comm_net_id)
 								src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 								return
@@ -166,7 +151,7 @@
 
 						if(!src.comm_net_id)
 							src.detect_comm_dish()
-							sleep(0.8 SECONDS)
+							sleep(0.9 SECONDS)
 							if (!src.comm_net_id)
 								src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 								return
@@ -181,6 +166,9 @@
 								src.print_text("Contacting Central Command. Warning: Frivolous use of this communication channel is punishable by bloodline termination.")
 								src.transmit_type = "centcom"
 						else if(lowertext(command) == "message")
+							if(isnull(game_servers.get_buddy()))
+								menu = MENU_MAIN
+								src.print_text("No partner station detected. Unable to send message.")
 							if(GET_COOLDOWN(global, "transmit_station"))
 								menu = MENU_MAIN
 								src.print_text("Partner station communication beam recharging. Available in [time_to_text(GET_COOLDOWN(global, "transmit_station"))].")
@@ -228,7 +216,7 @@
 
 				if(!src.comm_net_id)
 					src.detect_comm_dish()
-					sleep(0.8 SECONDS)
+					sleep(0.9 SECONDS)
 					if (!src.comm_net_id)
 						src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 						return
@@ -237,15 +225,15 @@
 					src.print_text("Severe signal interference is preventing contact with the Emergency Shuttle, aborting.")
 					return
 
-				var/call_reason = copytext(html_decode(trim(strip_html(html_decode(text)))), 1, 140)
+				var/call_reason = copytext(trimtext(strip_html(text)), 1, 140)
 				src.print_text("Transmitting call request...")
 				generate_signal(comm_net_id, "command", "call", "shuttle_id", "emergency", "acc_code", netpass_heads, "reason", call_reason)
-				logTheThing("admin", usr, null,  "attempted to call the Emergency Shuttle via COMMaster (reason: [call_reason])")
-				logTheThing("diary", usr, null, "attempted to call the Emergency Shuttle via COMMaster (reason: [call_reason])", "admin")
-				message_admins("<span class='internal'>[key_name(usr)] attempted to call the Emergency Shuttle to the station via COMMaster</span>")
+				logTheThing(LOG_ADMIN, usr,  "attempted to call the Emergency Shuttle via COMMaster (reason: [call_reason])")
+				logTheThing(LOG_DIARY, usr, "attempted to call the Emergency Shuttle via COMMaster (reason: [call_reason])", "admin")
+				message_admins(SPAN_INTERNAL("[key_name(usr)] attempted to call the Emergency Shuttle to the station via COMMaster"))
 
 			if(MENU_TRANSMIT_TITLE)
-				src.transmit_title = copytext(html_decode(trim(strip_html(html_decode(text)))), 1, 140)
+				src.transmit_title = copytext(trimtext(strip_html(text)), 1, 140)
 				if(!src.transmit_title)
 					src.print_text("Transmission cancelled.")
 					menu = MENU_MAIN
@@ -256,6 +244,10 @@
 			if(MENU_TRANSMIT_MESSAGE)
 				menu = MENU_MAIN
 
+				if(isnull(game_servers.get_buddy()) && transmit_type == "station")
+					src.print_text("No partner station detected. Unable to send message.")
+					return
+
 				if(!src.pnet_card)
 					src.print_text("<b>Error:</b> Network card required.")
 					src.master.add_fingerprint(usr)
@@ -263,23 +255,23 @@
 
 				if(!src.comm_net_id)
 					src.detect_comm_dish()
-					sleep(0.8 SECONDS)
+					sleep(0.9 SECONDS)
 					if (!src.comm_net_id)
 						src.print_text("<b>Error:</b> Unable to detect comm dish.  Please check network cabling.")
 						return
 
-				var/transmit_message = html_decode(trim(strip_html(html_decode(text))))
+				var/transmit_message = trimtext(strip_html(text))
 				if(!transmit_message)
 					src.print_text("Transmission cancelled.")
 					return
 				src.print_text(transmit_message)
 				generate_signal(comm_net_id, "command", "transmit", "acc_code", netpass_heads, "title", src.transmit_title, "data", transmit_message, "user", usr.real_name, "transmit_type", transmit_type)
 				if(transmit_type == "centcom")
-					logTheThing("admin", usr, null,  "attempted to contanct CentCom (title: [src.transmit_title], message: [transmit_message])")
-					logTheThing("diary", usr, null, "attempted to contanct CentCom (title: [src.transmit_title], message: [transmit_message])", "admin")
+					logTheThing(LOG_ADMIN, usr,  "attempted to contanct CentCom (title: [src.transmit_title], message: [transmit_message])")
+					logTheThing(LOG_DIARY, usr, "attempted to contanct CentCom (title: [src.transmit_title], message: [transmit_message])", "admin")
 				else if(transmit_type == "station")
-					logTheThing("admin", usr, null,  "attempted to contanct the partner space station (title: [src.transmit_title], message: [transmit_message])")
-					logTheThing("diary", usr, null, "attempted to contanct the partner space station (title: [src.transmit_title], message: [transmit_message])", "admin")
+					logTheThing(LOG_ADMIN, usr,  "attempted to contanct the partner space station (title: [src.transmit_title], message: [transmit_message])")
+					logTheThing(LOG_DIARY, usr, "attempted to contanct the partner space station (title: [src.transmit_title], message: [transmit_message])", "admin")
 
 
 		src.master.add_fingerprint(usr)
@@ -322,15 +314,9 @@
 
 					if("shutl_e_sen")
 						src.print_text("<b>Alert:</b> The Emergency Shuttle has been called.")
-						if(usr)
-							message_admins("<span class='internal'>[key_name(usr)] called the Emergency Shuttle to the station</span>")
-							logTheThing("station", null, null, "[key_name(usr)] called the Emergency Shuttle to the station")
 
 					if("shutl_e_ret")
 						src.print_text("<b>Alert:</b> The Emergency Shuttle has been recalled.")
-						if(usr)
-							message_admins("<span class='internal'>[key_name(usr)] recalled the Emergency Shuttle</span>")
-							logTheThing("station", null, null, "[key_name(usr)] recalled the Emergency Shuttle")
 
 					if("transmit_e_success")
 						src.print_text("Message transmitted successfuly.")
@@ -347,18 +333,6 @@
 		return
 
 	proc
-		find_access_file() //Look for the whimsical account_data file
-			var/datum/computer/folder/accdir = src.holder.root
-			if(src.master.host_program) //Check where the OS is, preferably.
-				accdir = src.master.host_program.holder.root
-
-			var/datum/computer/file/user_data/target = parse_file_directory(setup_acc_filepath, accdir)
-			if(target && istype(target))
-				src.account = target
-				return 1
-
-			return 0
-
 		detect_comm_dish() //Send out a ping signal to find a comm dish.
 			if(!src.pnet_card)
 				return //The card is kinda crucial for this.

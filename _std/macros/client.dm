@@ -4,9 +4,16 @@
 #define isclient(x) istype(x, /client)
 /// Returns true if the given is a mind datum
 #define ismind(x) istype(x, /datum/mind)
-/// Returns true if the given mob is hellbanned
-#define ishellbanned(x) x?.client?.hellbanned
 
-#define admin_only if(!src.holder) {boutput(src, "Only administrators may use this command."); return}
-#define mentor_only if(!src.mentor) {boutput(src, "Only mentors may use this command."); return}
-#define usr_admin_only if(usr?.client && !usr.client.holder) {boutput(usr, "Only administrators may use this command."); return}
+#define ADMIN_ONLY if(!src.holder) {boutput(src, SPAN_ADMIN("Only administrators may use this command.")); return}
+#define DENY_TEMPMIN if(!src.holder || src.holder.tempmin) {boutput(src, SPAN_ADMIN("Only administrators may use this command.")); return}
+#define MENTOR_ONLY if(!src.mentor) {boutput(src, SPAN_ADMIN("Only mentors may use this command.")); return}
+#define USR_ADMIN_ONLY if(usr?.client && !usr.client.holder) {boutput(usr, SPAN_ADMIN("Only administrators may use this command.")); return}
+
+#define SHOW_VERB_DESC do {\
+	var/procpath/this_proc = __PROC__;\
+	if(usr?.client?.check_key(KEY_EXAMINE)) {\
+		boutput(usr, "<span class='helpmsg'>[this_proc.desc || "No verb desc found"]</span>");\
+		return\
+	}\
+} while(FALSE)

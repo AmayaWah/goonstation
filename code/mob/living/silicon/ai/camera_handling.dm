@@ -1,39 +1,3 @@
-// Double clicking turfs to move to nearest camera
-
-/turf/proc/move_camera_by_click()
-	if (usr.stat || !isAI(usr))
-		return
-	//try to find the closest working camera in the same area, switch to it
-
-	var/area/A = get_area(src)
-	if (A && area_space_nopower(A)) return //lol @ dumping you at the mining magnet every fucking time. (or interrupting a track, wow rude)
-	if(istype(usr, /mob/living/silicon/ai))
-		var/mob/living/silicon/ai/anAI = usr
-		if(anAI.tracker.tracking)
-			return
-
-	var/best_dist = INFINITY //infinity
-	var/best_cam = null
-
-	for(var/obj/machinery/camera/C in A)
-		if(usr:network != C.network)
-			continue	//	different network (syndicate)
-		if(C.z != usr.z)
-			continue	//	different viewing plane
-		if(!C.camera_status)
-			continue	//	ignore disabled cameras
-		var/dist = get_dist(src, C)
-		if(dist < best_dist)
-			best_dist = dist
-			best_cam = C
-
-	if(!best_cam)
-		return
-	if(istype(usr, /mob/living/silicon/ai))
-		var/mob/living/silicon/ai/anAI = usr
-		anAI.tracker.cease_track()
-	usr:switchCamera(best_cam)
-
 /mob/living/silicon/ai/proc/ai_camera_list()
 	set category = "AI Commands"
 	set name = "Show Camera List"
@@ -44,8 +8,6 @@
 
 	attack_ai(get_message_mob())
 
-#define SORT "* Sort alphabetically..."
-
 /mob/living/silicon/ai/proc/ai_camera_track()
 	set category = "AI Commands"
 	set name = "Track With Camera"
@@ -53,21 +15,11 @@
 		boutput(usr, "You can't track with camera because you are dead!")
 		return
 
-	var/list/creatures = get_mobs_trackable_by_AI()
+	var/list/creatures = sortList(get_mobs_trackable_by_AI(), /proc/cmp_text_asc)
 
-	var/target_name = input(usr, "Which creature should you track?") as null|anything in creatures
-
-	//sort alphabetically if user so chooses
-	if (target_name == SORT)
-		creatures.Remove(SORT)
-
-		creatures = sortList(creatures)
-
-		//redisplay sorted list
-		target_name = input(usr, "Which creature should you track?") as null|anything in creatures
+	var/target_name = tgui_input_list(usr, "Which creature should you track?", "Track", creatures)
 
 	if (!target_name)
-		//usr:cameraFollow = null
 		src.tracker.cease_track()
 		return
 
@@ -81,31 +33,28 @@
 		boutput(usr, "You can't track with camera because you are dead!")
 		return
 
-	var/list/mob/creatures = get_mobs_trackable_by_AI()
-	creatures.Remove(SORT)
+	var/list/mob/creatures = sortList(get_mobs_trackable_by_AI(), /proc/cmp_text_asc)
 	var/list/candidates = list()
 
 	for(var/C in creatures)
 		var/name = creatures[C].name
-		if (name == heard_name)
+		if (name == heard_name || C == heard_name)
 			candidates += C
 			candidates[C] = creatures[C]
 
 	var/target_name = null
 	var/mob/target = null
 
-	if(candidates.len > 0)
-		if(candidates.len == 1)
+	if(length(candidates))
+		if(length(candidates) == 1)
 			target = candidates[candidates[1]]
 			ai_actual_track(target)
 		else
-			target_name = input(usr, "Which creature should you track?") as null|anything in candidates
+			target_name = tgui_input_list(usr, "Which creature should you track?", "Track", candidates)
 			target = candidates[target_name]
 			ai_actual_track(target)
 	else
 		boutput(usr, "Not able to locate a creature by the name of \"[heard_name]\" on camera.")
-
-#undef SORT
 
 /mob/living/silicon/proc/ai_actual_track(mob/target as mob)
 	if (isnull(target) || !ismob(target) || !isAIControlled(src))
@@ -169,19 +118,23 @@
 
 	var/list/D = list()
 	var/counter = 1
-	D["Cancel"] = "Cancel"
 	for (var/obj/machinery/camera/C in L)
-		if (C.network == src.network)
-			var/T = text("[][]", C.c_tag, (C.camera_status ? null : " (Deactivated)"))
-			if(D[T])
-				D["[T] #[counter++]"] = C
-			else
-				D[T] = C
-				counter = 1
+		if(!(C.network in src.camera_networks))
+			continue
+		if(get_z(C) != Z_LEVEL_STATION)
+			continue
+		if(!C.camera_status)
+			continue
+		var/camera_tag = C.c_tag
+		if(D[camera_tag])
+			D["[camera_tag] #[counter++]"] = C
+		else
+			D[camera_tag] = C
+			counter = 1
 
-	var/t = input(user, "Which camera should you change to?") as null|anything in D
+	var/t = tgui_input_list(user, "Which camera should you change to?", "View Camera", D)
 
-	if (!t || t == "Cancel")
+	if (!t)
 		src.tracker.cease_track()
 		src.switchCamera(null)
 		return 0
@@ -228,13 +181,13 @@
 		process() //Process now!!!
 
 	proc/cease_track()
-		owner.eyecam.set_loc(get_turf(owner.eyecam))
+		owner.eyecam.stopObserving()
 		tracking = null
 		delay = success_delay
-		owner.hud.update_tracking()
+		owner.hud?.update_tracking()
 
 	proc/cease_track_temporary()
-		owner.eyecam.set_loc(get_turf(owner.eyecam))
+		owner.eyecam.stopObserving()
 
 	proc/process()
 		if(!tracking || !owner || ( ( (last_track + delay) > world.timeofday ) && (world.timeofday > last_track) ) )
@@ -242,14 +195,15 @@
 
 
 		var/failedToTrack = 0
-		if (!can_track(tracking))
+		if (!is_mob_trackable_by_AI(tracking))
 			failedToTrack = 1
 
+		#ifndef UPSCALED_MAP
 		if(!failedToTrack) //We don't have a premature failure
 			failedToTrack = 1 //Assume failure
-			var/turf/T = get_turf(tracking)
-			if (T.cameras && length(T.cameras))
+			if (seen_by_camera(tracking))
 				failedToTrack = 0
+		#endif
 
 		if (failedToTrack)
 			cease_track_temporary()
@@ -257,24 +211,8 @@
 			delay = fail_delay
 		else
 			delay = success_delay
-			owner.eyecam.set_loc(tracking)
+			owner.eyecam.observeMob(tracking)
 
 		owner.hud.update_tracking()
-		owner.eyecam.update_statics()
 
 		last_track = world.timeofday
-
-	proc/can_track(mob/target as mob)
-		//Allow tracking of cyborgs & mobcritters, however
-		//Track autofails if:
-		//Target is wearing a syndicate ID
-		//Target is inside a dummy
-		//Target is not at a turf
-		//Target is not on station level
-		return (target.loc?.z == 1) \
-				&& ((issilicon(target) && istype(target.loc, /turf) ) \
-				|| (ismobcritter(target) && istype(target.loc, /turf) ) \
-				|| !((ishuman(target) \
-				&& istype(target:wear_id, /obj/item/card/id/syndicate)) \
-				|| (hasvar(target, "wear_id") && istype(target:wear_id, /obj/item/device/pda2) && target:wear_id:ID_card && istype(target:wear_id:ID_card, /obj/item/card/id/syndicate)) \
-				||  !istype(target.loc, /turf)))

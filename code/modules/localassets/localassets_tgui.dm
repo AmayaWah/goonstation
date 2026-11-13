@@ -5,20 +5,9 @@
 /datum/asset/group/base_tgui
 	subassets = list(
 		/datum/asset/basic/tgui,
-		/datum/asset/basic/fontawesome
+		/datum/asset/basic/fontawesome,
+		/datum/asset/basic/paper_fonts
 	)
-
-/// Common tgui assets
-/datum/asset/basic/tgui_common
-	local_assets = list(
-		"tgui-common.bundle.js",
-	)
-
-	init()
-		. = ..()
-		url_map = list(
-			"tgui/tgui-common.bundle.js" = "[resource("tgui/tgui-common.bundle.js")]",
-		)
 
 /// Normal base window tgui assets
 /datum/asset/basic/tgui
@@ -34,30 +23,52 @@
 			"tgui/tgui.bundle.css" = "[resource("tgui/tgui.bundle.css")]"
 		)
 
-/// tgui panel specific assets
-/datum/asset/basic/tgui_panel
+/// Fontawesome assets
+/datum/asset/basic/fontawesome
 	local_assets = list(
-		"tgui-panel.bundle.js",
-		"tgui-panel.bundle.css"
+		"fa-all.min.css",
+		"fa-regular-400.woff2",
+		"fa-solid-900.woff2"
 	)
 
 	init()
 		. = ..()
 		url_map = list(
-			"tgui/tgui-panel.bundle.js" = "[resource("tgui/tgui-panel.bundle.js")]",
-			"tgui/tgui-panel.bundle.css" = "[resource("tgui/tgui-panel.bundle.css")]"
+			"fa-regular-400.woff2"	= "[resource("vendor/fonts/fa-regular-400.woff2")]",
+			"fa-solid-900.woff2"	= "[resource("vendor/fonts/fa-solid-900.woff2")]",
+			"fa-all.min.css"		= "[resource("vendor/css/tgui/fa-all.min.css")]",
 		)
 
-/// Fontawesome assets
-/datum/asset/basic/fontawesome
+/// Fonts used for paper text & time/name stamps
+/datum/asset/basic/paper_fonts
 	local_assets = list(
-		"all.min.css",
-		"fa-regular-400.eot",
-		"fa-regular-400.woff",
-		"fa-solid-900.eot",
-		"fa-solid-900.woff"
+		"paper.min.css",
+		"anton-regular.woff2",
+		"DancingScript.woff2",
+		"PermanentMarker.woff2"
 	)
 
+	init()
+		. = ..()
+		url_map = list(
+			"paper.min.css"			= "[resource("vendor/css/tgui/paper.min.css")]",
+			"anton-regular.woff2"	= "[resource("css/fonts/anton-regular.woff2")]",
+			"DancingScript.woff2"	= "[resource("css/fonts/DancingScript.woff2")]",
+			"PermanentMarker.woff2"	= "[resource("css/fonts/PermanentMarker.woff2")]"
+		)
+
+/// Lazy-loaded secret interface bundles
+/// These are not singletons
+/datum/asset/basic/tgui_secret_chunk
+	var/id = null
+
+/datum/asset/basic/tgui_secret_chunk/New(interface_name)
+	src.id = tgui_get_secret_interface_id(interface_name)
+	. = ..()
+
+/datum/asset/basic/tgui_secret_chunk/init()
+	. = ..()
+	local_assets = list("secret-[id].bundle.js")
 	url_map = list(
-		"all.min.css" = "http://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.14.0/css/all.min.css"
+		"secret-[id].bundle.js" = "[resource("tgui/secret-[id].bundle.js")]"
 	)

@@ -10,6 +10,7 @@ var/list/action_names = list(
 
 	"fart" = "Fart",
 	"flip" = "Flip",
+	"twirl" = "Twirl",
 	"eyebrow" = "Raise Eyebrow",
 	"gasp" = "Gasp",
 	"raisehand" = "Raise Hand",
@@ -36,8 +37,8 @@ var/list/action_names = list(
 	"look_e" = "Look East",
 
 	"say" = "Say",
-	"say_radio" = "Say Radio",
-	"say_main_radio" = "Say Main Radio",
+	"say_over_channel" = "Say Over Channel",
+	"say_over_main_radio" = "Say Over Main Radio",
 	"dsay" = "Dead Say",
 	"asay" = "Admin Say",
 	"whisper" = "Whisper",
@@ -78,7 +79,6 @@ var/list/action_names = list(
 	"mentorhelp" = "Mentor Help",
 	"adminhelp" = "Admin Help",
 
-	"togglepoint" = "Toggle Pointing",
 	"refocus"   = "Refocus Window",
 	"mainfocus" = "Focus Main Window",
 
@@ -92,10 +92,7 @@ var/list/action_names = list(
 
 ///Used for literal input of actions
 var/list/action_verbs = list(
-	"say" = "start-say",	// lord forgive me for i have sinned
-	"say_radio" = "say_radio",
-	"say_main_radio" = "say_main_radio",
-	"emote" = "say *customv",
+	"say_over_channel" = "say_over_channel",
 	"salute" = "me_hotkey salute",
 	"burp" = "me_hotkey burp",
 	"dab" = "me_hotkey dab",
@@ -103,6 +100,7 @@ var/list/action_verbs = list(
 	"eyebrow" = "me_hotkey eyebrow",
 	"fart" = "me_hotkey fart",
 	"flip" = "me_hotkey flip",
+	"twirl" = "me_hotkey twirl",
 	"gasp" = "me_hotkey gasp",
 	"raisehand" = "me_hotkey raisehand",
 	"laugh" = "me_hotkey laugh",
@@ -110,25 +108,31 @@ var/list/action_verbs = list(
 	"wave" = "me_hotkey wave",
 	"flip" = "me_hotkey flip",
 	"scream" = "me_hotkey scream",
-	"whisper" = "whisper",
 	"wink" = "me_hotkey wink",
 	"flex" = "me_hotkey flex",
 	"yawn" = "me_hotkey yawn",
 	"snap" = "me_hotkey snap",
 	"pickup" = "pick-up",
-	"ooc" = "ooc",
-	"looc" = "looc",
-	"dsay" = "dsay",
-	"asay" = "asay",
 	"adminhelp" = "adminhelp",
 	"mentorhelp" = "mentorhelp",
-	"autoscreenshot" = ".autoscreenshot",
-	"screenshot" = ".screenshot",
-	"togglepoint" = "togglepoint",
+	"autoscreenshot" = ".xscreenshot auto",
+	"screenshot" = ".xscreenshot",
 	"refocus"   = ".winset \\\"mainwindow.input.focus=true;mainwindow.input.text=\\\"\\\"\\\"",
 	"mainfocus" = ".winset \"mainwindow.input.focus=false;mapwindow.map.focus=true;mainwindow.input.text=\"\"\"",
 	//"lazyfocus" = ".winset \\\"mainwindow.input.focus=true\\\"",
 	"Admin Interact" = "admin_interact"
+)
+
+var/list/action_macros = list(
+	"asay" = "asaymacro",
+	"dsay" = "dsaymacro",
+	"say" = "startsay",
+	"emote-h" = "startemote-h",
+	"emote-v" = "startemote-v",
+	"say_over_main_radio" = "radiosay",
+	"ooc" = "ooc",
+	"looc" = "looc",
+	"whisper" = "whisper",
 )
 
 ///Used to translate bitflags of hotkeys into human-readable names

@@ -26,6 +26,12 @@
 // also /obj/item/storage/nerd_kit/New() is in storage.dm with /obj/item/storage/nerd_kit instead of RANDOMLY FLOATING AROUND IN HERE WHAT IS WRONG WITH YOU PEOPLE
 //deathbutton to deathbutton.dm
 
+#ifdef HALLOWEEN
+#define EPHEMERAL_HALLOWEEN EPHEMERAL_SHOWN
+#else
+#define EPHEMERAL_HALLOWEEN EPHEMERAL_HIDDEN
+#endif
+
 /*
  *	DEATH PLAQUE
  */
@@ -34,7 +40,7 @@
 	name = "Memorial Plaque"
 
 	examine(mob/user)
-		boutput(usr, "Here lies [user.real_name]. Loved by all. R.I.P.")
+		boutput(user, "Here lies [user.real_name]. Loved by all. R.I.P.")
 
 /*
  *	Spooky TOMBSTONE.  It is a tombstone.
@@ -46,7 +52,7 @@
 	desc = "Rest in peace."
 	icon = 'icons/misc/halloween.dmi'
 	icon_state = "tombstone"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	var/robbed = 0
 	var/special = null //The path of whatever special loot is robbed from this grave.
@@ -66,25 +72,25 @@
 	desc = "A classic 20th century jukebox. Ayyy!"
 	icon = 'icons/obj/decoration.dmi'
 	icon_state = "jukebox"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	var/last_switch = 0
 	var/list/to_transfer = list() //List of mobs waiting to be shuffled back.
 	var/teleport_next_switch = 0 //Should we hop somewhere else next switch?
 
 	attack_ai(mob/user as mob)
-		if(get_dist(src, user) <= 1)
-			return attack_hand(user)
+		if(BOUNDS_DIST(src, user) == 0)
+			return src.Attackhand(user)
 		else
 			boutput(user, "This jukebox is too old to be controlled remotely.")
 		return
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		//This dude is no Fonz
 		if (user.a_intent == "harm")
-			user.visible_message("<span class='combat'><b>[user]</b> punches the [src]!</span>","You punch the [src].  Your hand hurts.")
+			user.visible_message(SPAN_COMBAT("<b>[user]</b> punches the [src]!"),"You punch the [src].  Your hand hurts.")
 			playsound(src.loc, pick(sounds_punch), 100, 1)
-			user.TakeDamage(user.hand == 1 ? "l_arm" : "r_arm", 0, rand(1, 4))
+			user.TakeDamage(user.hand == LEFT_HAND ? "l_arm" : "r_arm", 0, rand(1, 4))
 			return
 		else
 			src.visible_message("<b>[user]</b> thumps the [src]!  Ayy!")
@@ -98,14 +104,14 @@
 		return
 
 	proc/mindswap()
-		src.visible_message("<span class='alert'>The [src] activates!</span>")
-		playsound(src.loc,"sound/effects/ghost2.ogg", 100, 1)
+		src.visible_message(SPAN_ALERT("The [src] activates!"))
+		playsound(src.loc, 'sound/effects/ghost2.ogg', 100, 1)
 
 		var/list/transfer_targets = list()
 		for(var/mob/living/M in view(6))
 			if(M.loc == src) continue //Don't add the jerk trapped souls.
 			if(M.key) //Okay cool, we have a player to transfer.
-				var/mob/living/carbon/wall/holder = new
+				var/mob/living/holder = new
 				holder.set_loc(src)
 				if(M.mind)
 					M.mind.transfer_to(holder)
@@ -119,9 +125,9 @@
 			if(!isdead(M) && M.loc != src) //No transferring to dead dudes.
 				transfer_targets.Add(M)
 
-			M.changeStatus("weakened", 3 SECONDS)
+			M.changeStatus("knockdown", 3 SECONDS)
 
-		if(!src.to_transfer.len || src.to_transfer.len == 1)
+		if(!src.to_transfer.len || length(src.to_transfer) == 1)
 			src.visible_message("The [src] buzzes.")
 			src.last_switch = 0
 			if(src.teleport_next_switch)
@@ -170,8 +176,8 @@
 	proc/telehop()
 		var/turf/T = pick_landmark(LANDMARK_BLOBSTART)
 		if(T)
-			src.visible_message("<span class='alert'>[src] disappears!</span>")
-			playsound(src.loc,"sound/effects/singsuck.ogg", 100, 1)
+			src.visible_message(SPAN_ALERT("[src] disappears!"))
+			playsound(src.loc, 'sound/effects/singsuck.ogg', 100, 1)
 			src.set_loc(T)
 		return
 
@@ -188,9 +194,6 @@
 /obj/item/reagent_containers/glass/beaker/strange_reagent
 	name = "beaker-'Property of H. Jam'"
 	desc = "A beaker labled 'Property of H. Jam'.  Can hold up to 50 units."
-	icon = 'icons/obj/chemical.dmi'
-	icon_state = "beaker0"
-	item_state = "beaker"
 	initial_volume = 50
 
 	New()
@@ -219,11 +222,14 @@
 */
 /obj/machinery/computer3/generic/hjam
 	name = "Dr. Jam's Console"
-	setup_starting_peripheral1 = /obj/item/peripheral/network/powernet_card
-	setup_starting_peripheral2 = /obj/item/peripheral/printer
-	setup_drive_type = /obj/item/disk/data/fixed_disk/hjam_rdrive
+	setup_starting_peripherals = list(
+			/obj/item/peripheral/card_scanner,
+			/obj/item/peripheral/drive,
+			/obj/item/peripheral/network/powernet_card,
+			/obj/item/peripheral/printer)
+	setup_drive_type = /obj/item/disk/data/fixed_disk/hd32/hjam_rdrive
 
-/obj/item/disk/data/fixed_disk/hjam_rdrive
+/obj/item/disk/data/fixed_disk/hd32/hjam_rdrive
 	title = "HJam_HDD"
 
 	New()
@@ -247,62 +253,17 @@
 		newfolder.add_file( new /datum/computer/file/text/hjam_rlog_2(src))
 		newfolder.add_file( new /datum/computer/file/text/hjam_rlog_3(src))
 
-//Old outpost stuff
-/obj/machinery/computer3/generic/outpost1
-	name = "VR Research Console"
-	setup_starting_peripheral1 = /obj/item/peripheral/network/powernet_card
-	setup_starting_peripheral2 = /obj/item/peripheral/printer
-	setup_drive_type = /obj/item/disk/data/fixed_disk/outpost_rdrive
-
-/obj/item/disk/data/fixed_disk/outpost_rdrive
-	title = "VR_HDD"
-
-	New()
-		..()
-		//First off, create the directory for logging stuff
-		var/datum/computer/folder/newfolder = new /datum/computer/folder(  )
-		newfolder.name = "logs"
-		src.root.add_file( newfolder )
-		newfolder.add_file( new /datum/computer/file/record/c3help(src))
-		//newfolder.add_file( new /datum/computer/file/text/hjam_passlog(src))
-		//This is the bin folder. For various programs I guess sure why not.
-		newfolder = new /datum/computer/folder
-		newfolder.name = "bin"
-		src.root.add_file( newfolder )
-		newfolder.add_file( new /datum/computer/file/terminal_program/writewizard(src))
-
-		src.root.add_file( new /datum/computer/file/text/outpost_rlog_1(src))
-		src.root.add_file( new /datum/computer/file/text/outpost_rlog_2(src))
-		//src.root.add_file( new /datum/computer/file/text/hjam_rlog_3(src))
-
 //Haunted camera. Steals people's souls.
 /obj/item/camera/haunted
 	name = "rusty camera"
 	pictures_left = -1 // halloween magic doesn't need photos
 	steals_souls = TRUE
 
-/mob/living/carbon/wall/halloween
-	var/mob/oldbody = null
-
-/mob/living/carbon/wall/horror
-	say_quote(var/text)
-		if(src.emote_allowed)
-			if(!(src.client && src.client.holder))
-				src.emote_allowed = 0
-
-			if(src.gender == MALE) playsound(src, "sound/voice/screams/male_scream.ogg", 100, 0, 0, 0.91, channel=VOLUME_CHANNEL_EMOTE)
-			else playsound(src, "sound/voice/screams/female_scream.ogg", 100, 0, 0, 0.9, channel=VOLUME_CHANNEL_EMOTE)
-			SPAWN_DBG(5 SECONDS)
-				src.emote_allowed = 1
-			return "screams!"
-		else
-			return pick("gurgles.","shivers.","twitches.","shakes.","squirms.", "cries.")
-
 /obj/item/photo/haunted
 	var/list/mob/old_bodies = list()
 
 	attack_self(mob/user as mob)
-		user.visible_message("<span class='combat'>[user] tears the photo to shreds!</span>","<span class='combat'>You tear the photo to shreds!</span>")
+		user.visible_message(SPAN_COMBAT("[user] tears the photo to shreds!"),SPAN_COMBAT("You tear the photo to shreds!"))
 		qdel(src)
 		return
 
@@ -333,21 +294,20 @@
 	desc = "The television, that insidious beast, that Medusa which freezes a billion people to stone every night, staring fixedly, that Siren which called and sang and promised so much and gave, after all, so little."
 	icon = 'icons/obj/computer.dmi'
 	icon_state = "security_det"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='combat'>The knobs are fixed in place.  Might as well sit back and watch, I guess?</span>")
+	attack_hand(mob/user)
+		boutput(user, SPAN_COMBAT("The knobs are fixed in place.  Might as well sit back and watch, I guess?"))
 
 	examine(mob/user)
 		. = list()
 		if (ishuman(user) && !user.stat)
 			var/mob/living/carbon/human/M = user
 
-			M.visible_message("<span class='combat'>[M] stares blankly into [src], \his eyes growing duller and duller...</span>","<span class='combat'>You stare deeply into [src].  You...can't look away.  It's mesmerizing.  Sights, sounds, colors, shapes.  They blur together into a phantasm of beauty and wonder.</span>")
-			var/mob/living/carbon/wall/halloween/holder = new
+			M.visible_message(SPAN_COMBAT("[M] stares blankly into [src], [his_or_her(M)] eyes growing duller and duller..."),SPAN_COMBAT("You stare deeply into [src].  You...can't look away.  It's mesmerizing.  Sights, sounds, colors, shapes.  They blur together into a phantasm of beauty and wonder."))
+			var/mob/living/carbon/holder = new
 			holder.set_loc(src)
-			holder.oldbody = M
 			if(M.mind)
 				M.mind.transfer_to(holder)
 			else
@@ -363,7 +323,7 @@
 			M.set_loc(stoneman)
 			stoneman.name = "statue of [M.name]"
 			stoneman.desc = "A really dumb looking statue. Very well carved, though."
-			stoneman.anchored = 0
+			stoneman.anchored = UNANCHORED
 			stoneman.set_density(1)
 			stoneman.layer = MOB_LAYER
 
@@ -413,7 +373,7 @@
 						user.show_text("You feel a spooky rumbling in your guts! Maybe you ate a ghoooooost?!","#8218A8")
 					if (C.bioHolder)
 						C.bioHolder.age += 125
-						SPAWN_DBG(1 MINUTE)
+						SPAWN(1 MINUTE)
 							C.bioHolder.age -= 125
 			if("NULL MOSS NOOK") // Anagram: SKULL MONSOON
 				particleMaster.SpawnSystem(new /datum/particleSystem/skull_rain(get_turf(user)))
@@ -421,12 +381,12 @@
 			if("ONION SLUG CANDY") // Anagram: ANNOYING CLOUDS
 				particleMaster.SpawnSystem(new /datum/particleSystem/spooky_mist(get_turf(user)))
 				user.show_text("A cold and spooky wind begins to blow!","#8218A8")
-				playsound(user, 'sound/ambience/nature/Wind_Cold2.ogg', 50, 1, 5)
+				playsound(user, 'sound/ambience/nature/Wind_Cold2.ogg', 50, TRUE, 5)
 			if("HOT SIGMA") // Anagram: IM A GHOST
 				user.blend_mode = 2
 				user.alpha = 150
 				user.show_text("You feel extra spooky!","#8218A8")
-				SPAWN_DBG(2 MINUTES)
+				SPAWN(2 MINUTES)
 					user.blend_mode = 0
 					user.alpha = 255
 			else
@@ -434,11 +394,11 @@
 				used = 0
 
 		if (used)
-			user.visible_message("<span class='combat'><b>[user.name]</b> reads a spell from the book!</span>")
+			user.visible_message(SPAN_COMBAT("<b>[user.name]</b> reads a spell from the book!"))
 			src.uses--
 			if (uses == 0)
-				boutput(user, "<span class='combat'>The book crumbles away into dust! How spooooooky!</span>")
-				src.dropped()
+				boutput(user, SPAN_COMBAT("The book crumbles away into dust! How spooooooky!"))
+				src.dropped(user)
 				qdel(src)
 
 		return
@@ -511,10 +471,10 @@
 	desc = "A decorative ghost, hanging from the ceiling. It's <b><u><i>pretty scary!!!!</i></u></b>"
 	icon = 'icons/mob/ghost_drone.dmi'
 	icon_state = "g_drone"
-	anchored = 1
+	anchored = ANCHORED
 	density = 0
 	pixel_y = 7
-	var/trigger_sound = "sound/effects/ExtremelyScaryGhostNoise.ogg"
+	var/trigger_sound = 'sound/effects/ExtremelyScaryGhostNoise.ogg'
 	var/trigger_duration = 118 // should be about as long as the sound clip
 	var/spam_flag = 0
 	var/spam_timer = 150
@@ -525,18 +485,18 @@
 			src.spam_flag = 1
 			if (prob(66)) // our sensor isn't the best
 				src.scare_some_people()
-			SPAWN_DBG(src.spam_timer)
+			SPAWN(src.spam_timer)
 				if (src)
 					src.spam_flag = 0
 
 	proc/scare_some_people()
 		src.spooky_shake()
 		playsound(src, src.trigger_sound, 40, 0)
-		src.visible_message("<span class='alert'><b>\The [src] comes to life and starts making an unearthly, haunting wail!</b></span>")
+		src.visible_message(SPAN_ALERT("<b>\The [src] comes to life and starts making an unearthly, haunting wail!</b>"))
 		for (var/mob/M in viewers(src))
 			if (prob(66))
-				var/msg = pick("<span class='alert'><b>You're [pick("hella","super","very","extremely","completely","totally")] [pick("scared","spooked","terrified")]![pick("","!","!!")]</b><span>",\
-				"<span class='alert'><b>You've never felt so [pick("scared","spooked","terrified")]![pick("","!","!!")]</b><span>",\
+				var/msg = pick(SPAN_ALERT("<b>You're [pick("hella","super","very","extremely","completely","totally")] [pick("scared","spooked","terrified")]![pick("","!","!!")]</b>"),\
+				SPAN_ALERT("<b>You've never felt so [pick("scared","spooked","terrified")]![pick("","!","!!")]</b>"),\
 				"Oh, it's just a decoration.[pick(""," You were kinda spooked for a moment there."," That's a relief!")]")
 				M.show_text(msg)
 
@@ -546,3 +506,41 @@
 			src.set_dir(pick(cardinal))
 			src.pixel_x = rand(-3,3)
 			sleep(0.1 SECONDS)
+
+/obj/cauldron
+	name = "cauldron"
+	desc = "An empty cast-iron cauldron."
+	icon = 'icons/misc/halloween.dmi'
+	icon_state = "cauldron"
+	anchored = ANCHORED
+	density = 1
+
+	candy
+		name = "candy-filled cauldron"
+		desc = "It's full of candy! Treats... or tricks?"
+		icon_state = "cauldron-candy"
+
+		attack_hand(mob/user)
+			var/list/candytypes = concrete_typesof(/obj/item/reagent_containers/food/snacks/candy)
+			var/newcandy_path = pick(candytypes)
+			var/obj/item/reagent_containers/food/snacks/candy/newcandy = new newcandy_path
+			user.put_in_hand_or_drop(newcandy)
+			if (prob(5))
+				newcandy.has_razor_blade = TRUE
+			boutput(user, "You grab [newcandy] from the cauldron!")
+
+		/// subtype named "ephemeral" which only spawns on halloween
+		EPHEMERAL_HALLOWEEN
+
+	jellybean
+		name = "jellybean-filled cauldron"
+		desc = "It's full of jellybeans! Wonder what's in these..."
+		icon_state = "cauldron-jellybean"
+
+		attack_hand(mob/user)
+			var/obj/item/reagent_containers/food/snacks/candy/jellybean/everyflavor/B = new
+			user.put_in_hand_or_drop(B)
+			boutput(user, "You grab [B] from the cauldron!")
+
+		/// subtype named "ephemeral" which only spawns on halloween
+		EPHEMERAL_HALLOWEEN

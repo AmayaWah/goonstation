@@ -5,7 +5,7 @@ Left Mouse Button                      = Paste object<br>
 Right Mouse Button                     = Select object to copy<br>
 ***********************************************************"}
 	icon_state = "buildmode11"
-	var/atom/cloned = null
+	var/tmp/atom/cloned = null
 
 	click_left(atom/object, var/ctrl, var/alt, var/shift)
 		if (!cloned)
@@ -17,16 +17,17 @@ Right Mouse Button                     = Select object to copy<br>
 			O.appearance = cloned.appearance
 			O.set_dir(cloned.dir)
 		else if (isturf(cloned))
-			var/turf/t = new cloned.type(T)
+			var/turf/t = T.ReplaceWith(cloned.type, FALSE, TRUE, FALSE, TRUE)
+			t.set_opacity(cloned.opacity) // appearance copy doesn't hook into lighting
 			t.appearance = cloned.appearance
 		blink(T)
 
 	click_right(atom/object, var/ctrl, var/alt, var/shift)
 		if (isturf(object))
 			cloned = object
-			boutput(usr, "<span class='notice'>Selected [object] for copying by reference.</span>")
+			boutput(usr, SPAN_NOTICE("Selected [object] for copying by reference."))
 			update_button_text("Copying [object] by reference.")
 		else if (isobj(object))
 			cloned = object:clone()
-			boutput(usr, "<span class='notice'>Selected [object] for copying.</span>")
+			boutput(usr, SPAN_NOTICE("Selected [object] for copying."))
 			update_button_text("Copying [object].")

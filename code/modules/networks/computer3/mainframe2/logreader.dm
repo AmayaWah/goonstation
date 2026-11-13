@@ -8,16 +8,19 @@
 		..()
 		fields = list("logdir" = DEFAULT_LOG_PATH)
 
+TYPEINFO(/obj/machinery/networked/logreader)
+	mats = 14
+
 /obj/machinery/networked/logreader
 	icon = 'icons/obj/computer.dmi'
 	icon_state = "computer_generic"
 	name = "door access logs"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	device_tag = "PNET_LOGREADER"
 	timeout = 10
-	mats = 14
 	power_usage = 100
+	wired_all_hearing = TRUE
 	var/static/list/required_fields = list("card_name", "door_name", "time_t", "timestamp", "door_id", "action")
 	var/filter_name = null
 	var/ftb_min = null
@@ -35,7 +38,7 @@
 
 	New()
 		..()
-		SPAWN_DBG(0.5 SECONDS)
+		SPAWN(0.5 SECONDS)
 			src.net_id = generate_net_id(src)
 
 			if(!src.link)
@@ -43,7 +46,7 @@
 				var/obj/machinery/power/data_terminal/test_link = locate() in T
 				if(test_link && !DATA_TERMINAL_IS_VALID_MASTER(test_link, test_link.master))
 					src.link = test_link
-					src.link.master = src
+					src.link.set_master(src, src.net_id)
 
 	attack_hand(var/mob/user)
 		if(..() || (status & (NOPOWER|BROKEN)))
@@ -51,7 +54,7 @@
 
 		src.add_dialog(user)
 
-		var/dat = {"<html><head><title>Access Log Reader</title><style>
+		var/list/dat = list({"<html><head><title>Access Log Reader</title><style>
 .conn-box {
 	float: right;
 	width: 12px;
@@ -73,7 +76,7 @@
 	background-color: #888888;
 }
 
-</style></head><body>"}
+</style></head><body>"})
 
 
 		var/readout_class = "conn-error"
@@ -88,11 +91,11 @@
 		dat += "<div class='conn-box [readout_class]'></div>"
 		if (!refreshing)
 			if (machine_screen == 1)
-				dat += "<b>Connection</b> | <a href='?src=\ref[src];screen=2'>Data</a>"
+				dat += "<b>Connection</b> | <a href='byond://?src=\ref[src];screen=2'>Data</a>"
 			else if (machine_screen == 2)
-				dat += "<a href='?src=\ref[src];screen=1'>Connection</a> | <b>Data</b>"
+				dat += "<a href='byond://?src=\ref[src];screen=1'>Connection</a> | <b>Data</b>"
 			else if (!refreshing)
-				dat += "<a href='?src=\ref[src];screen=1'>Connection</a> | <a href='?src=\ref[src];screen=2'>Data</a>"
+				dat += "<a href='byond://?src=\ref[src];screen=1'>Connection</a> | <a href='byond://?src=\ref[src];screen=2'>Data</a>"
 
 
 			dat += "<hr><br>"
@@ -101,7 +104,7 @@
 			if (machine_screen == 1)
 				dat += "<b>Host Connection:</b>"
 				dat += "<table border='1' class='[readout_class]'><tr><td><font color=white>[readout]</font></td></tr></table><br>"
-				dat += "<a href='?src=\ref[src];reset=1'>Reset Connection</a><br>"
+				dat += "<a href='byond://?src=\ref[src];reset=1'>Reset Connection</a><br>"
 
 				if (src.panel_open)
 					dat += net_switch_html()
@@ -115,20 +118,20 @@
 				if (spoofed || timed_out)
 					dat += "<br>"
 				dat += "<b>Filters</b><br>"
-				dat += "<b>Card name (partial):</b> <a href='?src=\ref[src];card_name=1'>[filter_name ? filter_name : "&lt;not set&gt;"]</a>[filter_name ? " <a href='?src=\ref[src];card_name_clear=1'>\[X\]</a>" : null]<br>"
+				dat += "<b>Card name (partial):</b> <a href='byond://?src=\ref[src];card_name=1'>[filter_name ? filter_name : "&lt;not set&gt;"]</a>[filter_name ? " <a href='byond://?src=\ref[src];card_name_clear=1'>\[X\]</a>" : null]<br>"
 				dat += "<b>Time interval:</b> "
 				if (ftb_min != null && ftb_sec != null && fte_min != null && fte_sec != null)
-					dat += "<a href='?src=\ref[src];time_begin_min=1'>[ftb_min]</a>:"
-					dat += "<a href='?src=\ref[src];time_begin_sec=1'>[ftb_sec]</a> - "
-					dat += "<a href='?src=\ref[src];time_end_min=1'>[fte_min]</a>:"
-					dat += "<a href='?src=\ref[src];time_end_sec=1'>[fte_sec]</a> "
-					dat += "<a href='?src=\ref[src];time_clear=1'>\[X\]</a>"
+					dat += "<a href='byond://?src=\ref[src];time_begin_min=1'>[ftb_min]</a>:"
+					dat += "<a href='byond://?src=\ref[src];time_begin_sec=1'>[ftb_sec]</a> - "
+					dat += "<a href='byond://?src=\ref[src];time_end_min=1'>[fte_min]</a>:"
+					dat += "<a href='byond://?src=\ref[src];time_end_sec=1'>[fte_sec]</a> "
+					dat += "<a href='byond://?src=\ref[src];time_clear=1'>\[X\]</a>"
 				else
-					dat += "<a href='?src=\ref[src];time=1'>&lt;not set&gt;</a>"
+					dat += "<a href='byond://?src=\ref[src];time=1'>&lt;not set&gt;</a>"
 				dat += "<br>"
-				dat += "<b>Action:</b> <a href='?src=\ref[src];action=1'>[filter_action ? filter_action : "&lt;not set&gt;"]</a>[filter_action ? " <a href='?src=\ref[src];action_clear=1'>\[X\]</a>" : null]<br>"
-				dat += "<b>Door net ID:</b> <a href='?src=\ref[src];door_id=1'>[filter_door_id ? filter_door_id : "&lt;not set&gt;"]</a>[filter_door_id ? " <a href='?src=\ref[src];door_id_clear=1'>\[X\]</a>" : null]<br>"
-				dat += "<a href='?src=\ref[src];refresh=1'>Refresh records</a><br><br>"
+				dat += "<b>Action:</b> <a href='byond://?src=\ref[src];action=1'>[filter_action ? filter_action : "&lt;not set&gt;"]</a>[filter_action ? " <a href='byond://?src=\ref[src];action_clear=1'>\[X\]</a>" : null]<br>"
+				dat += "<b>Door net ID:</b> <a href='byond://?src=\ref[src];door_id=1'>[filter_door_id ? filter_door_id : "&lt;not set&gt;"]</a>[filter_door_id ? " <a href='byond://?src=\ref[src];door_id_clear=1'>\[X\]</a>" : null]<br>"
+				dat += "<a href='byond://?src=\ref[src];refresh=1'>Refresh records</a><br><br>"
 
 				dat += "<b>Record listing: </b><br>"
 				if (!records.len)
@@ -139,7 +142,7 @@
 		else if (refreshing)
 			dat += "<i>Refreshing data, please wait...</i>"
 
-		user.Browse(dat,"window=net_logreader;size=545x302")
+		user.Browse(dat.Join(),"window=net_logreader;size=545x302")
 		onclose(user,"net_logreader")
 		return
 
@@ -162,7 +165,7 @@
 			src.host_id = null
 			src.old_host_id = null
 			src.post_status(rem_host, "command","term_disconnect")
-			SPAWN_DBG(0.5 SECONDS)
+			SPAWN(0.5 SECONDS)
 				src.post_status(rem_host, "command","term_connect","device",src.device_tag)
 
 			src.updateUsrDialog()
@@ -259,7 +262,7 @@
 				arguments += " -- [bash_sanitize(filter_name)]"
 			var/data = list2params(list("command"="record_query","query"="[arguments]"))
 			src.post_status(src.host_id, "command", "term_message", "data", data, "netid", "[net_id]", "device", device_tag)
-			SPAWN_DBG(30 SECONDS)
+			SPAWN(30 SECONDS)
 				if (refresh_id == my_refresh_id && refreshing)
 					timed_out = 1
 					refreshing = 0
@@ -271,7 +274,6 @@
 		..()
 		if(status & NOPOWER)
 			return
-		use_power(100)
 
 		if(!host_id || !link)
 			return
@@ -306,7 +308,7 @@
 		//We care very deeply about address_1.
 		if(lowertext(signal.data["address_1"]) != lowertext(src.net_id))
 			if((signal.data["address_1"] == "ping") && ((signal.data["net"] == null) || ("[signal.data["net"]]" == "[src.net_number]")))
-				SPAWN_DBG(0.5 SECONDS) //Send a reply for those curious jerks
+				SPAWN(0.5 SECONDS) //Send a reply for those curious jerks
 					if (signal.transmission_method == TRANSMISSION_WIRE)
 						src.post_status(target, "command", "ping_reply", "device", src.device_tag, "netid", src.net_id, "net", "[net_number]")
 					// else ????
@@ -323,7 +325,7 @@
 				if(target == src.host_id)
 					src.host_id = null
 					src.updateUsrDialog()
-					SPAWN_DBG(0.3 SECONDS)
+					SPAWN(0.3 SECONDS)
 						src.post_status(target, "command","term_disconnect")
 					return
 
@@ -337,7 +339,7 @@
 				if(signal.data["data"] != "noreply")
 					src.post_status(target, "command","term_connect","data","noreply","device",src.device_tag)
 				src.updateUsrDialog()
-				SPAWN_DBG(0.2 SECONDS) //Sign up with the driver (if a mainframe contacted us)
+				SPAWN(0.2 SECONDS) //Sign up with the driver (if a mainframe contacted us)
 					src.post_status(target,"command","term_message","data","command=register")
 				return
 
@@ -433,17 +435,17 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 	receive_progsignal(var/sendid, var/list/data, var/datum/computer/file/file)
 		. = ..()
 		if (!.)
-			if (data["command"] == DWAINE_COMMAND_REPLY)
+			if (data["command"] == DWAINE::SYSCALL::REPLY)
 				if (data["sender_tag"] == "getopt")
 					opt_data = data["data"]
-					return ESIG_USR4
+					return DWAINE::ERR::SIG::USR4
 				else
-					return ESIG_GENERIC
-			else if (data["command"] == DWAINE_COMMAND_MSG_TERM)
+					return DWAINE::ERR::SIG::GENERIC
+			else if (data["command"] == DWAINE::SYSCALL::MSG_TERM)
 				message_user(data["data"])
 			else
-				return ESIG_GENERIC
-			return ESIG_SUCCESS
+				return DWAINE::ERR::SIG::GENERIC
+			return DWAINE::ERR::SIG::SUCCESS
 
 	proc/usage()
 		message_user("Usage:")
@@ -470,11 +472,11 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 		return ret
 
 	proc/message_reply_and_user(var/message)
-		var/list/data = list("command"=DWAINE_COMMAND_REPLY, "data" = message, "sender_tag" = "accesslog")
+		var/list/data = list("command"= DWAINE::SYSCALL::REPLY, "data" = message, "sender_tag" = "accesslog")
 		if (useracc)
 			data["term"] = useracc.user_id
 		var/sig = signal_program(parent_task.progid, data)
-		if (sig != ESIG_USR4)
+		if (sig != DWAINE::ERR::SIG::USR4)
 			message_user(message)
 
 	initialize(var/initparams)
@@ -488,7 +490,7 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 			return
 
 		var/log_to = DEFAULT_LOG_PATH
-		var/datum/computer/file/record/conf_file = signal_program(1, list("command"=DWAINE_COMMAND_FGET, "path"="/etc/accesslog"))
+		var/datum/computer/file/record/conf_file = signal_program(1, list("command"= DWAINE::SYSCALL::FGET, "path"="/etc/accesslog"))
 		if (istype(conf_file))
 			if (conf_file.fields["logdir"])
 				log_to = conf_file.fields["logdir"]
@@ -496,8 +498,8 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 					log_to = "/log_to"
 
 		opt_data = null
-		var/status = signal_program(1, list("command"=DWAINE_COMMAND_TSPAWN, "passusr" = 1, "path" = "/bin/getopt", "args" = "afl:m:s:t: [initparams]"))
-		if (status == ESIG_NOTARGET)
+		var/status = signal_program(1, list("command"= DWAINE::SYSCALL::TSPAWN, "passusr" = 1, "path" = "/bin/getopt", "args" = "afl:m:s:t: [initparams]"))
+		if (status == DWAINE::ERR::SIG::NOTARGET)
 			message_user("getopt: command not found")
 			mainframe_prog_exit
 			return
@@ -533,12 +535,12 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 				logfile.name = fname
 				if (useracc)
 					logfile.metadata["owner"] = read_user_field("name")
-				logfile.metadata["permissions"] = COMP_ROWNER | COMP_RGROUP
+				logfile.metadata["permissions"] = DWAINE::PERM::BIT::OWNER_READ | DWAINE::PERM::BIT::GROUP_READ
 				logfile.fields = loglist(opts["t"], opts["m"], opts["s"], jointext(params, " "))
-				var/datum/computer/folder/logs_dir = signal_program(1, list("command"=DWAINE_COMMAND_FGET, "path"=log_to))
+				var/datum/computer/folder/logs_dir = signal_program(1, list("command"= DWAINE::SYSCALL::FGET, "path"=log_to))
 				if (istype(logs_dir))
 					var/idx = 0
-					while (logs_dir.contents.len >= ACCESSLOG_RECORDS_LIMIT)
+					while (length(logs_dir.contents) >= ACCESSLOG_RECORDS_LIMIT)
 						idx++
 						if (idx > logs_dir.contents.len)
 							message_user("Could not make space for new entry.")
@@ -550,8 +552,8 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 							if (to_delete)
 								qdel(to_delete)
 							idx--
-				var/result = signal_program(1, list("command"=DWAINE_COMMAND_FWRITE, "path"=log_to,"replace"=1,"mkdir"=1), logfile)
-				if (result == ESIG_SUCCESS)
+				var/result = signal_program(1, list("command"= DWAINE::SYSCALL::FWRITE, "path"=log_to,"replace"=1,"mkdir"=1), logfile)
+				if (result == DWAINE::ERR::SIG::SUCCESS)
 					message_user("Data recorded.")
 				else
 					message_user("File system error occurred while recording data.")
@@ -575,8 +577,8 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 					message_user("Invalid timestamp filter [time_filter].")
 					mainframe_prog_exit
 					return
-			var/datum/computer/folder/logs_folder = signal_program(1, list("command"=DWAINE_COMMAND_FGET, "path"=log_to))
-			if (logs_folder == ESIG_NOFILE)
+			var/datum/computer/folder/logs_folder = signal_program(1, list("command"= DWAINE::SYSCALL::FGET, "path"=log_to))
+			if (logs_folder == DWAINE::ERR::SIG::NOFILE)
 				message_user("No recorded data.")
 				mainframe_prog_exit
 				return
@@ -679,7 +681,7 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 		if (..())
 			return
 
-		signal_program(1, list("command"=DWAINE_COMMAND_MOUNT, "id"=src.name, "link"="logreader"))
+		signal_program(1, list("command"= DWAINE::SYSCALL::MOUNT, "id"=src.name, "link"="logreader"))
 		return
 
 	process()
@@ -688,20 +690,20 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 	receive_progsignal(var/sendid, var/list/data, var/datum/computer/file/file)
 		. = ..()
 		if (!.)
-			if (data["command"] == DWAINE_COMMAND_REPLY)
+			if (data["command"] == DWAINE::SYSCALL::REPLY)
 				if (data["sender_tag"] == "accesslog")
 					records += data["data"]
-					return ESIG_USR4
+					return DWAINE::ERR::SIG::USR4
 				else if (data["sender_tag"] == "tar")
 					archive_path = data["data"]
-					return ESIG_USR4
+					return DWAINE::ERR::SIG::USR4
 				else
-					return ESIG_GENERIC
-			else if (data["command"] == DWAINE_COMMAND_MSG_TERM)
+					return DWAINE::ERR::SIG::GENERIC
+			else if (data["command"] == DWAINE::SYSCALL::MSG_TERM)
 				message_user(data["data"])
 			else
-				return ESIG_GENERIC
-			return ESIG_SUCCESS
+				return DWAINE::ERR::SIG::GENERIC
+			return DWAINE::ERR::SIG::SUCCESS
 
 	terminal_input(var/data, var/datum/computer/file/theFile)
 		if (..() || !data)
@@ -716,19 +718,19 @@ proc/accesslog_digest(var/datum/computer/file/record/R, formatted = 0)
 		switch (lowertext(dataList["command"]))
 			if ("record_query")
 				records.len = 0
-				var/datum/computer/file/mainframe_program/P = signal_program(1, list("command"=DWAINE_COMMAND_FGET, "path"="/sys/srv/accesslog"))
+				var/datum/computer/file/mainframe_program/P = signal_program(1, list("command"= DWAINE::SYSCALL::FGET, "path"="/sys/srv/accesslog"))
 				if (istype(P))
-					var/list/siglist = list("command"=DWAINE_COMMAND_TSPAWN, "passusr"=1, "path"="/sys/srv/accesslog", "args"=strip_html(dataList["query"]))
+					var/list/siglist = list("command"= DWAINE::SYSCALL::TSPAWN, "passusr"=1, "path"="/sys/srv/accesslog", "args"=strip_html(dataList["query"]))
 					signal_program(1, siglist)
 					// see what i did here? heh? HEH?
 					// doubly so, it almost sounds like tar gz
 					var/targs = jointext(records, " ")
 					archive_path = null
-					siglist = list("command"=DWAINE_COMMAND_TSPAWN, "passusr"=1, "path"="/bin/tar", "args"="-cqt -- [targs]")
+					siglist = list("command"= DWAINE::SYSCALL::TSPAWN, "passusr"=1, "path"="/bin/tar", "args"="-cqt -- [targs]")
 					signal_program(1, siglist)
 					if (!archive_path)
 						return 1
-					var/datum/computer/file/archive/archive = signal_program(1, list("command"=DWAINE_COMMAND_FGET, "path"="[archive_path]"))
+					var/datum/computer/file/archive/archive = signal_program(1, list("command"= DWAINE::SYSCALL::FGET, "path"="[archive_path]"))
 					if (!istype(archive))
 						return 1
 					message_device("ack", archive)

@@ -1,29 +1,50 @@
-mob/new_player
-	anchored = 1
 
-	var/ready = 0
+var/global/datum/mutex/limited/latespawning = new(5 SECONDS)
+TYPEINFO(/mob/new_player)
+	start_listen_modifiers = null
+	start_listen_inputs = list(LISTEN_INPUT_EARS)
+	start_listen_languages = list(LANGUAGE_ALL)
+	start_speech_modifiers = null
+	start_speech_outputs = null
+
+/mob/new_player
+	anchored = ANCHORED
+	has_typing_indicator = FALSE
+
+	var/ready_play = FALSE //!Ready to play game
+	var/ready_tutorial = FALSE //!Ready to start tutorial
+	var/tutorial_loading = FALSE //!Tutorial is loading
 	var/spawning = 0
 	var/keyd
 	var/adminspawned = 0
-	var/is_respawned_player = 0
+	var/pregameBrowserLoaded = FALSE
+	var/antag_fallthrough = FALSE
+	/// indicates if a player is currently barred from joining the game
+	var/blocked_from_joining = FALSE
+
+	var/my_own_roundstart_tip = null //! by default everyone sees the get_global_tip() tip, but if they press the button to refresh they get their own
 
 #ifdef TWITCH_BOT_ALLOWED
-	var/twitch_bill_spawn = 0
+	var/twitch_bill_spawn = FALSE
 #endif
 
-	density = 0
-	stat = 2
+	density = FALSE
+	stat = STAT_DEAD
 	canmove = 0
 
-	anchored = 1	//  don't get pushed around
+	anchored = ANCHORED	//  don't get pushed around
 
-	var/chui/window/spend_spacebux/bank_menu
+	var/datum/spend_spacebux/bank_menu
+	default_speech_output_channel = SAY_CHANNEL_OOC
 
 	New()
 		. = ..()
-		APPLY_MOB_PROPERTY(src, PROP_INVISIBILITY, src, INVIS_ALWAYS)
+		START_TRACKING
+		APPLY_ATOM_PROPERTY(src, PROP_MOB_INVISIBILITY, src, INVIS_ALWAYS)
 	#ifdef I_DONT_WANNA_WAIT_FOR_THIS_PREGAME_SHIT_JUST_GO
-		ready = 1
+		#ifndef GENERATE_GOONHUB_MAP
+		src.ready_play = TRUE
+		#endif
 	#endif
 
 	// How could this even happen? Regardless, no log entries for unaffected mobs (Convair880).
@@ -31,6 +52,7 @@ mob/new_player
 		return
 
 	disposing()
+		STOP_TRACKING
 		mobs.Remove(src)
 		if (mind)
 			if (mind.current == src)
@@ -41,6 +63,9 @@ mob/new_player
 		..()
 
 	Login()
+		if (!src.client)
+			logTheThing(LOG_DEBUG, src, "new_player/Login called with null client. This is likely due to someone trying to log in with an in-use key.")
+			return
 		..()
 
 		if(!mind)
@@ -52,18 +77,23 @@ mob/new_player
 			if (!isnull(P.round_join_time) && isnull(P.round_leave_time)) //they likely died but didnt d/c b4 respawn
 				P.log_leave_time()
 
+		src.client?.load_pregame()
+		close_spawn_windows()
 		new_player_panel()
-		src.set_loc(pick_landmark(LANDMARK_NEW_PLAYER, locate(1,1,1)))
+		var/turf/default_loc = locate(1,1,1)
+		if (istype(default_loc.loc, /area/cordon))
+			default_loc = pick_landmark(LANDMARK_LATEJOIN, locate(world.maxx/2,world.maxy/2,1))
+		src.set_loc(pick_landmark(LANDMARK_NEW_PLAYER, default_loc))
 		src.sight |= SEE_TURFS
 
-
+		#if CLIENT_AUTH_PROVIDER_CURRENT == CLIENT_AUTH_PROVIDER_BYOND
 		// byond members get a special join message :]
 		if (src.client?.IsByondMember())
 			var/list/msgs_which_are_gifs = list(8, 9, 10) //not all of these are normal jpgs
 			var/num = rand(1,16)
-			var/resource = resource("images/member_msgs/byond_member_msg_[num].[(msgs_which_are_gifs.Find(num)) ? "gif" : "jpg"]")
+			var/resource = resource("images/member_msgs/byond_member_msg_[num].[(num in msgs_which_are_gifs) ? "gif" : "jpg"]")
 			boutput(src, "<img src='[resource]' style='margin: auto; display: block; max-width: 100%;'>")
-
+		#endif
 
 		if (src.ckey && !adminspawned)
 			if ("[src.ckey]" in spawned_in_keys)
@@ -74,7 +104,7 @@ mob/new_player
 					src.spawning = 1
 
 					close_spawn_windows()
-					boutput(src, "<span class='notice'>Now teleporting.</span>")
+					boutput(src, SPAN_NOTICE("Now teleporting."))
 					var/ASLoc = pick_landmark(LANDMARK_OBSERVER)
 					if (ASLoc)
 						observer.set_loc(ASLoc)
@@ -92,7 +122,11 @@ mob/new_player
 					qdel(src)
 
 			else
-				spawned_in_keys += "[src.ckey]"
+				if (src.client.authenticated) spawned_in_keys += "[src.ckey]"
+				for (var/name in global.dj_panel.sound_library)
+					var/datum/dj_library_sound/upload = global.dj_panel.sound_library[name]
+					if (upload.preloaded)
+						src.client << load_resource(upload.file, -1)
 
 #ifdef TWITCH_BOT_ALLOWED
 		if (current_state == GAME_STATE_PLAYING)
@@ -104,7 +138,8 @@ mob/new_player
 #endif
 
 	Logout()
-		ready = 0
+		src.ready_play = FALSE
+		src.ready_tutorial = FALSE
 		if (src.ckey) //Null if the client changed to another mob, but not null if they disconnected.
 			spawned_in_keys -= "[src.ckey]"
 		else if (isclient(src.last_client)) //playtime logging stuff
@@ -113,48 +148,22 @@ mob/new_player
 		..()
 		close_spawn_windows()
 		if(!spawning)
-			qdel(src)
+			SPAWN(0)
+				qdel(src)
 
 		// Given below call, not much reason to do this if pregameHTML wasn't set
 		// explanation for isnull(src.key) from the reference: In the case of a player switching to another mob, by the time Logout() is called, the original mob's key will be null,
 		if (isnull(src.key) && pregameHTML && isclient(src.last_client))
 			// Removed dupe "if (src.last_client)" check since it was still runtiming anyway
-			SPAWN_DBG(0)
+			SPAWN(0)
 				if(isclient(src.last_client))
-					winshow(src.last_client, "pregameBrowser", 0)
 					src.last_client << browse("", "window=pregameBrowser")
+					winshow(src.last_client, "pregameBrowser", FALSE)
 		return
 
 	verb/new_player_panel()
 		set src = usr
-		if(client)
-			winset(src, "joinmenu.button_charsetup", "is-disabled=false")
-		// drsingh i put the extra ifs here. i think its dumb but there's a bad client error here so maybe it's somehow going away in winset because byond is shitty
-		if(client)
-			winset(src, "joinmenu.button_ready", "is-disabled=false;is-visible=true")
-		if(client)
-			winset(src, "joinmenu.button_cancel", "is-disabled=true;is-visible=false")
-		if(client)
-			winshow(src, "joinmenu", 1)
-		if(client?.antag_tokens > 0 && (!ticker || current_state <= GAME_STATE_PREGAME))
-			winset(src, "joinmenu.button_ready_antag", "is-disabled=false;is-visible=true")
-			winset(src, "joinmenu", "size=240x256")
-			winset(src, "joinmenu.observe", "pos=18,192")
-		else if(client) // this shouldn't be necessary but it is
-			winset(src, "joinmenu", "size=240x200")
-			winset(src, "joinmenu.observe", "pos=18,136")
-			winset(src, "joinmenu.button_ready_antag", "is-disabled=true;is-visible=false")
-		if(src.ready)
-			if (client) winset(src, "joinmenu.button_charsetup", "is-disabled=true")
-			if (client) winset(src, "joinmenu.button_ready", "is-disabled=true;is-visible=false")
-			if (client) winset(src, "joinmenu.button_cancel", "is-disabled=false;is-visible=true")
-			if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true")
-		if(pregameHTML && client)
-			winshow(client, "pregameBrowser", 1)
-			client << browse(pregameHTML, "window=pregameBrowser")
-		else if(client)
-			winshow(src.last_client, "pregameBrowser", 0)
-			src.last_client << browse("", "window=pregameBrowser")
+		src.update_joinmenu()
 
 	Stat()
 		..()
@@ -165,172 +174,147 @@ mob/new_player
 					var/mob/new_player/player = C.mob
 					if (!istype(player)) continue
 
+					var/playing = null
+					if (player.ready_play)
+						playing = "(Playing)"
+					else if (player.ready_tutorial)
+						playing = "(Tutorial)"
+
 					if (player.client.holder && (player.client.stealth || player.client.alt_key)) // are they an admin and in stealth mode/have a fake key?
 						if (client.holder) // are we an admin?
-							stat("[player.key] (as [player.client.fakekey])", (player.ready)?("(Playing)"):(null)) // give us the full deets
+							stat("[player.key] (as [player.client.fakekey])", playing) // give us the full deets
 						else // are we not an admin?
-							stat("[player.client.fakekey]", (player.ready)?("(Playing)"):(null)) // only show the fake key
+							stat("[player.client.fakekey]", playing) // only show the fake key
 					else // are they a normal player or not in stealth mode/using a fake key?
-						stat("[player.key]", (player.ready)?("(Playing)"):(null)) // show them normally
-
-	Topic(href, href_list[])
-
-		if(href_list["show_preferences"])
-			client.preferences.ShowChoices(src)
-			return 1
-
-		if(href_list["ready"])
-			if(!ready)
-				if(alert(src,"Are you sure you are ready? This will lock-in your preferences.","Player Setup","Yes","No") == "Yes")
-					ready = 1
-
-		if(href_list["observe"])
-			if(alert(src,"Are you sure you wish to observe? You will not be able to play this round!","Player Setup","Yes","No") == "Yes")
-				if(!src.client) return
-				var/mob/dead/observer/observer = new()
-
-				src.spawning = 1
-
-				close_spawn_windows()
-				boutput(src, "<span class='notice'>Now teleporting.</span>")
-				var/ASLoc = pick_landmark(LANDMARK_OBSERVER, locate(1, 1, 1))
-				if (ASLoc)
-					observer.set_loc(ASLoc)
-				else
-					observer.set_loc(locate(1, 1, 1))
-				observer.apply_looks_of(client)
-
-				if(src.mind)
-					//src.mind.dnr = 1
-					src.mind.joined_observer = 1
-					src.mind.transfer_to(observer)
-				else
-					src.mind = new /datum/mind()
-					//src.mind.dnr = 1
-					src.mind.joined_observer = 1
-					src.mind.transfer_to(observer)
-
-				if(client.preferences.be_random_name)
-					client.preferences.randomize_name()
-				observer.name = client.preferences.real_name
-				observer.real_name = observer.name
-				observer.Equip_Bank_Purchase(observer.mind.purchased_bank_item)
-
-				src.client.loadResources()
-
-
-				qdel(src)
-
-		if(href_list["late_join"])
-			LateChoices()
-
-		if(href_list["SelectedJob"])
-			if (src.spawning)
-				return
-
-			if (!enter_allowed)
-				boutput(usr, "<span class='notice'>There is an administrative lock on entering the game!</span>")
-				return
-
-			if (ticker?.mode)
-				var/mob/living/silicon/S = locate(href_list["SelectedJob"]) in mobs
-				if (S)
-					if(jobban_isbanned(src.mind, "Cyborg"))
-						boutput(usr, "<span class='notice'>Sorry, you are banned from playing silicons.</span>")
-						close_spawn_windows()
-						return
-					var/obj/item/organ/brain/latejoin/latejoin = IsSiliconAvailableForLateJoin(S)
-					if(latejoin)
-						close_spawn_windows()
-						latejoin.activated = 1
-						latejoin.owner = src.mind
-						src.mind.transfer_to(S)
-						SPAWN_DBG(1 DECI SECOND)
-							S.choose_name()
-							qdel(src)
-					else
-						close_spawn_windows()
-						boutput(usr, "<span class='notice'>Sorry, that Silicon has already been taken control of.</span>")
-
-				else if (istype(ticker.mode, /datum/game_mode/construction))
-					var/datum/game_mode/construction/C = ticker.mode
-					var/datum/job/JOB = locate(href_list["SelectedJob"]) in C.enabled_jobs
-					AttemptLateSpawn(JOB)
-				else
-					var/list/alljobs = job_controls.staple_jobs | job_controls.special_jobs
-					var/datum/job/JOB = locate(href_list["SelectedJob"]) in alljobs
-					AttemptLateSpawn(JOB)
-
-		if(href_list["preferences"])
-			if (!ready)
-				client.preferences.process_link(src, href_list)
-		else if(!href_list["late_join"])
-			new_player_panel()
-
-	proc/IsJobAvailable(var/datum/job/JOB)
-		if(!ticker || !ticker.mode)
-			return 0
-		if (!JOB || !istype(JOB,/datum/job/) || JOB.limit == 0)
-			return 0
-		if (!JOB.no_jobban_from_this_job && jobban_isbanned(src,JOB.name))
-			return 0
-		if (JOB.requires_supervisor_job && countJob(JOB.requires_supervisor_job) <= 0)
-			return 0
-		if (JOB.requires_whitelist)
-			if (!(src.ckey in NT))
-				return 0
-		if (JOB.needs_college && !src.has_medal("Unlike the director, I went to college"))
-			return 0
-		if (JOB.rounds_needed_to_play && (src.client && src.client.player))
-			var/round_num = src.client.player.get_rounds_participated()
-			if (!isnull(round_num) && round_num < JOB.rounds_needed_to_play) //they havent played enough rounds!
-				return 0
-		if (JOB.limit < 0 || countJob(JOB.name) < JOB.limit)
-			return 1
-		return 0
-
-	proc/IsSiliconAvailableForLateJoin(var/mob/living/silicon/S)
-		if (isdead(S))
-			return 0
-
-		if (istype(S,/mob/living/silicon/ai))
-			var/mob/living/silicon/ai/AI = S
-			var/obj/item/organ/brain/latejoin/latejoin = AI.brain
-			if (istype(latejoin) && !latejoin.activated)
-				return latejoin
-		if (istype(S,/mob/living/silicon/robot))
-			var/mob/living/silicon/robot/R = S
-			var/obj/item/organ/brain/latejoin/latejoin = R.brain
-			if (istype(latejoin) && !latejoin.activated)
-				return latejoin
-		return 0
-
+						stat("[player.key]", playing) // show them normally
 
 	proc/AttemptLateSpawn(var/datum/job/JOB, force=0)
 		if (!JOB)
 			return
-		if (JOB && (force || IsJobAvailable(JOB)))
-			var/mob/character = create_character(JOB, JOB.allow_traitors)
-			if (isnull(character))
-				return
+		if (src.client?.player?.timed_respawn_in_progress && (src.client.preferences.real_name in src.client.player.joined_names) && !src.client.preferences.be_random_name)
+			tgui_alert(src, "Please pick a different character to respawn as, you've already joined this round as [src.client.preferences.real_name]. You can select \"random appearance\" in character setup if you don't want to make a new character.")
+			return
+		global.latespawning.lock()
 
+		if (JOB && (force || job_controls.check_job_eligibility(src, JOB, STAPLE_JOBS | SPECIAL_JOBS)))
+			var/mob/character = create_character(JOB, JOB.can_roll_antag)
+			if (isnull(character))
+				global.latespawning.unlock()
+				return
+			JOB.assigned++
+			if (JOB.player_requested || JOB == job_controls.priority_job)
+				SPAWN(0) // don't pause late spawning for this
+					var/limit_reached = JOB.limit <= JOB.assigned
+					var/list/req_prio = list()
+					if (JOB.player_requested)
+						req_prio += "requested"
+					if (JOB == job_controls.priority_job)
+						req_prio += "priority"
+					var/message = "RoleControl notification: [english_list(req_prio, "")] role [JOB.name] hired[limit_reached ? " (limit reached, clearing [english_list(req_prio, "")] status)" : ""]"
+					if (JOB.player_requested && limit_reached)
+						JOB.player_requested = FALSE
+					if (JOB == job_controls.priority_job && limit_reached)
+						job_controls.priority_job = null
+					var/datum/signal/pdaSignal = get_free_signal()
+					pdaSignal.data = list("address_1"="00000000", "command"="text_message", "sender_name"="COMMAND-MAILBOT", "group"=list(MGD_COMMAND), "sender"="00000000", "message"=message)
+					radio_controller.get_frequency(FREQ_PDA).post_packet_without_source(pdaSignal)
+			if (JOB.counts_as)
+				var/datum/job/other = find_job_in_controller_by_string(JOB.counts_as)
+				other.assigned++
+			// Stop adding non game mode logic BEFORE game modes!
 			if(istype(ticker.mode, /datum/game_mode/football))
 				var/datum/game_mode/football/F = ticker.mode
 				F.init_player(character, 0, 1)
 			else if(istype(ticker.mode, /datum/game_mode/pod_wars))
 				var/datum/game_mode/pod_wars/mode = ticker.mode
 				mode.add_latejoin_to_team(character.mind, JOB)
-			else if (istype(JOB, /datum/job/special/syndicate_operative))
-				character.set_loc(pick_landmark(LANDMARK_SYNDICATE))
-			else if (character.traitHolder && character.traitHolder.hasTrait("immigrant"))
-				boutput(character.mind.current,"<h3 class='notice'>You've arrived in a nondescript container! Good luck!</h3>")
-				//So the location setting is handled in EquipRank in jobprocs.dm. I assume cause that is run all the time as opposed to this.
+			else if(istype(ticker.mode, /datum/game_mode/battle_royale))
+				var/datum/game_mode/battle_royale/battlemode = ticker.mode
+				if (current_state < GAME_STATE_FINISHED)
+					var/datum/player/player = make_player(character.key, character.client)
+					if (!player?.tutorial)
+						battlemode.battlersleft_hud.add_client(character.client)
+				if(ticker.round_elapsed_ticks > 3000) // no new people after 5 minutes
+					boutput(character.mind.current,"<h3 class='notice'>You've arrived on a station with a battle royale in progress! Feel free to spectate!</h3>")
+					character.ghostize()
+					qdel(character)
+					return
+				character.set_loc(pick_landmark(LANDMARK_BATTLE_ROYALE_SPAWN))
+				equip_battler(character)
+				character.mind.assigned_role = "MODE"
+				character.mind.special_role = ROLE_BATTLER
+				battlemode.living_battlers.Add(character.mind)
+				DEBUG_MESSAGE("Adding a new battler")
+				battlemode.battle_shuttle_spawn(character.mind)
+			else if (JOB.special_spawn_location)
+				var/location = JOB.special_spawn_location
+				if (!istype(JOB.special_spawn_location, /turf))
+					location = pick_landmark(JOB.special_spawn_location)
+				if (!isnull(location))
+					character.set_loc(location)
+			else if (istype(JOB, /datum/job/special/stowaway))
+				var/list/obj/storage/SL = get_random_station_storage_list(closed=TRUE, breathable=TRUE)
+				if(length(SL) > 0)
+					boutput(character.mind.current,"<h3 class='notice'>You've arrived in a nondescript container! Good luck!</h3>")
+					character.set_loc(pick(SL))
+					logTheThing(LOG_STATION, src, "has the Stowaway job and spawns in storage at [log_loc(src)]")
+				else
+					var/starting_loc = null
+					starting_loc = pick_landmark(LANDMARK_LATEJOIN, locate(round(world.maxx / 2), round(world.maxy / 2), 1))
+					character.set_loc(starting_loc)
+					logTheThing(LOG_STATION, src, "has the Stowaway job but there were no valid containers to stow into!")
 			else if (character.traitHolder && character.traitHolder.hasTrait("pilot"))
-				boutput(character.mind.current,"<h3 class='notice'>You've become lost on your way to the station! Good luck!</h3>")
+				if (istype(character.loc, /obj/machinery/vehicle))
+					boutput(character.mind.current,"<h3 class='notice'>You've become lost on your way to the station! Good luck!</h3>")
+			else if (character.traitHolder && character.traitHolder.hasTrait("sleepy"))
+				var/datum/trait/T = character.traitHolder.getTrait("sleepy")
+				SPAWN(T.spawn_delay)
+					boutput(character?.mind?.current,"<h3 class='notice'>Hey, you! You're finally awake!</h3>")
 				//As with the Stowaway trait, location setting is handled elsewhere.
-			else if (istype(character.mind.purchased_bank_item, /datum/bank_purchaseable/space_diner) || istype(character.mind.purchased_bank_item, /datum/bank_purchaseable/mail_order))
+			else if (character.traitHolder && character.traitHolder.hasTrait("partyanimal"))
+				var/datum/trait/T = character.traitHolder.getTrait("partyanimal")
+				var/list/valid_tables = list()
+				var/list/table_turfs = list()
+
+				for_by_tcl(table, /obj/table)
+					if (table.z != Z_LEVEL_STATION)
+						continue
+					var/area/table_area = get_area(table)
+					var/is_bar = istype(table_area, /area/station/crew_quarters/bar) || istype(table_area, /area/station/crew_quarters/cafeteria)
+					if (!is_bar)
+						continue
+					if (locate(/mob/living/carbon/human) in get_turf(table))
+						continue
+					valid_tables += table
+					table_turfs += get_turf(table)
+
+				if (length(valid_tables) > 0)
+					var/picked_table = pick(valid_tables)
+					var/starting_loc = get_turf(picked_table)
+					character.set_loc(starting_loc)
+					character.layer = 2.5 // so that they wake up under a table
+
+					var/turf/new_turf = null
+					for (var/turf/spot in orange(1, character))
+						if (!jpsTurfPassable(spot, source=get_turf(character), passer=character)) // Make sure we can walk there
+							continue
+						if(spot in table_turfs) // Ensure we don't move to another table tile
+							continue
+						new_turf = spot
+						break
+					if (new_turf)
+						SPAWN(T.spawn_delay) // Move from under the table
+							character.step_towards_movedelay(new_turf)
+							character.layer = initial(character.layer)
+					else
+						character.layer = initial(character.layer)
+
+					boutput(character?.mind?.current,"<h3 class='notice'>Man, what a party, eh? Anyway, good luck!</h3>")
+			else if (istype(character.mind.purchased_bank_item, /datum/bank_purchaseable/space_diner))
 				// Location is set in bank_purchaseable Create()
 				boutput(character.mind.current,"<h3 class='notice'>You've arrived through an alternative mode of travel! Good luck!</h3>")
+			else if (istype(ticker.mode, /datum/game_mode/assday))
+				character.set_loc(pick_landmark(LANDMARK_BATTLE_ROYALE_SPAWN))
 			else if (map_settings?.arrivals_type == MAP_SPAWN_CRYO)
 				var/obj/cryotron/starting_loc = null
 				if (ishuman(character) && by_type[/obj/cryotron])
@@ -343,455 +327,306 @@ mob/new_player
 					character.set_loc(starting_loc)
 			else if (map_settings?.arrivals_type == MAP_SPAWN_MISSILE)
 				latejoin_missile_spawn(character)
-			else if(istype(ticker.mode, /datum/game_mode/battle_royale))
-				var/datum/game_mode/battle_royale/battlemode = ticker.mode
-				if(ticker.round_elapsed_ticks > 3000) // no new people after 5 minutes
-					boutput(character.mind.current,"<h3 class='notice'>You've arrived on a station with a battle royale in progress! Feel free to spectate, but you are not considered one of the contestants!</h3>")
-					return AttemptLateSpawn(new /datum/job/special/tourist)
-				character.set_loc(pick_landmark(LANDMARK_BATTLE_ROYALE_SPAWN))
-				equip_battler(character)
-				character.mind.assigned_role = "MODE"
-				character.mind.special_role = ROLE_BATTLER
-				battlemode.living_battlers.Add(character.mind)
-				DEBUG_MESSAGE("Adding a new battler")
-				battlemode.battle_shuttle_spawn(character.mind)
 			else
 				var/starting_loc = null
 				starting_loc = pick_landmark(LANDMARK_LATEJOIN, locate(round(world.maxx / 2), round(world.maxy / 2), 1))
 				character.set_loc(starting_loc)
+
+			var/player_count = 0
+			for (var/client/client in clients)
+				if (!client?.mob) //?????? Byond??? Lummox??? Help??????
+					continue
+				if (!istype(client.mob.loc, /obj/cryotron) && !istype(client.mob, /mob/new_player)) //don't count cryoed or lobby players
+					player_count++
+			for(var/datum/job/staple_job in job_controls.staple_jobs) //we'll just assume only staple jobs have variable limits for now
+				if (staple_job.variable_limit)
+					staple_job.recalculate_limit(player_count)
 
 			if (isliving(character))
 				var/mob/living/LC = character
 				if(!istype(JOB,/datum/job/battler) && !istype(JOB, /datum/job/football))
 					LC.Equip_Rank(JOB.name, joined_late=1)
 
-			var/miscreant = 0
-#ifdef MISCREANTS
-			if (ticker && character.mind && !character.client.using_antag_token && JOB.allow_traitors != 0 && prob(10))
-				ticker.generate_miscreant_objectives(character.mind)
-				miscreant = 1
-#endif
+			spawn_rules_controller.apply_to(character)
 
 #ifdef CREW_OBJECTIVES
-			if (ticker && character.mind && !miscreant)
+			if (ticker && character.mind)
 				ticker.generate_individual_objectives(character.mind)
 #endif
 
-			if (manualbreathing)
-				boutput(character, "<B>You must breathe manually using the *inhale and *exhale commands!</B>")
-			if (manualblinking)
-				boutput(character, "<B>You must blink manually using the *closeeyes and *openeyes commands!</B>")
+			if (global.manual_breathing)
+				character.AddComponent(/datum/component/manual_breathing)
+			if (global.manual_blinking)
+				character.AddComponent(/datum/component/manual_blinking)
 
 			if (ticker && character.mind)
 				character.mind.join_time = world.time
-				//ticker.implant_skull_key() // This also checks if a key has been implanted already or not. If not then it'll implant a random sucker with a key.
 				if (!(character.mind in ticker.minds))
-					logTheThing("debug", character, null, "<b>Late join:</b> added player to ticker.minds.")
+					logTheThing(LOG_DEBUG, character, "<b>Late join:</b> added player to ticker.minds. [character.mind.on_ticker_add_log()]")
 					ticker.minds += character.mind
-				logTheThing("debug", character, null, "<b>Late join:</b> assigned job: [JOB.name]")
+				logTheThing(LOG_DEBUG, character, "<b>Late join:</b> assigned job: [JOB.name]")
 				//if they have a ckey, joined before a certain threshold and the shuttle wasnt already on its way
 				if (character.mind.ckey && (ticker.round_elapsed_ticks <= MAX_PARTICIPATE_TIME) && !emergency_shuttle.online)
-					participationRecorder.record(character.mind.ckey)
-			SPAWN_DBG(0)
+					var/datum/player/P = character.mind.get_player()
+					participationRecorder.record(P)
+
+			// Apply any roundstart mutators to late join if applicable
+			var/mob/living/LM = character
+			if(istype(LM))
+				LM.apply_roundstart_events()
+
+			//picky eater trait handling
+			if (ishuman(character) && character.traitHolder?.hasTrait("picky_eater"))
+				var/datum/trait/picky_eater/eater_trait = character.traitHolder.getTrait("picky_eater")
+				if (length(eater_trait.fav_foods) > 0)
+					boutput(character, eater_trait.explanation_text)
+					character.mind.store_memory(eater_trait.explanation_text)
+
+			SPAWN(0)
 				qdel(src)
+			global.latespawning.unlock()
 
 		else
-			src << alert("[JOB.name] is not available. Please try another.")
+			global.latespawning.unlock()
+			tgui_alert(src, "[JOB.name] is not available. Please try another.", "Job unavailable")
 
 		return
 
-	proc/LateJoinLink(var/datum/job/J)
-		// This is pretty ugly but: whatever! I don't care.
-		// It likely needs some tweaking but everything does.
-		if (!J.no_late_join)
-			var/limit = J.limit
-			if (!IsJobAvailable(J))
-				// Show unavailable jobs, but no joining them
-				limit = 0
+	proc/AttemptSiliconLateSpawn(obj/item/organ/brain/latejoin/latejoin)
+		if (jobban_isbanned(src, "Cyborg"))
+			boutput(src, SPAN_NOTICE("Sorry, you are banned from playing silicons."))
+			return
 
-			var/c = countJob(J.name) 	// gross
-			if (limit == 0 && c == 0)
-				// 0 slots, nobody in it, don't show it
-				return
+		if (latejoin.activated)
+			boutput(src, SPAN_NOTICE("Sorry, that Silicon has already been taken control of."))
+			return
 
-			//If it's Revolution time, lets show all command jobs as filled to (try to) prevent metagaming.
-			if(istype(J, /datum/job/command/) && istype(ticker.mode, /datum/game_mode/revolution))
-				c = max(c, limit)
+		// the brain is in the head, which is in the silicon mob
+		var/mob/living/silicon/S = latejoin.find_parent_of_type(/mob/living/silicon)
+		if (!S)
+			return
 
-			// probalby could be a define but dont give a shite
-			var/maxslots = 5
-			var/list/slots = list()
-			var/shown = min(max(c, (limit == -1 ? 99 : limit)), maxslots)
-			// if there's still an open space, show a final join link
-			if (limit == -1 || (limit > maxslots && c < limit))
-				slots += "<a href='byond://?src=\ref[src];SelectedJob=\ref[J]' class='latejoin-card' style='border-color: [J.linkcolor];' title='Join the round as [J.name].'>&#x2713;&#xFE0E;</a>"
+		src.spawning = 1
 
-			// show slots up to the limit
-			// extra people beyond the limit will be shown as a [+X] card
-			for (var/i = shown, i > 0, i--)
-				slots += (i <= c ? "<div class='latejoin-card latejoin-full' style='border-color: [J.linkcolor]; background-color: [J.linkcolor];' title='Slot filled.'>[(i == 1 && c > shown) ? "+[c - maxslots]" : "&times;"]</div>" : "<a href='byond://?src=\ref[src];SelectedJob=\ref[J]' class='latejoin-card' style='border-color: [J.linkcolor];' title='Join the round as [J.name].'>&#x2713;&#xFE0E;</a>")
+		latejoin.activated = TRUE
+		latejoin.name_prefix("activated")
+		latejoin.UpdateName()
+		latejoin.color = json_decode("\[-0.152143,1.02282,-0.546681,1.28769,-0.143153,0.610996,-0.135547,0.120332,0.935685\]")
+		latejoin.owner = src.mind
+		src.mind.transfer_to(S)
 
-			return {"
-				<tr><td class='latejoin-link'>
-					[(limit == -1 || c < limit) ? "<a href='byond://?src=\ref[src];SelectedJob=\ref[J]' style='color: [J.linkcolor];' title='Join the round as [J.name].'>[J.name]</a>" : "<span style='color: [J.linkcolor];' title='This job is full.'>[J.name]</span>"]
-					</td>
-					<td class='latejoin-cards'>[jointext(slots, " ")]</td>
-				</tr>
-				"}
+		if (S.emagged)
+			logTheThing(LOG_STATION, src, "[key_name(S)] late-joins as an emagged cyborg.")
+			S.mind?.add_antagonist(ROLE_EMAGGED_ROBOT, respect_mutual_exclusives = FALSE, source = ANTAGONIST_SOURCE_LATE_JOIN)
+		else if (S.syndicate)
+			logTheThing(LOG_STATION, src, "[key_name(S)] late-joins as a syndicate cyborg.")
+			S.mind?.add_antagonist(ROLE_SYNDICATE_ROBOT, respect_mutual_exclusives = FALSE, source = ANTAGONIST_SOURCE_LATE_JOIN)
 
-		return
+		if (isAI(S))
+			S.job = "AI"
+			S.mind.assigned_role = "AI"
+		else
+			S.job = "Cyborg"
+			S.mind.assigned_role = "Cyborg"
+
+		S.traitHolder.removeTrait("cyber_incompatible")
+		S.mind.join_time = world.time
+		S.mind.brain = latejoin
+		logTheThing(LOG_DEBUG, S, "<b>Late join:</b> added player to ticker.minds. [S.mind.on_ticker_add_log()]")
+		ticker.minds += S.mind
+
+		S.Equip_Bank_Purchase(S.mind?.purchased_bank_item)
+		S.apply_roundstart_events()
+		S.show_laws()
+
+		SPAWN(1 DECI SECOND)
+			S.bioHolder?.mobAppearance?.pronouns = S.client.preferences.AH.pronouns
+			S.choose_name()
+			qdel(src)
 
 	proc/LateChoices()
-		// shut up
-		var/header_thing_chui_toggle = (usr.client && !usr.client.use_chui) ? {"
-		<title>Select a Job</title>
-		<style type='text/css'>
-			body { background: #222; color: white; font-family: Tahoma, sans-serif; }
-		</style>"} : ""
-
-		var/dat = {"
-[header_thing_chui_toggle]
-<style type='text/css'>
-.latejoin-cards {
-	white-space: nowrap;
-	min-width: 12em;
-	text-align: left;
-	}
-.latejoin td {
-	padding: 0.1em;
-	}
-.latejoin-link {
-	max-width: 12em;
-	padding: 0.2em 0;
-	}
-.latejoin-link > * {
-	display: block;
-	text-align: right;
-	padding-right: 1em;
-	}
-.latejoin-link > a {
-	font-weight: bold;
-	}
-.latejoin-link a:hover {
-	background-color: #555;
-	}
-
-.latejoin-link span {
-	opacity: 0.6;
-	}
-
-.latejoin-card {
-	display: inline-block;
-	padding: 0.0em 0.1em;
-	border: 2px solid black;
-	background: #fff;
-	border-radius: 3px;
-	min-width: 1em;
-	text-align: center;
-	font-size: 90%;
-	text-decoration: none;
-	font-weight: bold;
-	}
-
-.latejoin-full {
-	opacity: 0.4;
-	color: black;
-	}
-
-a.latejoin-card {
-	box-shadow: -0.5px -0.5px 3px 1px rgba(255, 255, 255, 0.7);
-	color: white;
-	}
-
-a.latejoin-card:hover {
-	color: black;
-	box-shadow: 0 0 6px 2px white;
-	}
-
-.latejoin th {
-	background: #555;
-	padding: 0.3em;
-	margin-top: 0.5em;
-}
-.fuck {
-	max-width: 48%;
-	display: inline-block;
-	vertical-align: top;
-	margin: 0 1em;
-}
-</style>
-<h2 style='text-align: center; margin: 0 0 0.3em 0; font-size: 150%;'>You are joining a round in progress.</h2>
-<h3 style='text-align: center; margin: 0 0 0.5em 0; font-size: 120%;'>Please choose from one of the remaining open positions.</h3>
-<div style='text-align: center;'>
-"}
-
-		// deal with it
-		dat += ""
-		if (ticker.mode && !istype(ticker.mode, /datum/game_mode/construction) && !istype(ticker.mode,/datum/game_mode/battle_royale) && !istype(ticker.mode,/datum/game_mode/football) && !istype(ticker.mode,/datum/game_mode/pod_wars))
-			dat += {"<div class='fuck'><table class='latejoin'><tr><th colspan='2'>Command/Security</th></tr>"}
-			for(var/datum/job/command/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-			for(var/datum/job/security/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-			//dat += "</table></td>"
-
-			dat += {"<tr><td colspan='2'>&nbsp;</td></tr><tr><th colspan='2'>Research</th></tr>"}
-			for(var/datum/job/research/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-			//dat += "</table></td>"
-
-			//dat += {"<td valign="top"><table>"}
-			dat += {"<tr><td colspan='2'>&nbsp;</td></tr><tr><th colspan='2'>Engineering</th></tr>"}
-			for(var/datum/job/engineering/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-			dat += {"</table></div><div class='fuck'><table class='latejoin'><tr><th colspan='2'>Civilian</th></tr>"}
-
-			for(var/datum/job/civilian/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-
-			for(var/datum/job/daily/J in job_controls.staple_jobs)
-				dat += LateJoinLink(J)
-
-			// not showing if it's an ai or cyborg is the worst fuckin shit so: FIXED
-			for(var/mob/living/silicon/S in mobs)
-				if (IsSiliconAvailableForLateJoin(S))
-					dat += {"<tr><td colspan='2' class='latejoin-link'><a href='byond://?src=\ref[src];SelectedJob=\ref[S]' style='color: #c4c4c4; text-align: center;'>[S.name] ([istype(S, /mob/living/silicon/ai) ? "AI" : "Cyborg"])</a></td></tr>"}
-
-			// is this ever actually off? ?????
-			if (job_controls.allow_special_jobs)
-				dat += {"<tr><td colspan='2'>&nbsp;</td></tr><tr><th colspan='2'>Special Jobs</th></tr>"}
-
-				for(var/datum/job/special/J in job_controls.special_jobs)
-					if (IsJobAvailable(J) && !J.no_late_join)
-						dat += LateJoinLink(J)
-
-				for(var/datum/job/created/J in job_controls.special_jobs)
-					if (IsJobAvailable(J) && !J.no_late_join)
-						dat += LateJoinLink(J)
-
-			dat += "</table></div>"
-
-		else if(istype(ticker.mode,/datum/game_mode/battle_royale))
-			//ahahaha you get no choices im going to just shove you in the game now good luck
-			AttemptLateSpawn(new /datum/job/battler)
+		if (!global.ticker.mode)
 			return
-		else if(istype(ticker.mode,/datum/game_mode/football))
-			//ahahaha you get no choices im going to just shove you in the game now good luck
-			AttemptLateSpawn(new /datum/job/football)
-			return
-		else if(istype(ticker.mode,/datum/game_mode/pod_wars))
-			//Go to the team with less members
-			var/datum/game_mode/pod_wars/mode = ticker.mode
 
-			if (mode?.team_NT?.members?.len > mode?.team_SY?.members?.len)
-				AttemptLateSpawn(new /datum/job/special/pod_wars/syndicate, 1)
+		if (istype(global.ticker.mode, /datum/game_mode/construction))
+			src.AttemptLateSpawn(new /datum/job/special/station_builder)
+			return
+
+		if (istype(global.ticker.mode, /datum/game_mode/battle_royale))
+			src.AttemptLateSpawn(new /datum/job/battler)
+			return
+
+		if (istype(global.ticker.mode, /datum/game_mode/football))
+			src.AttemptLateSpawn(new /datum/job/football)
+			return
+
+		if (istype(global.ticker.mode, /datum/game_mode/pod_wars))
+			var/datum/game_mode/pod_wars/mode = global.ticker.mode
+			if (length(mode.team_NT?.members) > length(mode.team_SY?.members))
+				src.AttemptLateSpawn(new /datum/job/special/pod_wars/syndicate, TRUE)
 			else
-				AttemptLateSpawn(new /datum/job/special/pod_wars/nanotrasen, 1)
+				src.AttemptLateSpawn(new /datum/job/special/pod_wars/nanotrasen, TRUE)
 
 			return
-		else
-			var/datum/game_mode/construction/C = ticker.mode
-			if (!C.enabled_jobs.len)
-				var/datum/job/special/station_builder/D = new /datum/job/special/station_builder()
-				D.limit = -1
-				C.enabled_jobs += D
-			for (var/datum/job/J in C.enabled_jobs)
-				if (IsJobAvailable(J) && !J.no_late_join)
-					dat += "<tr><td style='width:100%'>"
-					dat += {"<a href='byond://?src=\ref[src];SelectedJob=\ref[J]'><font color=[J.linkcolor]>[J.name]</font></a> ([countJob(J.name)][J.limit == -1 ? "" : "/[J.limit]"])<br>"}
-					dat += "</td></tr>"
-		dat += "</table></div>"
 
-		src.Browse(dat, "window=latechoices;size=800x666")
-		if(!bank_menu)
-			bank_menu = new
-		bank_menu.Subscribe( usr.client )
+		global.latejoin_menu.ui_interact(src)
+		src.bank_menu ||= new()
+		src.bank_menu.ui_interact(src)
 
 	proc/create_character(var/datum/job/J, var/allow_late_antagonist = 0)
 		if (!src || !src.mind || !src.client)
 			return null
+#ifdef I_DONT_WANNA_WAIT_FOR_THIS_PREGAME_SHIT_JUST_GO
+		src.client.preferences.savefile_load(src.client)
+#endif
 		if (!J)
 			J = find_job_in_controller_by_string(src.mind.assigned_role)
 
 		src.spawning = 1
 
+		var/turf/spawn_turf = null
 		if(!(LANDMARK_LATEJOIN in landmarks))
 			// the middle of the map is GeNeRaLlY part of the actual station. moreso than 1,1,1 at least
 			var/midx = round(world.maxx / 2)
 			var/midy = round(world.maxy / 2)
-			boutput(world, "No latejoin landmarks placed, dumping [src] to ([midx], [midy], 1)")
-			src.set_loc(locate(midx,midy,1))
+			var/msg = "No latejoin landmarks placed, dumping [src] to ([midx], [midy], 1)"
+			message_admins(msg)
+			stack_trace(msg)
+			spawn_turf = locate(midx,midy,1)
 		else
-			src.set_loc(pick_landmark(LANDMARK_LATEJOIN))
+			spawn_turf = pick_landmark(LANDMARK_LATEJOIN)
+
+		if(force_random_names)
+			src.client.preferences.be_random_name = 1
+		if(force_random_looks)
+			src.client.preferences.be_random_look = 1
 
 		var/mob/new_character = null
 		if (J)
-			new_character = new J.mob_type(src.loc, client.preferences.AH)
+			new_character = new J.mob_type(spawn_turf, client.preferences.AH, client.preferences, FALSE, src.mind?.assigned_role)
 		else
-			new_character = new /mob/living/carbon/human(src.loc, client.preferences.AH) // fallback
+			// fallback
+			new_character = new /mob/living/carbon/human(spawn_turf, client.preferences.AH, client.preferences, FALSE, src.mind?.assigned_role)
+		new_character.set_dir(pick(NORTH, EAST, SOUTH, WEST))
+		if (!J || J.uses_character_profile)//borg joins don't lock out your character profile
+			src.client.player.joined_names += (src.client.preferences.be_random_name ? new_character.real_name : src.client.preferences.real_name)
+		else //don't use flavor text if we're not using the profile
+			new_character.bioHolder.mobAppearance.flavor_text = null
 
 		close_spawn_windows()
 
-		client.preferences.copy_to(new_character,src)
 		if(ishuman(new_character))
 			var/mob/living/carbon/human/H = new_character
 			H.update_colorful_parts()
-		var/client/C = client
+
 		mind.transfer_to(new_character)
+
+		// Latejoin antag stuff
 
 		if (ticker?.mode && istype(ticker.mode, /datum/game_mode/assday))
 			var/bad_type = ROLE_TRAITOR
 			makebad(new_character, bad_type)
 			new_character.mind.late_special_role = 1
-			logTheThing("debug", new_character, null, "<b>Late join</b>: assigned antagonist role: [bad_type].")
+			logTheThing(LOG_DEBUG, new_character, "<b>Late join</b>: assigned antagonist role: [bad_type].")
 		else
-			if (ishuman(new_character) && allow_late_antagonist && current_state == GAME_STATE_PLAYING && ticker.round_elapsed_ticks >= 6000 && emergency_shuttle.timeleft() >= 300 && !C.hellbanned && !src.is_respawned_player) // no new evils for the first 10 minutes or last 5 before shuttle
-				if (late_traitors && ticker.mode && ticker.mode.latejoin_antag_compatible == 1)
+			if (ishuman(new_character) && allow_late_antagonist && current_state == GAME_STATE_PLAYING && ticker.round_elapsed_ticks >= 6000 && emergency_shuttle.timeleft() >= 300 && new_character.client?.player && !new_character.client.player.timed_respawn_in_progress) // no new evils for the first 10 minutes or last 5 before shuttle
+				if (late_traitors && ticker.mode.latejoin_antag_compatible && !(jobban_isbanned(new_character, "Syndicate")))
 					var/livingtraitor = 0
 
 					for(var/datum/mind/brain in ticker.minds)
-						if(brain.current && checktraitor(brain.current)) // if a traitor
-							if (issilicon(brain.current) || brain.current.stat & 2 || brain.current.client == null) // if a silicon mob, dead or logged out, skip
+						if(brain.current && brain.is_antagonist())
+							if (issilicon(brain.current) || isdead(brain.current) || brain.current.client == null) // if a silicon mob, dead or logged out, skip
 								continue
 
-							livingtraitor = 1
-							logTheThing("debug", null, null, "<b>Late join</b>: checking [new_character.ckey], found livingtraitor [brain.key].")
+							livingtraitor = TRUE
+							logTheThing(LOG_DEBUG, null, "<b>Late join</b>: checking [new_character.ckey], found livingtraitor [brain.key].")
 							break
 
 					var/bad_type = null
 					if (islist(ticker.mode.latejoin_antag_roles) && length(ticker.mode.latejoin_antag_roles))
-						bad_type = pick(ticker.mode.latejoin_antag_roles)
+						//Another one I need input on
+						if(ticker.mode.latejoin_antag_roles[ROLE_TRAITOR] != null)
+							bad_type = weighted_pick(ticker.mode.latejoin_antag_roles);
+						else
+							bad_type = pick(ticker.mode.latejoin_antag_roles)
 					else
 						bad_type = ROLE_TRAITOR
 
-					if ((!livingtraitor && prob(40)) || (livingtraitor && ticker.mode.latejoin_only_if_all_antags_dead == 0 && prob(4)))
-						makebad(new_character, bad_type)
-						new_character.mind.late_special_role = 1
-						logTheThing("debug", new_character, null, "<b>Late join</b>: assigned antagonist role: [bad_type].")
-						antagWeighter.record(role = bad_type, ckey = new_character.ckey, latejoin = 1)
+					// Check if they have this antag type enabled. If not, too bad!
+					// get_preference_for_role can't handle antag types under 'misc' like wrestler or wolf, so we need to special case those
+					var/antag_enabled = new_character.client?.preferences.vars[get_preference_for_role(bad_type) || get_preference_for_role(ROLE_MISC)]
+					if (antag_enabled && J.can_be_antag(bad_type))
+						if ((!livingtraitor && prob(40)) || (livingtraitor && !ticker.mode.latejoin_only_if_all_antags_dead && prob(4)))
+							makebad(new_character, bad_type)
+							new_character.mind.late_special_role = TRUE
+							logTheThing(LOG_DEBUG, new_character, "<b>Late join</b>: assigned antagonist role: [bad_type].")
+							antagWeighter.record(role = bad_type, P = new_character.mind.get_player(), latejoin = 1)
 
 
 
 
 		if(new_character?.client)
-			new_character.client.loadResources()
-
-
+			SPAWN(0)
+				new_character.client?.loadResources()
 
 		new_character.temporary_attack_alert(1200) //Messages admins if this new character attacks someone within 2 minutes of signing up. Might help detect grief, who knows?
 		new_character.temporary_suicide_alert(1500) //Messages admins if this new character commits suicide within 2 1/2 minutes. probably a bit much but whatever
+		new_character.client?.player.timed_respawn_in_progress = FALSE
+
 		return new_character
 
 	Move()
+		SHOULD_CALL_PARENT(FALSE) // Heeding the warning
+
 		return 1 // do not return 0 in here for the love of god, let me tell you the tale of why:
 		// the default mob/Login (which got called before we actually set our loc onto the start screen), will attempt to put the mob at (1, 1, 1) if the loc is null
 		// however, the documentation actually says "near" (1, 1, 1), and will count Move returning 0 as that it cannot be placed there
 		// by "near" it means anywhere on the goddamn map where Move will return 1, this meant that anyone logging in would cause the server to
 		// grind itself to a slow death in a caciphony of endless Move calls
 
-	proc/makebad(var/mob/living/carbon/human/traitormob, type)
+	proc/makebad(mob/living/carbon/human/traitormob, type)
 		if (!traitormob || !ismob(traitormob) || !traitormob.mind)
 			return
 
 		var/datum/mind/traitor = traitormob.mind
 		ticker.mode.traitors += traitor
 
-		var/objective_set_path = null
 		switch (type)
-
 			if (ROLE_TRAITOR)
-				traitor.special_role = ROLE_TRAITOR
-			#ifdef RP_MODE
-				objective_set_path = pick(typesof(/datum/objective_set/traitor/rp_friendly))
-			#else
-				objective_set_path = pick(typesof(/datum/objective_set/traitor))
-			#endif
+				if (traitor.assigned_role)
+					traitor.add_antagonist(type, source = ANTAGONIST_SOURCE_LATE_JOIN)
+				else // this proc is potentially called on latejoining players before they have job equipment - we set the antag up afterwards if this is the case
+					traitor.add_antagonist(type, source = ANTAGONIST_SOURCE_LATE_JOIN, late_setup = TRUE)
 
-			if (ROLE_CHANGELING)
-				traitor.special_role = ROLE_CHANGELING
-				objective_set_path = /datum/objective_set/changeling
-				traitormob.make_changeling()
-
-			if (ROLE_VAMPIRE)
-				traitor.special_role = ROLE_VAMPIRE
-				objective_set_path = /datum/objective_set/vampire
-				traitormob.make_vampire()
-
-			if (ROLE_WRESTLER)
-				traitor.special_role = ROLE_WRESTLER
-				objective_set_path = pick(typesof(/datum/objective_set/traitor/rp_friendly))
-				traitormob.make_wrestler(1)
-
-			if (ROLE_GRINCH)
-				traitor.special_role = ROLE_GRINCH
-				objective_set_path = /datum/objective_set/grinch
-				traitormob.make_grinch()
-
-			if (ROLE_HUNTER)
-				traitor.special_role = ROLE_HUNTER
-				objective_set_path = /datum/objective_set/hunter
-				traitormob.make_hunter()
-
-			if (ROLE_WEREWOLF)
-				traitor.special_role = ROLE_WEREWOLF
-				objective_set_path = /datum/objective_set/werewolf
-				traitormob.make_werewolf()
-
-			if (ROLE_WRAITH)
-				traitor.special_role = ROLE_WRAITH
-				traitormob.make_wraith()
-				generate_wraith_objectives(traitor)
-
-			if (ROLE_ARCFIEND)
-				traitor.special_role = ROLE_ARCFIEND
-				traitormob.make_arcfiend()
-			#ifdef RP_MODE
-				objective_set_path = pick(typesof(/datum/objective_set/traitor/rp_friendly))
-			#else
-				objective_set_path = pick(typesof(/datum/objective_set/traitor))
-			#endif
+			if (ROLE_ARCFIEND, ROLE_SALVAGER, ROLE_CHANGELING, ROLE_VAMPIRE, ROLE_WEREWOLF, ROLE_WRESTLER, ROLE_HUNTER, ROLE_GRINCH, ROLE_WRAITH, ROLE_FLOCKMIND)
+				traitor.add_antagonist(type, source = ANTAGONIST_SOURCE_LATE_JOIN)
 
 			else // Fallback if role is unrecognized.
 				traitor.special_role = ROLE_TRAITOR
-			#ifdef RP_MODE
-				objective_set_path = pick(typesof(/datum/objective_set/traitor/rp_friendly))
-			#else
-				objective_set_path = pick(typesof(/datum/objective_set/traitor))
-			#endif
-
-		if (!isnull(objective_set_path))
-			if (ispath(objective_set_path, /datum/objective_set))
-				new objective_set_path(traitor)
-			else if (ispath(objective_set_path, /datum/objective))
-				ticker.mode.bestow_objective(traitor, objective_set_path)
-
-		var/obj_count = 1
-		for(var/datum/objective/objective in traitor.objectives)
-			#ifdef CREW_OBJECTIVES
-			if (istype(objective, /datum/objective/crew) || istype(objective, /datum/objective/miscreant)) continue
-			#endif
-			boutput(traitor.current, "<B>Objective #[obj_count]</B>: [objective.explanation_text]")
-			obj_count++
 
 	proc/close_spawn_windows()
-		if(client)
-			src.Browse(null, "window=latechoices") //closes late choices window
-			src.Browse(null, "window=playersetup") //closes the player setup window
-			winshow(src, "joinmenu", 0)
-			winshow(src, "playerprefs", 0)
+		if (!src.client)
+			return
+
+		winshow(src, "joinmenu", FALSE)
 
 	verb/declare_ready_use_token()
 		set hidden = 1
 		set name = ".ready_antag"
 
+		if(!tgui_process)
+			boutput(src, SPAN_ALERT("Stuff is still setting up, wait a moment before readying up."))
+			return
+
+		if (src.blocked_from_joining)
+			return
 		if (src.client.has_login_notice_pending(TRUE))
 			return
 
 		if(!(!ticker || current_state <= GAME_STATE_PREGAME))
 			src.show_text("Round has already started. You can't redeem tokens now. (You have [src.client.antag_tokens].)", "red")
 		else if(src.client.antag_tokens > 0)
-			if(master_mode in list("secret","traitor","nuclear","blob","wizard","changeling","mixed","mixed_rp","vampire","intrigue"))
-				src.client.using_antag_token = 1
+			src.client.using_antag_token = 1
 			src.show_text("Token redeemed, if mode supports redemption your new total will be [src.client.antag_tokens - 1].", "red")
 		else
 			src.show_text("You don't even have any tokens. How did you get here?", "red")
@@ -802,32 +637,34 @@ a.latejoin-card:hover {
 		set hidden = 1
 		set name = ".ready"
 
+		if(!tgui_process)
+			boutput(src, SPAN_ALERT("Stuff is still setting up, wait a moment before readying up."))
+			return
+
+		if (src.blocked_from_joining)
+			return
 		if (src.client.has_login_notice_pending(TRUE))
 			return
 
 		if (ticker)
 			if(current_state == GAME_STATE_SETTING_UP || (current_state <= GAME_STATE_PREGAME && ticker.pregame_timeleft <= 1))
-				boutput(usr, "<span class='alert'>The round is currently being set up. Please wait.</span>")
+				boutput(usr, SPAN_ALERT("The round is currently being set up. Please wait."))
 				return
 
 			if (ticker.mode)
 				if (istype(ticker.mode, /datum/game_mode/construction))
 					var/datum/game_mode/construction/C = ticker.mode
 					if (C.in_setup)
-						boutput(usr, "<span class='alert'>The round is currently being set up. Please wait.</span>")
+						boutput(usr, SPAN_ALERT("The round is currently being set up. Please wait."))
 						return
 
 		if(!ticker || current_state <= GAME_STATE_PREGAME)
-			if(!ready)
-				ready = 1
-				if (usr.client) winset(src, "joinmenu.button_charsetup", "is-disabled=true")
-				if (usr.client) winset(src, "joinmenu.button_ready", "is-disabled=true;is-visible=false")
-				if (usr.client) winset(src, "joinmenu.button_cancel", "is-disabled=false;is-visible=true")
-				if (usr.client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true")
-				usr.Browse(null, "window=mob_occupation")
-
-				bank_menu = new
-				bank_menu.Subscribe( usr.client )
+			if(!src.ready_play)
+				src.ready_play = TRUE
+				src.update_joinmenu()
+				if(!bank_menu)
+					bank_menu = new
+				bank_menu.ui_interact( usr, null )
 				src.client.loadResources()
 		else
 			LateChoices()
@@ -840,70 +677,78 @@ a.latejoin-card:hover {
 			return
 
 		if (ticker)
-			if(ticker.pregame_timeleft <= 3)
-				boutput(usr, "<span class='alert'>It is too close to roundstart for you to unready. Please wait until setup finishes.</span>")
+			if(ticker.pregame_timeleft <= 3 && !isadmin(usr))
+				boutput(usr, SPAN_ALERT("It is too close to roundstart for you to unready. Please wait until setup finishes."))
 				return
 			if (ticker.mode)
 				if (istype(ticker.mode, /datum/game_mode/construction))
 					var/datum/game_mode/construction/C = ticker.mode
 					if (C.in_setup)
-						boutput(usr, "<span class='alert'>You are already spawning, and cannot unready. Please wait until setup finishes.</span>")
+						boutput(usr, SPAN_ALERT("You are already spawning, and cannot unready. Please wait until setup finishes."))
 						return
 
-		if(ready)
-			ready = 0
-			winset(src, "joinmenu.button_charsetup", "is-disabled=false")
-			winset(src, "joinmenu.button_ready", "is-disabled=false;is-visible=true")
-			winset(src, "joinmenu.button_cancel", "is-disabled=true;is-visible=false")
-			winset(src, "joinmenu.button_ready_antag", "is-disabled=false")
+		if(src.ready_play)
+			src.ready_play = FALSE
 			if (src.client.using_antag_token)
 				src.client.using_antag_token = 0
 				src.show_text("Token cancelled", "red")
+			src.update_joinmenu()
+
+		if(src.ready_tutorial)
+			src.ready_tutorial = FALSE
+			src.update_joinmenu()
 
 	verb/observe_round()
 		set hidden = 1
 		set name = ".observe_round"
 
+		if (src.blocked_from_joining)
+			return
 		if (src.client.has_login_notice_pending(TRUE))
 			return
 
-		if(alert(src,"Are you sure you wish to observe? You will not be able to play this round!","Player Setup","Yes","No") == "Yes")
-			if(!src.client) return
-			var/mob/dead/observer/observer = new()
-			if (src.client && src.client.using_antag_token) //ZeWaka: Fix for null.using_antag_token
-				src.client.using_antag_token = 0
-				src.show_text("Token refunded, your new total is [src.client.antag_tokens].", "red")
-			src.spawning = 1
-
-			close_spawn_windows()
-			boutput(src, "<span class='notice'>Now teleporting.</span>")
-			var/ASLoc = pick_landmark(LANDMARK_OBSERVER, locate(1, 1, 1))
-			if (ASLoc)
-				observer.set_loc(ASLoc)
-			observer.apply_looks_of(client)
-
-			observer.observe_round = 1
-			if(client.preferences && client.preferences.be_random_name) //Wire: fix for Cannot read null.be_random_name (preferences &&)
-				client.preferences.randomize_name()
-			observer.real_name = client.preferences.real_name
-			observer.bioHolder.mobAppearance.CopyOther(client.preferences.AH)
-			observer.gender = observer.bioHolder.mobAppearance.gender
-			observer.UpdateName()
-
-			if(!src.mind) src.mind = new(src)
-
-			//src.mind.dnr=1
-			src.mind.joined_observer=1
-			src.mind.transfer_to(observer)
-			if(observer?.client)
-				observer.client.loadResources()
-
-			qdel(src)
-
-	say(message)
-		if(dd_hasprefix(message, "*"))
+		#ifndef GENERATE_GOONHUB_MAP
+		if(tgui_alert(src, "Join the round as an observer? You will be unable to respawn for the duration of the round.", "Player Setup", list("Yes", "No"), 30 SECONDS) != "Yes")
 			return
-		src.ooc(message)
+		#endif
+
+		if(!src.client) return
+		var/mob/dead/observer/observer = new(src)
+		if (src.client && src.client.using_antag_token) //ZeWaka: Fix for null.using_antag_token
+			src.client.using_antag_token = 0
+			src.show_text("Token refunded, your new total is [src.client.antag_tokens].", "red")
+		src.spawning = 1
+
+		close_spawn_windows()
+		boutput(src, SPAN_NOTICE("Now teleporting."))
+		logTheThing(LOG_DEBUG, src, "observes.")
+#ifndef NIGHTSHADE
+		if(global.player_capa)
+			message_admins("[key_name(src)] chooses to observe with the player cap enabled.")
+#endif
+		var/ASLoc = pick_landmark(LANDMARK_OBSERVER, locate(1, 1, 1))
+		if (ASLoc)
+			observer.set_loc(ASLoc)
+
+		observer.observe_round = 1
+		if(client.preferences && client.preferences.be_random_name) //Wire: fix for Cannot read null.be_random_name (preferences &&)
+			client.preferences.randomize_name()
+		observer.real_name = client.preferences.real_name
+		observer.bioHolder.mobAppearance.CopyOther(client.preferences.AH)
+		observer.gender = observer.bioHolder.mobAppearance.gender
+		observer.UpdateName()
+		observer.apply_looks_of(client)
+
+		if(!src.mind) src.mind = new(src)
+		ticker.minds |= src.mind
+		src.mind.get_player()?.joined_observer = TRUE
+		src.mind.transfer_to(observer)
+		if(observer?.client)
+			observer.client.loadResources()
+
+		respawn_controller.unsubscribeRespawnee(observer?.client?.ckey)
+		observer.mind.get_player()?.dnr = observer.client?.preferences?.observer_dnr
+		qdel(src)
 
 #ifdef TWITCH_BOT_ALLOWED
 	proc/try_force_into_bill() //try to put the twitch mob into shittbill
@@ -914,3 +759,86 @@ a.latejoin-card:hover {
 				src.mind.transfer_to(shittybill)
 				break
 #endif
+
+#define JOINMENU_VERTICAL_OFFSET_START 24
+#define JOINMENU_VERTICAL_OFFSET_PER_BUTTON 56
+
+/mob/new_player/proc/update_joinmenu()
+	if (!client || !client.authenticated)
+		return
+
+	// super conservative with client checks as we *really* don't want to crash here
+
+	var/current_vertical_offset = JOINMENU_VERTICAL_OFFSET_START
+	var/pre_game = TRUE
+	if (ticker && global.current_state >= GAME_STATE_PLAYING)
+		pre_game = FALSE
+
+	if (client) winset(src, "joinmenu.button_cancel", "is-disabled=true;is-visible=false") // cancel button re-enabled as needed below
+
+	// character setup button
+	if (src.ready_play || src.ready_tutorial)
+		if (client) winset(src, "joinmenu.button_charsetup", "is-disabled=true;pos=18,[current_vertical_offset]")
+	else
+		if (client) winset(src, "joinmenu.button_charsetup", "is-disabled=false;pos=18,[current_vertical_offset]")
+	current_vertical_offset += JOINMENU_VERTICAL_OFFSET_PER_BUTTON
+
+	// ready play / join game / cancel ready play
+	if (pre_game)
+		if (client) winset(src, "joinmenu.button_joingame", "is-disabled=true;is-visible=false") // hide join
+		if (src.ready_play)
+			if (client?.using_antag_token) // show disabled ready
+				if (client) winset(src, "joinmenu.button_ready_play", "is-disabled=true;is-visible=true;pos=18,[current_vertical_offset]")
+			else // remove ready, show cancel
+				if (client) winset(src, "joinmenu.button_ready_play", "is-disabled=true;is-visible=false")
+				if (client) winset(src, "joinmenu.button_cancel", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+		else if (src.ready_tutorial) // show disabled ready
+			if (client) winset(src, "joinmenu.button_ready_play", "is-disabled=true;is-visible=true;pos=18,[current_vertical_offset]")
+		else // enable ready button, hide cancel
+			if (client) winset(src, "joinmenu.button_ready_play", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+			if (client) winset(src, "joinmenu.button_cancel", "is-disabled=true;is-visible=false")
+	else // replace ready play with join game
+		if (client) winset(src, "joinmenu.button_joingame", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+	current_vertical_offset += JOINMENU_VERTICAL_OFFSET_PER_BUTTON
+
+	// ready antag / cancel ready antag
+	if (pre_game && client?.antag_tokens > 0) // only show ready antag button if pre game and the client has antag tokens
+		if (src.ready_play)
+			if (client?.using_antag_token) // hide ready antag, show cancel button
+				if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true;is-visible=false")
+				if (client) winset(src, "joinmenu.button_cancel", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+			else // show disabled ready antag
+				if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true;is-visible=true;pos=18,[current_vertical_offset]")
+		else if (src.ready_tutorial) // show disabled ready antag
+			if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true;is-visible=true;pos=18,[current_vertical_offset]")
+		else // show ready antag
+			if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+		current_vertical_offset += JOINMENU_VERTICAL_OFFSET_PER_BUTTON
+	else
+		if (client) winset(src, "joinmenu.button_ready_antag", "is-disabled=true;is-visible=false")
+
+	// observe
+	if (src.ready_play || src.ready_tutorial)
+		if (client) winset(src, "joinmenu.button_observe", "is-disabled=true;pos=18,[current_vertical_offset]")
+	else
+		if (client) winset(src, "joinmenu.button_observe", "is-disabled=false;pos=18,[current_vertical_offset]")
+	current_vertical_offset += JOINMENU_VERTICAL_OFFSET_PER_BUTTON
+
+	// ready tutorial / cancel ready tutorial
+	if (global.newbee_tutorial_enabled)
+		if (src.ready_play) // disabled tutorial
+			if (client) winset(src, "joinmenu.button_tutorial", "is-disabled=true;is-visible=true;pos=18,[current_vertical_offset]")
+		else if (src.ready_tutorial) // hide ready tutorial, show cancel here
+			if (client) winset(src, "joinmenu.button_tutorial", "is-disabled=true;is-visible=false")
+			if (client) winset(src, "joinmenu.button_cancel", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+		else // show ready tutorial
+			if (client) winset(src, "joinmenu.button_tutorial", "is-disabled=false;is-visible=true;pos=18,[current_vertical_offset]")
+		current_vertical_offset += JOINMENU_VERTICAL_OFFSET_PER_BUTTON
+
+	if(client) winset(src, "joinmenu", "size=240x[current_vertical_offset]")
+
+	if(client)
+		winshow(src, "joinmenu", 1)
+
+#undef JOINMENU_VERTICAL_OFFSET_START
+#undef JOINMENU_VERTICAL_OFFSET_PER_BUTTON

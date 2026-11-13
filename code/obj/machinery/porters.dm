@@ -2,31 +2,48 @@
 // - Portable machinery remote parent
 // - Broken decal remote
 // - Port-a-Brig & remote
-// - Port-a-Medbay & remote
+// - Port-a-Medbay remote (Port-a-Medbay in sleeper.dm)
 // - Port-a-NanoMed & remote
 // - Port-a-Sci & remote
 
 ///////////////////////////// Remote parent ///////////////////////////////////
 
-var/global/list/portable_machinery = list() // stop looping through world for things you SHITMONGERS
+ABSTRACT_TYPE(/obj/item/remote)
+/obj/item/remote
+	inhand_image_icon = 'icons/mob/inhand/hand_tools.dmi'
+	item_state = "accessgun"
 
 // Adapted from the PDA program in portable_machinery_control.dm (Convair880).
+TYPEINFO(/obj/item/remote/porter)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = 4
+
 /obj/item/remote/porter
 	name = "Remote"
 	icon = 'icons/obj/items/device.dmi'
 	desc = "You shouldn't be able to see this!"
 	icon_state = "locator"
-	item_state = "electronic"
 	density = 0
-	anchored = 0
+	anchored = UNANCHORED
 	w_class = W_CLASS_SMALL
-	mats = 4
 	var/list/machinerylist = list()
 	var/machinery_name = "" // For user prompt stuff.
 	var/anti_spam = 0 // In relation to world time.
 
 	proc/get_machinery()
 		return
+
+	///Used for get_machinery polling; returns TRUE when passed a turf that exists and isn't in a restricted Z (with some special exemptions for Menhir if pertinent)
+	proc/loc_eval(var/turf/T)
+		. = FALSE
+		if(!T || !isturf(T)) return
+		if(isrestrictedz(T.z))
+#ifdef MAP_OVERRIDE_MENHIR
+			if (in_menhir_zone(T))
+				. = TRUE
+#endif
+			return
+		return TRUE
 
 	// As to avoid a separate lookup for every remote.
 	proc/teleport_sanity_check(var/obj/machinery/test_machinery, var/mob/test_mob, var/turf/test_turf, var/no_zlevel_check = 0)
@@ -64,7 +81,8 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		if (test_turf)
 			if (test_turf.loc:teleport_blocked == 2) return 0
 			if (!no_zlevel_check && (isrestrictedz(test_turf.z) || isrestrictedz(our_loc.z))) // Somebody will find a way to abuse it if I don't put this here.
-				return 0
+				if (!in_menhir_zone(our_loc)) //Special Exemption
+					return 0
 			if (test_turf.density)
 				return 5
 			for (var/obj/thing in view(0, test_turf))
@@ -79,7 +97,8 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 			if (!our_loc || !isturf(our_loc))
 				return 0
 			if (!no_zlevel_check && isrestrictedz(our_loc.z)) // Somebody will find a way to abuse it if I don't put this here.
-				return 0
+				if (!in_menhir_zone(our_loc)) //Special Exemption
+					return 0
 			if (our_loc.density)
 				return 4
 			for (var/obj/thing2 in view(0, our_loc))
@@ -101,12 +120,12 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 		src.machinerylist = list()
 		src.get_machinery()
-		if (!src.machinerylist || (src.machinerylist && src.machinerylist.len == 0))
+		if (!src.machinerylist || (src.machinerylist && length(src.machinerylist) == 0))
 			user.show_text("Couldn't find any linkable machinery.", "red")
 			return
 
 		var/t1
-		if (src.machinerylist.len == 1)
+		if (length(src.machinerylist) == 1)
 			t1 = src.machinerylist[1]
 		else
 			t1 = input("Please select a [src.machinery_name] to control", "Target Selection", null, null) as null|anything in src.machinerylist
@@ -153,10 +172,14 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 				if (machinery_loc == home_loc)
 					P.set_loc(our_loc) // We're at home, so let's summon the thing to our location.
+					FLICK("[P.icon_state]-tele", P)
 					user.show_text("[src.machinery_name] summoned successfully.", "blue")
+					logTheThing(LOG_STATION, user, "teleports [P] to [log_loc(our_loc)].")
 				else
 					P.set_loc(home_loc) // Send back to home location.
-					user.show_text("[src.machinery_name] send to home turf.", "blue")
+					FLICK("[P.icon_state]-tele", P)
+					user.show_text("[src.machinery_name] sent to home turf.", "blue")
+					logTheThing(LOG_STATION, user, "teleports [P] to its home turf [log_loc(home_loc)].")
 
 				if (hasvar(P, "occupant"))
 					if (istype(P, /obj/machinery/port_a_brig/))
@@ -188,19 +211,22 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		if (!src)
 			return
 
-		for (var/obj/machinery/port_a_brig/M in portable_machinery)
+		for (var/obj/machinery/port_a_brig/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
-				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [get_area(M)]"] += M // Don't remove the #[number] part here.
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(M)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += M // Don't remove the #[number] part here.
 		return
 
 /obj/item/remote/porter/port_a_medbay
 	name = "Port-A-Medbay Remote"
 	icon = 'icons/obj/porters.dmi'
 	icon_state = "remote"
-	item_state = "electronic"
 	desc = "A remote that summons a Port-A-Medbay."
 	machinery_name = "Port-a-Medbay"
 
@@ -208,41 +234,48 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		if (!src)
 			return
 
-		for (var/obj/machinery/sleeper/port_a_medbay/M in portable_machinery)
+		for (var/obj/machinery/sleeper/port_a_medbay/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
-				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [get_area(M)]"] += M // Don't remove the #[number] part here.
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(M)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += M // Don't remove the #[number] part here.
 		return
 
 // I suppose this device would be sorta useless with tele-block checks?
+TYPEINFO(/obj/item/remote/porter/port_a_sci)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = list("metal" = 5,
+				"conductive" = 5,
+				"telecrystal" = 10)
 /obj/item/remote/porter/port_a_sci
 	name = "Port-A-Sci Remote"
 	icon = 'icons/obj/porters.dmi'
 	icon_state = "remote"
-	item_state = "electronic"
 	desc = "A remote that summons a Port-A-Sci."
 	machinery_name = "Port-a-Sci"
-	mats = list("MET-1" = 5, "CON-1" = 5, "telecrystal" = 10)
 
 	get_machinery()
 		if (!src)
 			return
 
-		for (var/obj/storage/closet/port_a_sci/M in portable_machinery)
-			/*var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
-				continue*/
+		for (var/obj/storage/closet/port_a_sci/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			if (!(M in src.machinerylist))
-				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [get_area(M)]"] += M // Don't remove the #[number] part here.
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(M)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += M // Don't remove the #[number] part here.
 		return
 
 /obj/item/remote/porter/port_a_nanomed
 	name = "Port-A-NanoMed Remote"
 	icon = 'icons/obj/porters.dmi'
 	icon_state = "remote"
-	item_state = "electronic"
 	desc = "A remote that summons a Port-A-NanoMed."
 	machinery_name = "Port-a-NanoMed"
 
@@ -250,19 +283,22 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		if (!src)
 			return
 
-		for (var/obj/machinery/vending/port_a_nanomed/M in portable_machinery)
+		for (var/obj/machinery/vending/port_a_nanomed/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
-				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [get_area(M)]"] += M // Don't remove the #[number] part here.
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(M)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += M // Don't remove the #[number] part here.
 		return
 
 /obj/item/remote/porter/port_a_gene
 	name = "Port-A-Gene Remote"
 	icon = 'icons/obj/porters.dmi'
 	icon_state = "remote"
-	item_state = "electronic"
 	desc = "A remote that summons a Port-A-Gene."
 	machinery_name = "Port-a-Gene"
 
@@ -270,12 +306,36 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		if (!src)
 			return
 
-		for (var/obj/machinery/computer/genetics/portable/M in portable_machinery)
+		for (var/obj/machinery/computer/genetics/portable/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
-				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [get_area(M)]"] += M // Don't remove the #[number] part here.
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(M)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += M // Don't remove the #[number] part here.
+		return
+
+/obj/item/remote/porter/port_a_laundry
+	name = "Port-A-Laundry Remote"
+	icon = 'icons/obj/porters.dmi'
+	icon_state = "remote"
+	desc = "A remote that summons a Port-A-Laundry."
+	machinery_name = "Port-a-Laundry"
+
+	get_machinery()
+		if (!src)
+			return
+
+		for (var/obj/submachine/laundry_machine/portable/LP in by_cat[TR_CAT_PORTABLE_MACHINERY])
+			if (!(LP in src.machinerylist))
+				var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+				var/area/A = get_area(LP)
+				if (istype(A, /area/station))
+					area_string = A.name
+				src.machinerylist["[src.machinery_name] #[src.machinerylist.len + 1] at [area_string]"] += LP // Don't remove the #[number] part here.
 		return
 
 /obj/item/remote/busted
@@ -286,17 +346,19 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 ///////////////////////////////////// Port-a-Brig /////////////////////////////////////
 
+TYPEINFO(/obj/machinery/port_a_brig)
+	mats = 30
+
 /obj/machinery/port_a_brig
 	name = "Port-A-Brig"
 	icon = 'icons/obj/cloning.dmi'
 	icon_state = "port_a_brig_0"
 	desc = "A portable holding cell with teleporting capabilites."
 	density = 1
-	anchored = 0
+	anchored = UNANCHORED
 	p_class = 1.8
 	req_access = list(access_security)
-	object_flags = CAN_REPROGRAM_ACCESS
-	mats = 30
+	object_flags = CAN_REPROGRAM_ACCESS | NO_GHOSTCRITTER
 	var/mob/occupant = null
 	var/locked = 0
 	var/homeloc = null
@@ -307,20 +369,21 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 	New()
 		..()
 		UnsubscribeProcess()
-		if (!islist(portable_machinery))
-			portable_machinery = list()
-		portable_machinery.Add(src)
+		START_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 		build_icon()
 		src.homeloc = src.loc
 
 	disposing()
-		if (islist(portable_machinery))
-			portable_machinery.Remove(src)
+		STOP_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 		..()
 
 	examine()
 		. = ..()
-		. += "Home turf: [get_area(src.homeloc)]. The interface is [src.locked ? "locked" : "unlocked"]."
+		var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+		var/area/A = get_area(src.homeloc)
+		if (istype(A, /area/station))
+			area_string = A.name
+		. += "Home turf: [area_string]. The interface is [src.locked ? "locked" : "unlocked"]."
 
 	SubscribeToProcess()
 		..()
@@ -335,52 +398,58 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		var/req = unlock_timer_req - (world.timeofday - unlock_timer_start)
 		if (req <= 0)
 			locked = 0
+			playsound(src, 'sound/machines/airlock_unbolt.ogg', 40, TRUE, -2)
 			go_out()
 			.= 0
 		.= req
 
 	mob_flip_inside(var/mob/user)
 		..(user)
-
+		if (!src.locked)
+			src.go_out()
+			return
 		if (!processing)
 			SubscribeToProcess()
 
 		var/req = src.process()
 		if (req)
-			user.show_text("<span class='alert'>[src] [pick("cracks","bends","shakes","groans")]. Somehow, you know that it will unlock in [req/10] seconds.</span>")
+			user.show_text(SPAN_ALERT("[src] [pick("cracks","bends","shakes","groans")]. Somehow, you know that it will unlock in [req/10] seconds."))
 
+	Click(location, control, params)
+		if(!src.ghost_observe_occupant(usr, src.occupant))
+			. = ..()
 
 	// Could be useful (Convair880).
-	MouseDrop(over_object, src_location, over_location)
+	mouse_drop(over_object, src_location, over_location)
 		..()
 		if (isobserver(usr) || isintangible(usr))
 			return
 		if (usr == src.occupant || !isturf(usr.loc))
 			return
-		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("weakened"))
+		if (is_incapacitated(usr))
 			return
-		if (get_dist(src, usr) > 1)
+		if (BOUNDS_DIST(src, usr) > 0)
 			usr.show_text("You are too far away to do this!", "red")
 			return
-		if (get_dist(over_object, src) > 1)
+		if (BOUNDS_DIST(over_object, src) > 0)
 			usr.show_text("The [src.name] is too far away from the target!", "red")
 			return
 		if (!istype(over_object,/turf/simulated/floor/))
 			usr.show_text("You can't set this target as the home location.", "red")
 			return
 
-		if (alert("Set selected turf as home location?",,"Yes","No") == "Yes")
+		if (tgui_alert(usr, "Set selected turf as home location?", "Set home location", list("Yes", "No")) == "Yes")
 			src.homeloc = over_object
-			usr.visible_message("<span class='notice'><b>[usr.name]</b> changes the [src.name]'s home turf.</span>", "<span class='notice'>New home turf selected: [get_area(src.homeloc)].</span>")
+			usr.visible_message(SPAN_NOTICE("<b>[usr.name]</b> changes the [src.name]'s home turf."), SPAN_NOTICE("New home turf selected: [get_area(src.homeloc)]."))
 			// The crusher, hell fires etc. This feature enables quite a bit of mischief.
-			logTheThing("station", usr, null, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
+			logTheThing(LOG_STATION, usr, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
 		return
 
 	allow_drop()
 		return 0
 
 	relaymove(mob/user as mob)
-		if(!user || !isalive(user) || user.getStatusDuration("stunned") != 0)
+		if(!user || !isalive(user) || is_incapacitated(user))
 			return
 		src.go_out()
 		return
@@ -388,6 +457,7 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 	Exited(atom/movable/Obj)
 		..()
 		if(Obj == src.occupant)
+			logTheThing(LOG_STATION, Obj, "exits [src.name] at [log_loc(src)].")
 			src.occupant = null
 			build_icon()
 			for (var/obj/item/I in src) //What if you drop something while inside? WHAT THEN HUH?
@@ -397,44 +467,40 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 				UnsubscribeProcess()
 
 	attackby(obj/item/W, mob/user as mob)
-		if (istype(W, /obj/item/device/pda2) && W:ID_card)
-			W = W:ID_card
-		if (istype(W, /obj/item/card/id))
+		var/obj/item/card/id/id_card = get_id_card(W)
+		if (istype(id_card, /obj/item/card/id))
 			if (src.allowed(user))
 				src.locked = !src.locked
 				boutput(user, "You [ src.locked ? "lock" : "unlock"] the [src].")
+				if (src.locked)
+					playsound(src, 'sound/machines/airlock_unbolt.ogg', 40, TRUE, -2)
+				else
+					playsound(src, 'sound/machines/airlock_bolt.ogg', 40, TRUE, -2)
 				if (src.occupant)
-					logTheThing("station", user, src.occupant, "[src.locked ? "locks" : "unlocks"] [src.name] with [constructTarget(src.occupant,"station")] inside at [log_loc(src)].")
+					logTheThing(LOG_STATION, user, "[src.locked ? "locks" : "unlocks"] [src.name] with [constructTarget(src.occupant,"station")] inside at [log_loc(src)].")
 			else
-				boutput(user, "<span class='alert'>This [src] doesn't seem to accept your authority.</span>")
+				boutput(user, SPAN_ALERT("This [src] doesn't seem to accept your authority."))
 
 		else if (istype(W, /obj/item/grab))
 			var/obj/item/grab/G = W
 			if (!G.affecting)
 				return
 			if (!ishuman(G.affecting))
-				boutput(user, "<span class='alert'>You can't find a way to fit [G.affecting] into [src]!</span>")
+				boutput(user, SPAN_ALERT("You can't find a way to fit [G.affecting] into [src]!"))
 				return
 			if (src.occupant)
-				boutput(user, "<span class='alert'>The Port-A-Brig is already occupied!</span>")
+				boutput(user, SPAN_ALERT("The Port-A-Brig is already occupied!"))
 				return
 			if (src.locked)
-				boutput(user, "<span class='alert'>The Port-A-Brig is locked!</span>")
+				boutput(user, SPAN_ALERT("The Port-A-Brig is locked!"))
 				return
 			src.add_fingerprint(user)
 			actions.start(new /datum/action/bar/portabrig_shove_in(src, user, G.affecting, G), user)
 
 		else if (ispryingtool(W))
-			var/turf/T = user.loc
-			boutput(user, "<span class='notice'>Prying door open.</span>")
-			playsound(src.loc, "sound/items/Crowbar.ogg", 100, 1)
-			sleep(15 SECONDS)
-			if ((user.loc == T && user.equipped() == W))
-				src.locked = 0
-				boutput(user, "<span class='notice'>You pried the door open.</span>")
-			else if((isrobot(user) && (user.loc == T)))
-				src.locked = 0
-				boutput(user, "<span class='notice'>You pried the door open.</span>")
+			boutput(user, SPAN_NOTICE("Prying door open."))
+			SETUP_GENERIC_ACTIONBAR(user, src, 15 SECONDS, /obj/machinery/port_a_brig/proc/pry_open, list(user), W.icon, W.icon_state,
+				SPAN_ALERT("[user] pries open [src]."), INTERRUPT_ACT | INTERRUPT_ACTION | INTERRUPT_MOVE | INTERRUPT_ATTACKED | INTERRUPT_STUNNED)
 
 	proc/build_icon()
 		if(src.occupant)
@@ -444,17 +510,18 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 	proc/go_out()
 		if (src.locked)
-			boutput(usr, "<span class='alert'>The Port-A-Brig is locked!</span>")
+			boutput(usr, SPAN_ALERT("The Port-A-Brig is locked!"))
 			return
 		if(src.occupant)
 			src.occupant.set_loc(src.loc)
-			src.occupant.changeStatus("weakened", 2 SECONDS)
+			src.occupant.changeStatus("knockdown", 2 SECONDS)
+			playsound(src.loc, 'sound/machines/sleeper_open.ogg', 50, 1)
 		return
 
 	verb/move_eject()
 		set src in oview(1)
 		set category = "Local"
-		if (!isalive(usr) || usr.hasStatus(list("stunned", "paralysis", "weakened", "handcuffed")))
+		if (!src.can_eject_occupant(usr))
 			return
 		src.go_out()
 		add_fingerprint(usr)
@@ -478,32 +545,39 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		..()
 		if (!src.owner || !src.victim || QDELETED(G))
 			interrupt(INTERRUPT_ALWAYS)
-		if (!IN_RANGE(src.owner, src.brig, 1) || !IN_RANGE(src.victim, src.brig, 1))
+		if (!(BOUNDS_DIST(src.owner, src.brig) == 0) || !(BOUNDS_DIST(src.victim, src.brig) == 0))
 			interrupt(INTERRUPT_ALWAYS)
-		src.brig.visible_message("<span class='alert'>[owner] begins shoving [victim] into [src.brig]!</span>")
+		src.brig.visible_message(SPAN_ALERT("[owner] begins shoving [victim] into [src.brig]!"))
 
 
 	onUpdate()
 		..()
 		if (!src.owner || !src.victim || QDELETED(G))
 			interrupt(INTERRUPT_ALWAYS)
-		if (!IN_RANGE(src.owner, src.brig, 1) || !IN_RANGE(src.victim, src.brig, 1))
+		if (!(BOUNDS_DIST(src.owner, src.brig) == 0) || !(BOUNDS_DIST(src.victim, src.brig) == 0))
 			interrupt(INTERRUPT_ALWAYS)
 
 	onEnd()
 		..()
-		if (!src.owner || !src.victim || QDELETED(G))
+		if (!src.owner || !src.victim || QDELETED(G) || brig?.occupant)
 			interrupt(INTERRUPT_ALWAYS)
-		if (!IN_RANGE(src.owner, src.brig, 1) || !IN_RANGE(src.victim, src.brig, 1))
+			return
+		if (!(BOUNDS_DIST(src.owner, src.brig) == 0) || !(BOUNDS_DIST(src.victim, src.brig) == 0) || !isturf(src.victim.loc) || !isturf(src.owner.loc))
 			interrupt(INTERRUPT_ALWAYS)
-		src.brig.visible_message("<span class='alert'>[owner] shoves [victim] into [src.brig]!</span>")
-		victim.set_loc(src.brig)
+			return
+		src.brig.visible_message(SPAN_ALERT("[owner] shoves [victim] into [src.brig]!"))
 		src.brig.occupant = victim
+		victim.set_loc(src.brig)
 		for(var/obj/O in src.brig)
 			O.set_loc(src.brig.loc)
 		src.brig.build_icon()
+		playsound(brig.loc, 'sound/machines/sleeper_close.ogg', 50, 1)
 		qdel(G)
 
+/obj/machinery/port_a_brig/proc/pry_open()
+	playsound(src.loc, 'sound/items/Crowbar.ogg', 100, TRUE)
+	src.locked = FALSE
+	playsound(src, 'sound/machines/airlock_unbolt.ogg', 40, TRUE, -2)
 
 /obj/item/paper/Port_A_Brig
 	name = "paper - 'A-97 Port-A-Brig Manual"
@@ -511,155 +585,9 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 	Congratulations, your station has purchased the A-97 Port-A-Brig Security device!<br>
 	Using the A-97 is as simple as beating a criminal to death! Simply Summon the A-97 with the remote, put the criminal inside, lock the door with your ID and send it back!<br>
 	<b>That's all there is to it!</b><br>
-	<i>Notice, the Port-A-Brig teleporter system may fail if you are not in a open space.</i><br>
+	<i>Notice, the Port-A-Brig teleporter system may fail if you are not in an open space.</i><br>
 	<font size=1>This technology produced under license from  Quantum Movement Inc, LTD.</font>"}
 
-////////////////////////////////////////// Port-a-Medbay /////////////////////////////////////
-/* replaced with an actual sleeper, see sleeper.dm
-/obj/machinery/port_a_medbay
-	name = "Port-A-Medbay"
-	icon = 'icons/obj/porters.dmi'
-	icon_state = "sleeper"
-	var/image/image_lid = null
-	desc = "An emergency transportation device for critically injured patients."
-	density = 1
-	anchored = 0
-	p_class = 1.2
-	mats = 30
-	event_handler_flags = USE_FLUID_ENTER
-	var/mob/occupant = null
-	var/homeloc = null
-
-	New()
-		..()
-		if (!islist(portable_machinery))
-			portable_machinery = list()
-		portable_machinery.Add(src)
-		UnsubscribeProcess()
-		build_icon()
-		animate_bumble(src, Y1 = 1, Y2 = -1, slightly_random = 0)
-		src.homeloc = src.loc
-
-	disposing()
-		..()
-		if (islist(portable_machinery))
-			portable_machinery.Remove(src)
-
-	disposing()
-		if (islist(portable_machinery))
-			portable_machinery.Remove(src)
-		..()
-
-	throw_impact(atom/hit_atom, datum/thrown_thing/thr)
-		..()
-		animate_bumble(src, Y1 = 1, Y2 = -1, slightly_random = 0)
-
-	Cross(atom/movable/O as mob|obj, target as turf, height=0, air_group=0)
-		if (air_group || (height==0))
-			return 1
-		..()
-
-	examine()
-		..()
-		boutput(usr, "Home turf: [get_area(src.homeloc)].")
-		return
-
-	// Could be useful (Convair880).
-	MouseDrop(over_object, src_location, over_location)
-		..()
-		if (isobserver(usr) || isintangible(usr))
-			return
-		if (usr == src.occupant || !isturf(usr.loc))
-			return
-		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("weakened"))
-			return
-		if (get_dist(src, usr) > 1)
-			usr.show_text("You are too far away to do this!", "red")
-			return
-		if (get_dist(over_object, src) > 1)
-			usr.show_text("The [src.name] is too far away from the target!", "red")
-			return
-		if (!istype(over_object,/turf/simulated/floor/))
-			usr.show_text("You can't set this target as the home location.", "red")
-			return
-
-		if (alert("Set selected turf as home location?",,"Yes","No") == "Yes")
-			src.homeloc = over_object
-			usr.visible_message("<span class='notice'><b>[usr.name]</b> changes the [src.name]'s home turf.</span>", "<span class='notice'>New home turf selected: [get_area(src.homeloc)].</span>")
-			// The crusher, hell fires etc. This feature enables quite a bit of mischief.
-			logTheThing("station", usr, null, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
-		return
-
-	allow_drop()
-		return 0
-
-	relaymove(mob/user as mob)
-		if (user && (!isalive(user) || user.getStatusDuration("stunned") != 0))
-			return
-		src.go_out()
-		return
-
-	attackby(obj/item/W, mob/user as mob)
-		if (istype(W, /obj/item/grab))
-			var/obj/item/grab/G = W
-			if (!G.affecting)
-				return
-			if (!ishuman(G.affecting))
-				boutput(user, "<span class='alert'>You can't find a way to fit [G.affecting] into [src]!</span>")
-				return
-			if (src.occupant)
-				boutput(user, "<span class='alert'>The Port-A-Medbay is already occupied!</span>")
-				return
-			var/mob/living/carbon/human/H = G.affecting
-			H.set_loc(src)
-			src.occupant = H
-			for(var/obj/O in src)
-				O.set_loc(src.loc)
-			src.add_fingerprint(user)
-			build_icon()
-			qdel(W)
-
-	proc/build_icon()
-		ENSURE_IMAGE(src.image_lid, src.icon, "sleeperlid[!isnull(occupant)]")
-		src.UpdateOverlays(src.image_lid, "lid")
-
-	proc/go_out()
-		if(!( src.occupant))
-			return
-		src.occupant.set_loc(src.loc)
-		src.occupant = null
-		build_icon()
-		for (var/obj/item/I in src) //Sometimes people drop stuff OKAY
-			I.set_loc(src.loc)
-		return
-
-	verb/move_eject()
-		set src in oview(1)
-		set category = "Local"
-		if (!isalive(usr) || usr.getStatusDuration("stunned") != 0)
-			return
-		src.go_out()
-		add_fingerprint(usr)
-		return
-
-	verb/move_inside()
-		set src in oview(1)
-		set category = "Local"
-		if (!ishuman(usr))
-			boutput(usr, "<span class='alert'>You can't seem to fit into \the [src].</span>")
-			return
-		if (src.occupant)
-			boutput(usr, "<span class='alert'>The Port-A-Medbay is already occupied!</span>")
-			return
-		if (!isalive(usr) || usr.getStatusDuration("stunned") != 0)
-			return
-		usr.remove_pulling()
-		usr.set_loc(src)
-		src.occupant = usr
-		src.add_fingerprint(usr)
-		build_icon()
-		return
-*/
 /////////////////////////////////////// Port-a-Sci ///////////////////////////////////////////
 
 /obj/storage/closet/port_a_sci
@@ -669,8 +597,9 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 	icon_closed = "portasci"
 	icon_opened = "portasci-open"
 	density = 1
-	anchored = 0
+	anchored = UNANCHORED
 	p_class = 6
+	can_leghole = FALSE
 	//mats = 30 // Nope! We don't need multiple personal teleporters without any z-level restrictions (Convair880).
 	var/homeloc = null
 
@@ -682,39 +611,40 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 	New()
 		..()
-		if (!islist(portable_machinery))
-			portable_machinery = list()
-		portable_machinery.Add(src)
+		START_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 
 		src.homeloc = src.loc
 
-		possible_new_friend = typesof(/obj/critter/bear) + typesof(/obj/critter/spider/ice) + typesof(/obj/critter/cat) + typesof(/obj/critter/parrot)\
-						+ list(/obj/critter/aberration, /obj/critter/domestic_bee, /obj/critter/domestic_bee/chef, /obj/critter/bat/buff, /obj/critter/bat, /obj/critter/bloodling, /obj/critter/wraithskeleton, /obj/critter/magiczombie, /obj/critter/wendigo)\
-						- list(/obj/critter/spider/ice/queen)
+		possible_new_friend = typesof(/mob/living/critter/bear) + typesof(/mob/living/critter/spider/ice) + typesof(/mob/living/critter/small_animal/cat) + typesof(/obj/critter/parrot)\
+						+ list(/mob/living/critter/aberration, /obj/critter/domestic_bee, /obj/critter/domestic_bee/chef, /obj/critter/bat/buff, /obj/critter/bat, /obj/critter/bloodling, /mob/living/critter/skeleton/wraith, /mob/living/critter/skeleton, /mob/living/critter/brullbar)\
+						- list(/mob/living/critter/spider/ice/queen)
 
 	disposing()
-		if (islist(portable_machinery))
-			portable_machinery.Remove(src)
+		STOP_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 		..()
 
 	examine()
 		. = ..()
-		. += "Home turf: [get_area(src.homeloc)]."
+		var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+		var/area/A = get_area(src.homeloc)
+		if (istype(A, /area/station))
+			area_string = A.name
+		. += "Home turf: [area_string]."
 
 	// This thing isn't z-level-restricted except for the homeloc.
 	// Somebody WILL find an exploit otherwise (Convair880).
-	MouseDrop(over_object, src_location, over_location)
+	mouse_drop(over_object, src_location, over_location)
 		..()
 		if (isobserver(usr) || isintangible(usr))
 			return
 		if ((usr in src.contents) || !isturf(usr.loc))
 			return
-		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("weakened"))
+		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("knockdown"))
 			return
-		if (get_dist(src, usr) > 1)
+		if (BOUNDS_DIST(src, usr) > 0)
 			usr.show_text("You are too far away to do this!", "red")
 			return
-		if (get_dist(over_object, src) > 1)
+		if (BOUNDS_DIST(over_object, src) > 0)
 			usr.show_text("The [src.name] is too far away from the target!", "red")
 			return
 		if (!istype(over_object,/turf/simulated/floor/))
@@ -725,17 +655,17 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 			usr.show_text("You can't set this target as the home location.", "red")
 			return
 
-		if (alert("Set selected turf as home location?",,"Yes","No") == "Yes")
+		if (tgui_alert(usr, "Set selected turf as home location?", "Set home location", list("Yes", "No")) == "Yes")
 			src.homeloc = over_object
-			usr.visible_message("<span class='notice'><b>[usr.name]</b> changes the [src.name]'s home turf.</span>", "<span class='notice'>New home turf selected: [get_area(src.homeloc)].</span>")
+			usr.visible_message(SPAN_NOTICE("<b>[usr.name]</b> changes the [src.name]'s home turf."), SPAN_NOTICE("New home turf selected: [get_area(src.homeloc)]."))
 			// The crusher, hell fires etc. This feature enables quite a bit of mischief.
-			logTheThing("station", usr, null, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
+			logTheThing(LOG_STATION, usr, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
 		return
 
 	allow_drop()
 		return 0
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.open && iswrenchingtool(W))
 			return
 		else
@@ -754,14 +684,14 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 				var/list/mob/body_list = list()
 				for(var/mob/living/carbon/M in src.contents) //Don't think you're gonna get lucky, ghosts!
 					if(!isdead(M)) body_list += M
-				if(body_list.len > 1)
+				if(length(body_list) > 1)
 
 					for(var/I = 1, I <= body_list.len , I++)
 						var/next_in_line = ((I % body_list.len) + 1)
 
 						var/mob/M = body_list[I] //What the actual fuck is this motherfucking nonsense shit fuck I hate you byond what the hell.
 						if(M.mind)
-							logTheThing("combat", src, body_list[next_in_line], "swapped [key_name(M)] and [constructTarget(body_list[next_in_line],"combat")]'s bodies!")
+							logTheThing(LOG_COMBAT, src, "swapped [key_name(M)] and [constructTarget(body_list[next_in_line],"combat")]'s bodies!")
 							M.mind.swap_with(body_list[next_in_line])
 							I++ //Step once more to prevent us from hitting the swapped mob
 
@@ -772,23 +702,22 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 					if(81 to INFINITY) //Travel sickness!
 						for(var/mob/living/carbon/M in src.contents)
-							SPAWN_DBG(rand(10,40))
-								M.visible_message("<span class='alert'>[M] pukes all over \himself.</span>", "<span class='alert'>Oh god, that was terrible!</span>", "<span class='alert'>You hear a splat!</span>")
+							SPAWN(rand(10,40))
+								M.nauseate(8,11)
 								M.change_misstep_chance(40)
 								M.changeStatus("drowsy", 10 SECONDS)
-								M.vomit()
 
 					if(51 to 70) //A nice tan
-						for(var/mob/living/carbon/M in src.contents)
-							M.changeStatus("radiation", 20 SECONDS, 1)
+						for(var/mob/living/M in src.contents)
+							M.take_radiation_dose(0.5 SIEVERTS)
 							M.show_text("\The [src] buzzes oddly.", "red")
 					if(31 to 50) //A very nice tan
-						for(var/mob/living/carbon/M in src.contents)
-							M.changeStatus("radiation", 30 SECONDS, 2)
+						for(var/mob/living/M in src.contents)
+							M.take_radiation_dose(1.25 SIEVERTS)
 							M.show_text("You feel a warm tingling sensation.", "red")
 					if(21 to 30) //The nicest tan
-						for(var/mob/living/carbon/human/M in src.contents)
-							M.changeStatus("radiation", 40 SECONDS, 3)
+						for(var/mob/living/M in src.contents)
+							M.take_radiation_dose(2 SIEVERTS)
 							M.show_text("<B>You feel a wave of searing heat wash over you!</B>", "red")
 							//if(M.bioHolder && M.bioHolder.mobAppearance) //lol
 								// s_tone now an RGB rather than a numeric value so disabling this for the moment
@@ -801,15 +730,15 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 					if(11 to 20) //Mechanical failure aaaaaa
 						var/list/temp = src.contents.Copy()
 						src.open()
-						src.visible_message("<span class='alert'><B>\the [src]'s door flies open and a gout of flame erupts from within!</span>")
-						fireflash(src, 2)
+						src.visible_message(SPAN_ALERT("<B>\the [src]'s door flies open and a gout of flame erupts from within!"))
+						fireflash(src, 2, chemfire = CHEM_FIRE_RED)
 						for(var/mob/living/carbon/M in temp)
 							M.update_burning(100)
 							var/turf/T = get_edge_target_turf(M, turn(NORTH, rand(0,7) * 45))
 							M.throw_at(T,100, 2)
 
 					if(3 to 10) //Hitchhiker friend!
-						var/obj/critter/C = pick(possible_new_friend)
+						var/C = pick(possible_new_friend)
 						new C(src)
 
 						for(var/mob/M in src.contents)
@@ -823,6 +752,9 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 //////////////////////////////////////// Port-a-NanoMed ///////////////////////////////////////////
 
+TYPEINFO(/obj/machinery/vending/port_a_nanomed)
+	analyser_flags = ANALYSER_BLACKLIST
+
 /obj/machinery/vending/port_a_nanomed
 	name = "Port-A-NanoMed"
 	desc = "A compact and portable version of the NanoMed Plus."
@@ -830,24 +762,22 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 	icon_state = "vend"
 	icon_deny = "vend-deny"
 	layer = FLOOR_EQUIP_LAYER1
-	req_access_txt = "5"
+	req_access = list(access_medical_lockers)
 	acceptcard = 0
-	anchored = 0
+	anchored = UNANCHORED
 	p_class = 1.2
 	can_fall = 0
-	mats = null
 	ai_control_enabled = 1
-	window_size = "400x675"
+	power_usage = 0
 	var/homeloc = null
 
 	New()
 		..()
 		UnsubscribeProcess()
-		if (!islist(portable_machinery))
-			portable_machinery = list()
-		portable_machinery.Add(src)
+		START_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 
 		animate_bumble(src, Y1 = 1, Y2 = -1, slightly_random = 0)
+		APPLY_ATOM_PROPERTY(src, PROP_ATOM_FLOATING, src)
 		src.homeloc = src.loc
 		//Products
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/patch/bruise, 20)
@@ -868,6 +798,7 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/emergency_injector/saline, 10)
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/emergency_injector/spaceacillin, 4)
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/emergency_injector/synaptizine, 4)
+		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/syringe/formaldehyde, 2)
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/ampoule/smelling_salts, 4)
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/pill/mutadone, 5)
 		product_list += new/datum/data/vending_product(/obj/item/bandage, 6)
@@ -878,39 +809,43 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 		//Hidden
 		product_list += new/datum/data/vending_product(/obj/item/reagent_containers/emergency_injector/random, rand(1, 3), hidden=1)
 
+
 	disposing()
-		if (islist(portable_machinery))
-			portable_machinery.Remove(src)
+		STOP_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
 		..()
 
 	examine()
 		. = ..()
-		. += "Home turf: [get_area(src.homeloc)]."
+		var/area_string = "Off-[global.station_or_ship()] Location"  // Don't show stuff in "somewhere", okay.
+		var/area/A = get_area(src.homeloc)
+		if (istype(A, /area/station))
+			area_string = A.name
+		. += "Home turf: [area_string]."
 
 	// Could be useful (Convair880).
-	MouseDrop(over_object, src_location, over_location)
+	mouse_drop(over_object, src_location, over_location)
 		..()
 		if (isobserver(usr) || isintangible(usr))
 			return
 		if (!isturf(usr.loc))
 			return
-		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("weakened"))
+		if (usr.stat || usr.getStatusDuration("stunned") || usr.getStatusDuration("knockdown"))
 			return
-		if (get_dist(src, usr) > 1)
+		if (BOUNDS_DIST(src, usr) > 0)
 			usr.show_text("You are too far away to do this!", "red")
 			return
-		if (get_dist(over_object, src) > 1)
+		if (BOUNDS_DIST(over_object, src) > 0)
 			usr.show_text("The [src.name] is too far away from the target!", "red")
 			return
 		if (!istype(over_object,/turf/simulated/floor/))
 			usr.show_text("You can't set this target as the home location.", "red")
 			return
 
-		if (alert("Set selected turf as home location?",,"Yes","No") == "Yes")
+		if (tgui_alert(usr, "Set selected turf as home location?", "Set home location", list("Yes", "No")) == "Yes")
 			src.homeloc = over_object
-			usr.visible_message("<span class='notice'><b>[usr.name]</b> changes the [src.name]'s home turf.</span>", "<span class='notice'>New home turf selected: [get_area(src.homeloc)].</span>")
+			usr.visible_message(SPAN_NOTICE("<b>[usr.name]</b> changes the [src.name]'s home turf."), SPAN_NOTICE("New home turf selected: [get_area(src.homeloc)]."))
 			// The crusher, hell fires etc. This feature enables quite a bit of mischief...well, if it wouldn't be the NanoMed.
-			//logTheThing("station", usr, null, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
+			//logTheThing(LOG_STATION, usr, "sets [src.name]'s home turf to [log_loc(src.homeloc)].")
 		return
 
 	allow_drop()
@@ -924,3 +859,25 @@ var/global/list/portable_machinery = list() // stop looping through world for th
 
 	power_change()
 		return
+
+//DIRTY DIRTY PLAYERS
+TYPEINFO(/obj/submachine/laundry_machine/portable)
+	analyser_flags = ANALYSER_BLACKLIST
+
+/obj/submachine/laundry_machine/portable
+	name = "Port-A-Laundry"
+	desc = "Don't ask."
+	anchored = UNANCHORED
+	pixel_y = 6
+	var/homeloc
+
+	New()
+		. = ..()
+		START_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
+		animate_bumble(src, Y1 = 1, Y2 = -1, slightly_random = 0)
+		APPLY_ATOM_PROPERTY(src, PROP_ATOM_FLOATING, src)
+		src.homeloc = get_turf(src)
+
+	disposing()
+		STOP_TRACKING_CAT(TR_CAT_PORTABLE_MACHINERY)
+		..()

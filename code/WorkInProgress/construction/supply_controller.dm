@@ -77,7 +77,7 @@
 		if (current_demand_level > 0)
 			current_demand_level--
 		var/profit = price_multiplier * C.baseprice
-		wagesystem.shipping_budget += profit
+		wagesystem.budgets[BUDGET_CAT_DEPT_SUPPLY] += profit
 		adjust_price_multiplier()
 		return profit
 
@@ -154,6 +154,14 @@
 	maximum_demand_level = 25
 	base_price_multiplier = 0.5
 
+/datum/demand_control/fossils
+	commodities = list(/datum/commodity/fossil)
+	high_demand_level = 20
+	static_growth = 0
+	current_demand_level = 20
+	maximum_demand_level = 25
+	base_price_multiplier = 0.5
+
 /datum/demand_control/common_ores
 	commodities = list(/datum/commodity/ore/mauxite, /datum/commodity/ore/pharosium, /datum/commodity/ore/molitz, /datum/commodity/ore/char)
 	high_demand_level = 100
@@ -199,6 +207,14 @@
 
 /datum/demand_control/rare_crystals
 	commodities = list(/datum/commodity/ore/erebite, /datum/commodity/ore/telecrystal, /datum/commodity/ore/uqill)
+	high_demand_level = 20
+	static_growth = 1
+	fluctuates = 0
+	current_demand_level = 30
+	maximum_demand_level = 50
+
+/datum/demand_control/fossils
+	commodities = list(/datum/commodity/fossil)
 	high_demand_level = 20
 	static_growth = 1
 	fluctuates = 0
@@ -307,11 +323,14 @@
 	replenishment_time = 18000
 	supply_packs = list(/datum/supply_packs/complex/manufacturer_kit)
 
+//Nadir is not intended to have station pods/submarines
+#ifndef MAP_OVERRIDE_NADIR
 /datum/supply_control/pod_kit
 	maximum_stock = 2
 	replenishment_time = 9000
 	supply_packs = list(/datum/supply_packs/complex/pod_kit)
 	workstation_grade = 2
+#endif
 
 /datum/supply_control/ai_kit
 	maximum_stock = 2
@@ -500,10 +519,10 @@
 /obj/supply_pad
 	icon = 'icons/obj/stationobjs.dmi'
 	icon_state = "pad0"
-	name = "supply pad"
-	desc = "A pad used to teleport goods between Central Command and a survey outpost. Requires a telecrystal to function."
+	name = "supply telepad"
+	desc = "It's a Nanotrasen 'Waterloo 1.0' cargo teleportation pad used to teleport goods instantly between distant locations. Requires a telecrystal to function."
 	density = 0
-	anchored = 1
+	anchored = ANCHORED
 	opacity = 0
 
 	var/has_crystal = 0
@@ -519,24 +538,24 @@
 	proc/used()
 		charge = 0
 		has_crystal--
-		SPAWN_DBG(0)
+		SPAWN(0)
 			while (charge < 100)
 				charge++
 				sleep(0.1 SECONDS)
 
 	examine()
 		. = ..()
-		. += "<span class='notice'>The pad is currently at [charge]% charge.</span>"
+		. += SPAN_NOTICE("The pad is currently at [charge]% charge.")
 		if (has_crystal)
-			. += "<span class='notice'>The pad is complete with a telecrystal.</span>"
+			. += SPAN_NOTICE("The pad is complete with a telecrystal.")
 		else
-			. += "<span class='alert'>The pad's telecrystal socket is empty!</span>"
+			. += SPAN_ALERT("The pad's telecrystal socket is empty!")
 
-	attackby(var/obj/item/I as obj, user as mob)
+	attackby(var/obj/item/I, user)
 		if (istype(I, /obj/item/raw_material/telecrystal))
 			qdel(I)
 			has_crystal++
-			boutput(user, "<span class='notice'>You plug the telecrystal into the teleportation pad.</span>")
+			boutput(user, SPAN_NOTICE("You plug the telecrystal into the teleportation pad."))
 
 	ex_act()
 		return
@@ -545,15 +564,21 @@
 	bullet_act()
 		return
 
+TYPEINFO(/obj/supply_pad/incoming)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = 10
+
 /obj/supply_pad/incoming
 	name = "Incoming supply pad"
 	direction = 0
+
+TYPEINFO(/obj/supply_pad/outgoing)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
 	mats = 10
 
 /obj/supply_pad/outgoing
 	name = "Outgoing supply pad"
 	direction = 1
-	mats = 10
 
 /obj/machinery/computer/special_supply
 	// This is a grade 1 workstation. Contains bare-bones supplies.
@@ -561,7 +586,7 @@
 	icon = 'icons/obj/computer.dmi'
 	icon_state = "QMcom"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	opacity = 0
 
 	var/obj/supply_pad/in_target
@@ -609,7 +634,7 @@
 
 	New()
 		..()
-		SPAWN_DBG(5 SECONDS)
+		SPAWN(5 SECONDS)
 			recheck()
 
 	proc/is_sellable(var/obj/O)
@@ -683,10 +708,10 @@
 					var/datum/supply_packs/P = locate(href_list["purchase"])
 					var/datum/supply_control/C = locate(href_list["control"])
 					if (C.is_available(workstation_grade))
-						if (P.cost <= wagesystem.shipping_budget)
+						if (P.cost <= wagesystem.budgets[BUDGET_CAT_DEPT_SUPPLY])
 							in_target.used()
 							C.consume()
-							wagesystem.shipping_budget -= P.cost
+							wagesystem.budgets[BUDGET_CAT_DEPT_SUPPLY] -= P.cost
 							P.create(T)
 							showswirl(T)
 							message = "<span class='good'>Purchase complete. Cost: [P.cost] credits.</span>"
@@ -712,7 +737,7 @@
 						if (is_sellable(O))
 							CR = O
 						else if (O.density || isliving(O) || isitem(O))
-							message = "<span class='bad'>Please remove all objects and lifeforms not being sold from the telepad.</span>"
+							message = "<span class='bad'>Please remove all objects and lifeforms not being sold from the telepad.</spans>"
 							attack_hand(usr)
 							return
 					if (!CR)
@@ -723,7 +748,7 @@
 							if (!istype(Q))
 								Q.set_loc(T)
 								for (var/mob/M in viewers(Q))
-									boutput(M, "<span class='notice'>[Q] pops out of [CR]!</span>")
+									boutput(M, SPAN_NOTICE("[Q] pops out of [CR]!"))
 							else
 								profit += do_sell(Q)
 								qdel(Q)
@@ -785,9 +810,9 @@ h2 {
 			interface += "<span class='bad'><b>Warning:</b> workstation operating off battery power.<br><br>"
 		if (message)
 			interface += "[message]<br><br>"
-		interface += "<strong>Expedition budget:</strong> [wagesystem.shipping_budget] credits<br>"
+		interface += "<strong>Expedition budget:</strong> [wagesystem.budgets[BUDGET_CAT_DEPT_SUPPLY]] credits<br>"
 		if (!in_target)
-			interface += "<span class='bad'>Incoming supply pad not detected. <a href='?src=\ref[src];recheck=1'>Re-check</a></span><br>"
+			interface += "<span class='bad'>Incoming supply pad not detected. <a href='byond://?src=\ref[src];recheck=1'>Re-check</a></span><br>"
 		else
 			if (in_target.has_crystal == 0)
 				interface += "<span class='bad'>Incoming supply pad telecrystal storage depleted.</span><br>"
@@ -796,7 +821,7 @@ h2 {
 			else
 				interface += "<span class='good'>Incoming supply pad is ready. Available crystals: [in_target.has_crystal].</span><br>"
 		if (!out_target)
-			interface += "<span class='bad'>Outgoing supply pad not detected. <a href='?src=\ref[src];recheck=1'>Re-check</a></span><br>"
+			interface += "<span class='bad'>Outgoing supply pad not detected. <a href='byond://?src=\ref[src];recheck=1'>Re-check</a></span><br>"
 		else
 			if (out_target.has_crystal == 0)
 				interface += "<span class='bad'>Outgoing supply pad telecrystal storage depleted.</span><br>"
@@ -805,7 +830,7 @@ h2 {
 			else
 				interface += "<span class='good'>Outgoing supply pad is ready. Available crystals: [out_target.has_crystal].</span><br>"
 		if (mode == 0)
-			interface += "<strong>Purchase items</strong> | <a href='?src=\ref[src];mode=1'>View market demand</a> | <a href='?src=\ref[src];sell=1'>Sell goods</a><br>"
+			interface += "<strong>Purchase items</strong> | <a href='byond://?src=\ref[src];mode=1'>View market demand</a> | <a href='byond://?src=\ref[src];sell=1'>Sell goods</a><br>"
 			interface += "<table class='orderable'><thead><tr><th>Item name and contents</th><th>Stock</th><th>Cost</th><th>Purchase</th></tr></thead>"
 			interface += "<tbody>"
 			for (var/datum/supply_control/S in C.special_supply_control)
@@ -823,11 +848,11 @@ h2 {
 						interface += "<td>[P.cost * S.cost_multiplier]</td>"
 						interface += "<td class='purchase'>"
 						if (S.is_available(workstation_grade) && in_target)
-							interface += "<a href='?src=\ref[src];purchase=\ref[P];control=\ref[S]'>Buy</a>"
+							interface += "<a href='byond://?src=\ref[src];purchase=\ref[P];control=\ref[S]'>Buy</a>"
 						interface += "</td></tr>"
 			interface += "</tbody></table>"
 		else
-			interface += "<a href='?src=\ref[src];mode=0'>Purchase items</a> | <strong>View market demand</strong> | <a href='?src=\ref[src];sell=1'>Sell goods</a><br>"
+			interface += "<a href='byond://?src=\ref[src];mode=0'>Purchase items</a> | <strong>View market demand</strong> | <a href='byond://?src=\ref[src];sell=1'>Sell goods</a><br>"
 			interface += "<table class='orderable'><thead><tr><th>Demanded commodity</th><th>Price per unit</th><th>Demand level</th></thead>"
 			for (var/datum/demand_control/D in C.special_demand_control)
 				var/vis = D.visibility(workstation_grade)

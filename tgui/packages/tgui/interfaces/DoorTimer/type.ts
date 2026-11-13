@@ -5,7 +5,7 @@
  * @license MIT
  */
 
-import { BooleanLike } from 'common/react';
+import { BooleanLike } from 'tgui-core/react';
 
 export interface DoorTimerData {
   maxTime: number;
@@ -14,4 +14,7 @@ export interface DoorTimerData {
   time: number;
   flasher?: BooleanLike;
   recharging?: BooleanLike;
+  flusher?: BooleanLike;
+  flusheropen?: BooleanLike;
+  opening?: BooleanLike;
 }

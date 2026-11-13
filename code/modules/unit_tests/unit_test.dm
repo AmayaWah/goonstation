@@ -22,7 +22,17 @@ var/global/datum/unit_test_controller/unit_tests = new()
 	var/datum/unit_test/current_test
 	var/failed_any_test = FALSE
 	var/test_log
-	var/dmm_suite/reservation
+	/// Responses for tgui prompts, stored last-first, see [/datum/unit_test/proc/queue_tgui_responses]
+	var/list/tgui_responses = list()
+
+/datum/unit_test_controller/proc/pop_tgui_response()
+	. = src.tgui_responses[length(src.tgui_responses)]
+	src.tgui_responses.len--
+
+/datum/unit_test_controller/proc/pop_tgui_response_async(datum/callback/callback)
+	var/response = src.pop_tgui_response()
+	if (!isnull(response))
+		callback?.InvokeAsync(response)
 
 /datum/unit_test_controller/proc/log_test(text)
 	if(src.test_log)
@@ -30,14 +40,17 @@ var/global/datum/unit_test_controller/unit_tests = new()
 	world.log << text
 
 /datum/unit_test_controller/proc/run_tests()
-	if (isnull(reservation))
-		var/loaded = file2text('code/modules/unit_tests/unit_tests.dmm')
-		reservation = new/dmm_suite()
-		reservation.read_map(loaded, 1, 1, 1,'code/modules/unit_tests/unit_tests.dmm', DMM_OVERWRITE_MOBS | DMM_OVERWRITE_OBJS)
-		sleep(0)
+	rand_seed(69420)
 	LAGCHECK(LAG_HIGH)
 
+#ifdef UNIT_TEST_TYPES
+	var/tests_to_run = list(UNIT_TEST_TYPES)
+#elif defined(UNIT_TESTS_REGRESSION_ONLY)
+	var/tests_to_run = childrentypesof(/datum/unit_test/regression)
+#else
 	var/tests_to_run = childrentypesof(/datum/unit_test)
+	tests_to_run -= typesof(/datum/unit_test/regression)
+#endif
 	for (var/_test_to_run in tests_to_run)
 		var/datum/unit_test/test_to_run = _test_to_run
 		if (initial(test_to_run.focus))
@@ -48,6 +61,7 @@ var/global/datum/unit_test_controller/unit_tests = new()
 
 	for(var/I in tests_to_run)
 		var/datum/unit_test/test = new I
+		LAGCHECK(LAG_HIGH)
 
 		src.current_test = test
 		var/duration = TIME
@@ -55,6 +69,11 @@ var/global/datum/unit_test_controller/unit_tests = new()
 		test.Run()
 
 		duration = TIME - duration
+
+		if (length(src.tgui_responses))
+			test.Fail("[length(src.tgui_responses)] queued tgui response(s) were never used")
+			src.tgui_responses.Cut()
+
 		src.current_test = null
 		src.failed_any_test |= !test.succeeded
 
@@ -69,12 +88,9 @@ var/global/datum/unit_test_controller/unit_tests = new()
 		test_results[I] = list("status" = test.succeeded ? UNIT_TEST_PASSED : UNIT_TEST_FAILED, "message" = message, "name" = I)
 
 		qdel(test)
-
 		LAGCHECK(LAG_HIGH)
 
-	var/file_name = "data/unit_tests.json"
-	fdel(file_name)
-	file(file_name) << json_encode(test_results)
+	rustg_file_write(json_encode(test_results), "data/unit_tests.json")
 
 	//Fail Automaton
 	if(src.failed_any_test)
@@ -149,6 +165,16 @@ var/global/datum/unit_test_controller/unit_tests = new()
 	var/instance = new type(arglist(arguments))
 	allocated += instance
 	return instance
+
+/// Queues responses for the next tgui prompts (tgui_alert, tgui_input_list, ...) to return in order, instead of needing a client.
+/// A null response acts like the user cancelling.
+/datum/unit_test/proc/queue_tgui_responses(...)
+	var/list/responses = list()
+	for (var/i in length(args) to 1 step -1)
+		responses += list(args[i])
+	global.unit_tests.tgui_responses = responses + global.unit_tests.tgui_responses
+
+/datum/unit_test/regression
 
 /area/testroom
 /obj/landmark/unit_test_top_right

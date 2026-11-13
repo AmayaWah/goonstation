@@ -23,9 +23,11 @@
 
 // areas
 
-/area/radiostation/
+/area/radiostation
+	requires_power = FALSE
 	name = "Radio Station"
 	icon_state = "purple"
+	occlude_foreground_parallax_layers = TRUE
 
 /area/radiostation/studio
 	name = "Radio Studio"
@@ -37,14 +39,14 @@
 
 /area/radiostation/podbay
 	name = "Radio Podbay"
-	icon_state = "green"
+	icon_state = "hangar"
 
 /area/radiostation/bedroom
-	name = "Radio Bedroom"
+	name = "Radio Quarters"
 	icon_state = "red"
 
 /area/radiostation/engineering
-	name = "Radio Engine"
+	name = "Radio Supply Closet"
 	icon_state = "blue"
 
 /area/radiostation/hallway
@@ -56,6 +58,22 @@
 	icon_state = "yellow"
 	sound_environment = 3
 	workplace = 1
+
+/area/radiostation/tv_set
+	name = "Radio TV Studio"
+	icon_state = "green"
+
+/area/radiostation/green
+	name = "Radio Green Room"
+	icon_state = "green"
+
+/area/radiostation/teleporter
+	name = "Radio Cargo Intake"
+	icon_state = "red"
+
+/area/radiostation/press
+	name = "Radio Paper Press"
+	icon_state = "yellow"
 
 //objects
 
@@ -128,29 +146,53 @@
 	desc = "A large and complicated audio mixing desk. Complete with fancy displays, dials, knobs and automated faders."
 	icon = 'icons/obj/radiostation.dmi'
 	icon_state = "mixtable-2"
-	anchored = 1.0
+	anchored = ANCHORED
 	density = 1
 	flags = TGUI_INTERACTIVE
+	/// A static list of mixingdesk permitted accent IDs, indexed by their name.
 	var/static/list/accents
-	var/list/voices
-	var/selected_voice = 0
+	/// The maximum number of voices that this mixing desk may store.
 	var/const/max_voices = 9
+	/// A list of name/accent pairs to be displayed on the UI.
+	var/list/voices
+	/// A list of abstract say sources to be used for each voice.
+	var/list/atom/movable/abstract_say_source/mixing_desk/voice_say_sources
+	/// The index of the current voice selected.
+	var/selected_voice = 0
+	/// Whether the UI should display a say popup window.
 	var/say_popup = FALSE
 
 /obj/submachine/mixing_desk/New()
 	. = ..()
 	src.voices = list()
-	if(!src.accents)
-		src.accents = list()
-		for(var/bio_type in concrete_typesof(/datum/bioEffect/speech, FALSE))
-			var/datum/bioEffect/speech/effect = new bio_type()
-			if(!effect.acceptable_in_mutini || !effect.occur_in_genepools)
-				continue
-			var/name = effect.id
-			if(length(name) >= 7 && copytext(name, 1, 8) == "accent_")
-				name = copytext(name, 8)
-			name = replacetext(name, "_", " ")
-			accents[name] = effect
+	src.voice_say_sources = list()
+
+	if (src.accents)
+		return
+
+	src.accents = list()
+	for (var/datum/bioEffect/speech/effect_type as anything in concrete_typesof(/datum/bioEffect/speech))
+		if (!effect_type::acceptable_in_mutini || !effect_type::occur_in_genepools || !effect_type::mixingdesk_allowed)
+			continue
+
+		var/name = effect_type::id
+		if ((length(name) >= 7) && findtext(name, "accent_", 1, 8))
+			name = copytext(name, 8)
+
+		name = replacetext(name, "_", " ")
+		src.accents[name] = effect_type::id
+
+/obj/submachine/mixing_desk/attack_hand(mob/user)
+	if (isghostcritter(user) || isghostdrone(user))
+		boutput(user, SPAN_ALERT("This thing looks way too complex to use."))
+		return
+	. = ..()
+
+/obj/submachine/mixing_desk/attackby(obj/item/I, mob/user)
+	if (isghostcritter(user) || isghostdrone(user))
+		boutput(user, SPAN_ALERT("This thing looks way too complex to use."))
+		return
+	. = ..()
 
 /obj/submachine/mixing_desk/ui_status(mob/user, datum/ui_state/state)
 	return min(
@@ -172,64 +214,82 @@
 	)
 
 /obj/submachine/mixing_desk/ui_act(action, params, datum/tgui/ui, datum/ui_state/state)
-	if(..())
+	if (..())
 		return
-	switch(action)
-		if("add_voice")
-			if(length(src.voices) >= src.max_voices)
+
+	switch (action)
+		if ("add_voice")
+			if (length(src.voices) >= src.max_voices)
 				return FALSE
-			var/name = input("Enter voice name:", "Voice name")
-			if(!name)
+
+			var/name = tgui_input_text(usr, "Enter voice name:", "Voice Name", max_length = FULLNAME_MAX)
+			if (!name)
 				return FALSE
-			phrase_log.log_phrase("voice-radiostation", name, no_duplicates=TRUE)
-			if(length(name) > FULLNAME_MAX)
-				name = copytext(name, 1, FULLNAME_MAX)
-			var/accent = input("Pick an accent:", "Accent") as null|anything in list("none") + src.accents
-			if(accent == "none")
+
+			phrase_log.log_phrase("voice-radiostation", name, no_duplicates = TRUE)
+
+			var/accent = tgui_input_list(usr, "Pick an accent:", "Accent", list("None") + src.accents)
+			if (accent == "None")
 				accent = null
-			src.voices += list(list("name"=name, "accent"=accent))
+				src.voice_say_sources += new /atom/movable/abstract_say_source/mixing_desk(src, name)
+			else
+				src.voice_say_sources += new /atom/movable/abstract_say_source/mixing_desk(src, name, src.accents[accent])
+
+			src.voices += list(list(
+				"name" = name,
+				"accent" = accent,
+			))
+
 			. = TRUE
+
 		if("remove_voice")
 			var/id = params["id"]
-			if(id <= 0 || id > length(voices))
+			if ((id <= 0) || (id > length(src.voices)))
 				return FALSE
-			if(id == src.selected_voice)
+
+			if (id == src.selected_voice)
 				src.selected_voice = 0
-			else if(id < src.selected_voice)
-				src.selected_voice--
+			else if (id < src.selected_voice)
+				src.selected_voice -= 1
+
 			src.voices.Cut(id, id + 1)
+			qdel(src.voice_say_sources[id])
+
 			. = TRUE
+
 		if("switch_voice")
 			var/id = params["id"]
-			if(id <= 0 || id > length(voices))
+			if ((id <= 0) || (id > length(src.voices)))
 				src.selected_voice = 0
 			else
 				src.selected_voice = id
+
 			. = TRUE
+
 		if("say_popup")
 			if("id" in params)
 				src.selected_voice = params["id"]
+
 			src.say_popup = TRUE
 			. = TRUE
+
 		if("cancel_say")
 			src.say_popup = FALSE
 			. = TRUE
+
 		if("say")
 			src.say_popup = FALSE
-			var/message = html_encode(params["message"])
-			if(src.selected_voice <= 0 || src.selected_voice > length(voices))
-				usr.say(message)
+			var/message = strip_html(params["message"])
+			if ((src.selected_voice <= 0) || (src.selected_voice > length(src.voices)))
+				usr.say(message, flags = SAYFLAG_SPOKEN_BY_PLAYER)
 				return TRUE
-			var/name = voices[src.selected_voice]["name"]
-			var/accent_id = voices[src.selected_voice]["accent"]
-			if(!isnull(accent_id))
-				var/datum/bioEffect/speech/accent = src.accents[accent_id]
-				message = accent.OnSpeak(message)
-			logTheThing("say", usr, name, "SAY: [message] (Synthesizing the voice of <b>([constructTarget(name,"say")])</b> with accent [accent_id])")
-			var/original_name = usr.real_name
-			usr.real_name = copytext(name, 1, MOB_NAME_MAX_LENGTH)
-			usr.say(message)
-			usr.real_name = original_name
+
+			src.voice_say_sources[src.selected_voice].say(message, flags = SAYFLAG_SPOKEN_BY_PLAYER | SAYFLAG_IGNORE_POSITION)
+
+			var/name = src.voices[src.selected_voice]["name"]
+			var/accent_id = src.accents[src.voices[src.selected_voice]["accent"]]
+			logTheThing(LOG_SAY, usr, "SAY: [message] (Synthesizing the voice of <b>([constructTarget(name, "say")])</b> with accent [accent_id])")
+
 			. = TRUE
 
 // Record player
@@ -238,67 +298,108 @@
 	desc = "An old school vinyl record player sat on a set of drawers. Shame you don't have any records."
 	icon = 'icons/obj/radiostation.dmi'
 	icon_state = "mixtable-3"
-	anchored = 1.0
+	anchored = ANCHORED
 	density = 1
-	var/has_record = 0
-	var/is_playing = 0
+	var/can_play_music = TRUE
+	var/has_record = FALSE
 	var/obj/item/record/record_inside = null
 
 	New()
-		..()
-		MAKE_SENDER_RADIO_PACKET_COMPONENT("pda", FREQ_PDA)
+		. = ..()
+		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, "pda", FREQ_PDA)
+		START_TRACKING
 
-/obj/submachine/record_player/attackby(obj/item/W as obj, mob/user as mob)
+	get_desc()
+		if(!src.can_play_music)
+			. += " There's an \"out of order\" label on it."
+
+	disposing()
+		STOP_TRACKING
+		. = ..()
+
+/obj/submachine/record_player/attackby(obj/item/W, mob/user)
+	if (isghostcritter(user) || isghostdrone(user))
+		boutput(user, SPAN_ALERT("This thing looks way too complex to use."))
+		return
 	if (istype(W, /obj/item/record))
-		if(has_record)
+		if (!src.can_play_music)
+			boutput(user, SPAN_ALERT("You insert the record into the record player, but it won't turn on."))
+			return
+		else if(has_record)
 			boutput(user, "The record player already has a record inside!")
-		else if(!is_playing)
+		else if(is_music_playing())
+			boutput(user, SPAN_ALERT("Music is already playing, it'd be rude to interrupt!"))
+		else
+			var/obj/item/record/inserted_record = W
+			var/record_name = copytext(tgui_input_text(user, "What is the name of this record?", "Record Name", inserted_record.record_name), 1, MAX_MESSAGE_LEN)
+			if(!record_name)
+				boutput(user, SPAN_NOTICE("You decide not to play this record."))
+				return
+			if(!(inserted_record in user.equipped_list()))
+				boutput(user, SPAN_ALERT("You have to be holding a record to place it in the player!"))
+				return
+			if(!in_interact_range(src, user))
+				boutput(user, SPAN_ALERT("You're out of range of the [src.name]!"))
+				return
+			if(is_music_playing()) // someone queuing up several input windows
+				return
+			phrase_log.log_phrase("record", html_encode(record_name))
 			boutput(user, "You insert the record into the record player.")
-			var/inserted_record = W
-			src.visible_message("<span class='notice'><b>[user] inserts the record into the record player.</b></span>")
-			user.drop_item()
+			src.visible_message(SPAN_NOTICE("<b>[user] inserts the record into the record player.</b>"))
+			user.drop_item(W)
 			W.set_loc(src)
 			src.record_inside = W
-			src.has_record = 1
-			var/R = html_encode(input("What is the name of this record?","Record Name") as null|text)
-			if(!in_interact_range(src, user))
-				boutput(user, "You're out of range of the [src.name]!")
-				return
-			if(src.is_playing) // someone queuing up several input windows
-				return
-			if(!inserted_record || (inserted_record != src.record_inside)) // record was removed/changed before input confirmation
-				return
-			if(R)
-				phrase_log.log_phrase("record", R)
-			if (!R)
-				R = record_inside.record_name ? record_inside.record_name : pick("rad tunes","hip jams","cool music","neat sounds","magnificent melodies","fantastic farts")
-			user.client.play_music_radio(record_inside.song, R)
+			src.has_record = TRUE
+
+			if (istype(W, /obj/item/record/remote))
+				// play remote
+				var/obj/item/record/remote/YT = W
+				if (YT.youtube)
+					play_youtube_remote_url(user, YT.youtube)
+				else
+					boutput(user, SPAN_ALERT("You have no idea what happened but this record does not seem to work. Maybe call an admin."))
+					return	// guh????
+			else
+				user.client.play_music_radio(record_inside.song, html_encode(record_name))
 			/// PDA message ///
 			var/datum/signal/pdaSignal = get_free_signal()
-			pdaSignal.data = list("address_1"="00000000", "command"="text_message", "sender_name"="RADIO-STATION", "sender"="00000000", "message"="Now playing: [R].", "group" = MGA_RADIO)
+			pdaSignal.data = list("address_1"="00000000", "command"="text_message", "sender_name"="RADIO-STATION", "sender"="00000000", "message"="Now playing: [inserted_record.record_name] ([record_name]).", "group" = MGA_RADIO)
 			SEND_SIGNAL(src, COMSIG_MOVABLE_POST_RADIO_PACKET, pdaSignal, null, "pda")
-			//////
-			src.is_playing = 1
 #ifdef UNDERWATER_MAP
-			sleep(5000) // mbc : underwater map has the radio on-station instead of in space. so it gets played a lot more often + is breaking my immersion
+			EXTEND_COOLDOWN(global, "music", 500 SECONDS)
 #else
-			sleep(3000)
+			EXTEND_COOLDOWN(global, "music", 300 SECONDS)
 #endif
-			src.is_playing = 0
 	else
 		..()
 
-/obj/submachine/record_player/attack_hand(mob/user as mob)
+/obj/submachine/record_player/attack_hand(mob/user)
 	if(has_record)
-		if(!is_playing)
+		if(!is_music_playing())
 			boutput(user, "You remove the record from the record player. It looks worse for the wear.")
-			src.visible_message("<span class='notice'><b>[user] removes the record from the record player.</b></span>")
+			src.visible_message(SPAN_NOTICE("<b>[user] removes the record from the record player.</b>"))
 			user.put_in_hand_or_drop(src.record_inside)
 			src.record_inside = null
 			src.has_record = 0
 		else
 			boutput(user, "You can feel heat emanating from the record player. You should probably wait a while before touching it. It's kinda old and you don't want to break it.")
 
+/obj/submachine/record_player/portable
+	name = "portable record player"
+	desc = "An old school record player, painted in a cool syndicate-red."
+	icon_state = "portable_record"
+	density = 0
+
+	New()
+		..()
+		src.AddComponent(/datum/component/foldable,/obj/item/objBriefcase/syndicate)
+		var/datum/component/foldable/fold_component = src.GetComponent(/datum/component/foldable) //Fold up into a briefcase the first spawn
+		if(!fold_component?.the_briefcase)
+			return
+		var/obj/item/objBriefcase/briefcase = fold_component.the_briefcase
+		if (briefcase)
+			briefcase.set_loc(get_turf(src))
+			src.set_loc(briefcase)
 // Records
 /obj/item/record
 	name = "record"
@@ -309,7 +410,7 @@
 	var/record_name = ""
 	var/add_overlay = 1
 	w_class = W_CLASS_NORMAL
-	throwforce = 3.0
+	throwforce = 3
 	throw_speed = 3
 	throw_range = 8
 	force = 2
@@ -321,138 +422,150 @@
 	if (record_name)
 		src.desc = "A fairly large record. There's a sticker on it that says \"[record_name]\"."
 
-/obj/item/record/attack(mob/M as mob, mob/user as mob) // copied plate code
+/obj/item/record/attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
 	if (user.a_intent == INTENT_HARM)
-		if (M == user)
-			boutput(user, "<span class='alert'><B>You smash the record over your own head!</b></span>")
+		if (target == user)
+			boutput(user, SPAN_ALERT("<B>You smash the record over your own head!</b>"))
 		else
-			M.visible_message("<span class='alert'><B>[user] smashes [src] over [M]'s head!</B></span>")
-			logTheThing("combat", user, M, "smashes [src] over [constructTarget(M,"combat")]'s head! ")
-		M.TakeDamageAccountArmor("head", force, 0, 0, DAMAGE_BLUNT)
-		M.changeStatus("weakened", 2 SECONDS)
+			target.visible_message(SPAN_ALERT("<B>[user] smashes [src] over [target]'s head!</B>"))
+			logTheThing(LOG_COMBAT, user, "smashes [src] over [constructTarget(target,"combat")]'s head! ")
+		target.TakeDamageAccountArmor("head", force, 0, 0, DAMAGE_BLUNT)
+		target.changeStatus("knockdown", 2 SECONDS)
 		playsound(src, "shatter", 70, 1)
 		var/obj/O = new /obj/item/raw_material/shard/glass
-		O.set_loc(get_turf(M))
+		O.set_loc(get_turf(target))
 		if (src.material)
-			O.setMaterial(copyMaterial(src.material))
+			O.setMaterial(src.material)
 		qdel(src)
 	else
-		M.visible_message("<span class='alert'>[user] taps [M] over the head with [src].</span>")
-		logTheThing("combat", user, M, "taps [constructTarget(M,"combat")] over the head with [src].")
+		target.visible_message(SPAN_ALERT("[user] taps [target] over the head with [src]."))
+		logTheThing(LOG_COMBAT, user, "taps [constructTarget(target,"combat")] over the head with [src].")
 
 ABSTRACT_TYPE(/obj/item/record/random)
 
 /obj/item/record/random/dance_on_a_space_volcano
 	name = "record - \"Dance On A Space Volcano\""
 	record_name = "Dance On A Space Volcano"
-	song = "sound/radio_station/music/dance_on_a_space_volcano.ogg"
+	song = 'sound/radio_station/music/dance_on_a_space_volcano.ogg'
 
 /obj/item/record/random/adventure_1
-	name = "record - \"adventure track #1\""
-	record_name = "adventure track #1"
+	name = "record - \"Adventure Track #1\""
+	record_name = "Adventure Track #1"
 	song = "sound/radio_station/music/adventure_1.mod"
 
 /obj/item/record/random/adventure_2
-	name = "record - \"adventure track #2\""
-	record_name = "adventure track #2"
+	name = "record - \"Adventure Track #2\""
+	record_name = "Adventure Track #2"
 	song = "sound/radio_station/music/adventure_2.s3m"
 
 /obj/item/record/random/adventure_3
-	name = "record - \"adventure track #3\""
-	record_name = "adventure track #3"
-	song = "sound/radio_station/music/adventure_3.ogg"
+	name = "record - \"Adventure Track #3\""
+	record_name = "Adventure Track #3"
+	song = 'sound/radio_station/music/adventure_3.ogg'
 
 /obj/item/record/random/adventure_4
-	name = "record - \"adventure track #4\""
-	record_name = "adventure track #4"
-	song = "sound/radio_station/music/adventure_4.ogg"
+	name = "record - \"Adventure Track #4\""
+	record_name = "Adventure Track #4"
+	song = 'sound/radio_station/music/adventure_4.ogg'
 
 /obj/item/record/random/adventure_5
-	name = "record - \"adventure track #5\""
-	record_name = "adventure track #5"
-	song = "sound/radio_station/music/adventure_5.ogg"
+	name = "record - \"Adventure Track #5\""
+	record_name = "Adventure Track #5"
+	song = 'sound/radio_station/music/adventure_5.ogg'
 
 /obj/item/record/random/adventure_6
-	name = "record - \"adventure track #6\""
-	record_name = "adventure track #6"
+	name = "record - \"Adventure Track #6\""
+	record_name = "Adventure Track #6"
 	song = "sound/radio_station/music/adventure_6.mod"
 
 /obj/item/record/random/upbeat_1
-	name = "record - \"upbeat track #1\""
-	record_name = "upbeat track #1"
-	song = "sound/radio_station/music/upbeat_1.ogg"
+	name = "record - \"Upbeat Track #1\""
+	record_name = "Upbeat Track #1"
+	song = 'sound/radio_station/music/upbeat_1.ogg'
 
 /obj/item/record/random/upbeat_2
-	name = "record - \"upbeat track #2\""
-	record_name = "upbeat track #2"
-	song = "sound/radio_station/music/upbeat_2.ogg"
+	name = "record - \"Upbeat Track #2\""
+	record_name = "Upbeat Track #2"
+	song = 'sound/radio_station/music/upbeat_2.ogg'
 
 /obj/item/record/random/chill_1
-	name = "record - \"chill track #1\""
-	record_name = "chill track #1"
-	song = "sound/radio_station/music/chill_1.ogg"
+	name = "record - \"Chill Track #1\""
+	record_name = "Chill Track #1"
+	song = 'sound/radio_station/music/chill_1.ogg'
 
 /obj/item/record/random/chill_2
-	name = "record - \"chill track #2\""
-	record_name = "chill track #2"
-	song = "sound/radio_station/music/chill_2.ogg"
+	name = "record - \"Chill Track #2\""
+	record_name = "Chill Track #2"
+	song = 'sound/radio_station/music/chill_2.ogg'
 
 /obj/item/record/random/chill_3
-	name = "record - \"chill track #3\""
-	record_name = "chill track #3"
-	song = "sound/radio_station/music/chill_3.ogg"
+	name = "record - \"Chill Track #3\""
+	record_name = "Chill Track #3"
+	song = 'sound/radio_station/music/chill_3.ogg'
 
 /obj/item/record/random/chill_4
-	name = "record - \"chill track #4\""
-	record_name = "chill track #4"
-	song = "sound/radio_station/music/chill_4.ogg"
+	name = "record - \"Chill Track #4\""
+	record_name = "Chill Track #4"
+	song = 'sound/radio_station/music/chill_4.ogg'
 
-/obj/item/record/january
-	record_name = "january"
+/obj/item/record/random/january
+	name = "record - \"January\""
+	record_name = "January"
 	song = "sound/radio_station/music/january.xm"
 
-/obj/item/record/february
-	record_name = "february"
+/obj/item/record/random/february
+	name = "record - \"February\""
+	record_name = "February"
 	song = "sound/radio_station/music/february.xm"
 
-/obj/item/record/march
-	record_name = "march"
+/obj/item/record/random/march
+	name = "record - \"March\""
+	record_name = "March"
 	song = "sound/radio_station/music/march.xm"
 
-/obj/item/record/april
-	record_name = "april"
+/obj/item/record/random/april
+	name = "record - \"April\""
+	record_name = "April"
 	song = "sound/radio_station/music/april.xm"
 
-/obj/item/record/may
-	record_name = "may"
+/obj/item/record/random/may
+	name = "record - \"May\""
+	record_name = "May"
 	song = "sound/radio_station/music/may.xm"
 
-/obj/item/record/june
-	record_name = "june"
+/obj/item/record/random/june
+	name = "record - \"June\""
+	record_name = "June"
 	song = "sound/radio_station/music/june.xm"
 
-/obj/item/record/july
-	record_name = "july"
+/obj/item/record/random/july
+	name = "record - \"July\""
+	record_name = "July"
 	song = "sound/radio_station/music/july.xm"
 
-/obj/item/record/august
-	record_name = "august"
+/obj/item/record/random/august
+	name = "record - \"August\""
+	record_name = "August"
 	song = "sound/radio_station/music/august.xm"
 
-/obj/item/record/september
-	record_name = "september"
+/obj/item/record/random/september
+	name = "record - \"September\""
+	record_name = "September"
 	song = "sound/radio_station/music/september.xm"
 
-/obj/item/record/october
-	record_name = "october"
+/obj/item/record/random/october
+	name = "record - \"October\""
+	record_name = "October"
 	song = "sound/radio_station/music/october.xm"
 
-/obj/item/record/november
-	record_name = "november"
+/obj/item/record/random/november
+	name = "record - \"November\""
+	record_name = "November"
 	song = "sound/radio_station/music/november.xm"
 
-/obj/item/record/december
-	record_name = "december"
+/obj/item/record/random/december
+	name = "record - \"December\""
+	record_name = "December"
 	song = "sound/radio_station/music/december.xm"
 
 /obj/item/record/spacebux // Many thanks to Camryn Buttes!!
@@ -468,27 +581,27 @@ ABSTRACT_TYPE(/obj/item/record/random/nostalgic)
 /obj/item/record/random/nostalgic/distant
 	name = "record - \"Distant Star\""
 	record_name = "Distant Star"
-	song = "sound/radio_station/music/distant_star.ogg"
+	song = 'sound/radio_station/music/distant_star.ogg'
 
 /obj/item/record/random/nostalgic/technologic
 	name = "record - \"High Technologic Beat\""
 	record_name = "High Technologic Beat"
-	song = "sound/radio_station/music/high_technologic_beat.ogg"
+	song = 'sound/radio_station/music/high_technologic_beat.ogg'
 
 /obj/item/record/random/nostalgic/afterparty
 	name = "record - \"After Party\""
 	record_name = "After Party"
-	song = "sound/radio_station/music/after_party.ogg"
+	song = 'sound/radio_station/music/after_party.ogg'
 
 /obj/item/record/random/nostalgic/soalive
 	name = "record - \"Everyone Is So Alive\""
 	record_name = "Everyone Is So Alive"
-	song = "sound/radio_station/music/everyone_is_so_alive.ogg"
+	song = 'sound/radio_station/music/everyone_is_so_alive.ogg'
 
 /obj/item/record/random/nostalgic/alivetoo
 	name = "record - \"It Feels Good To Be Alive Too\""
 	record_name = "It Feels Good To Be Alive Too"
-	song = "sound/radio_station/music/it_feels_good_to_be_alive_too.ogg"
+	song = 'sound/radio_station/music/it_feels_good_to_be_alive_too.ogg'
 
 ABSTRACT_TYPE(/obj/item/record/random/chronoquest)
 /obj/item/record/random/chronoquest
@@ -499,42 +612,61 @@ ABSTRACT_TYPE(/obj/item/record/random/chronoquest)
 /obj/item/record/random/chronoquest/waystations
 	record_name = "Waystations"
 	name = "record - \"Waystations\""
-	song = "sound/radio_station/music/waystations.ogg"
+	song = 'sound/radio_station/music/waystations.ogg'
 
 /obj/item/record/random/chronoquest/planets
 	record_name = "Planets"
 	name = "record - \"Planets\""
-	song = "sound/radio_station/music/planets.ogg"
+	song = 'sound/radio_station/music/planets.ogg'
 
 /obj/item/record/random/chronoquest/oh_no_evil_star
 	record_name = "Oh No Evil Star"
 	name = "record - \"Oh No Evil Star\""
-	song = "sound/radio_station/music/oh_no_evil_star.ogg"
+	song = 'sound/radio_station/music/oh_no_evil_star.ogg'
 
 /obj/item/record/random/chronoquest/cloudskymanguy
 	record_name = "Cloudskymanguy"
 	name = "record - \"Cloudskymanguy\""
-	song = "sound/radio_station/music/cloudskymanguy.ogg"
+	song = 'sound/radio_station/music/cloudskymanguy.ogg'
 
 /obj/item/record/random/chronoquest/black_wing_interface
 	record_name = "Black Wing Interface"
 	name = "record - \"Black Wing Interface\""
-	song = "sound/radio_station/music/black_wing_interface.ogg"
+	song = 'sound/radio_station/music/black_wing_interface.ogg'
 
 /obj/item/record/random/chronoquest/riverdancer
 	name = "record - \"Riverdancer\""
 	record_name = "Riverdancer"
-	song = "sound/radio_station/music/riverdancer.ogg"
+	song = 'sound/radio_station/music/riverdancer.ogg'
 
 /obj/item/record/random/key_lime
-	name = "record - \"key_lime #1\""
-	record_name = "key lime #1"
-	song = "sound/radio_station/music/key_lime.ogg"
+	name = "record - \"Key Lime #1\""
+	record_name = "Key Lime #1"
+	song = 'sound/radio_station/music/key_lime.ogg'
 	add_overlay = FALSE
 
 	New()
 		..()
 		src.UpdateOverlays(new /image(src.icon, "record_6"), "recordlabel") //it should always be green because I'm so funny.
+
+// nukie record
+/obj/item/record/second_reality
+	name = "record - \"Second Reality\""
+	record_name = "Second Reality"
+	song = "sound/radio_station/music/second_reality.s3m"
+	add_overlay = FALSE
+
+	New()
+		..()
+#ifdef NIGHTSHADE
+		//apparently second reality has copyright issues, not allowed on streamer servers
+		qdel(src)
+		return
+#endif
+		var/image/overlay = new /image(src.icon, "record_3")
+		overlay.color = list(1.5, 0, 0, 0, 0, 0, 0, 0, 0) // very red
+		src.UpdateOverlays(overlay, "recordlabel")
+		src.desc = "A fairly large record. You imagine there are probably some rad songs on this. Rad, get it? Because the station is gonna be irradiated once the nuke detonates. Song by Purple Motion."
 
 ABSTRACT_TYPE(/obj/item/record/random/metal)
 /obj/item/record/random/metal
@@ -545,17 +677,17 @@ ABSTRACT_TYPE(/obj/item/record/random/metal)
 /obj/item/record/random/metal/xtra
 	name = "record - \"Radstorm Rock\""
 	record_name = "Radstorm Rock"
-	song = "sound/radio_station/music/xtra.ogg"
+	song = 'sound/radio_station/music/xtra.ogg'
 
 /obj/item/record/random/metal/giga
 	name = "record - \"Punctured Spacesuit\""
 	record_name = "Punctured Spacesuit"
-	song = "sound/radio_station/music/giga.ogg"
+	song = 'sound/radio_station/music/giga.ogg'
 
 /obj/item/record/random/metal/maxi
 	name = "record - \"Plasmageddon\""
 	record_name = "Plasmageddon"
-	song = "sound/radio_station/music/maxi.ogg"
+	song = 'sound/radio_station/music/maxi.ogg'
 
 ABSTRACT_TYPE(/obj/item/record/random/funk)
 /obj/item/record/random/funk
@@ -566,17 +698,27 @@ ABSTRACT_TYPE(/obj/item/record/random/funk)
 /obj/item/record/random/funk/funkadelic
 	name = "record - \"Fission Funk\""
 	record_name = "Fission Funk"
-	song = "sound/radio_station/music/funkadelic.ogg"
+	song = 'sound/radio_station/music/funkadelic.ogg'
 
 /obj/item/record/random/funk/groovy
 	name = "record - \"Gaussian Groove\""
 	record_name = "Gaussian Groove"
-	song = "sound/radio_station/music/groovy.ogg"
+	song = 'sound/radio_station/music/groovy.ogg'
 
 /obj/item/record/random/funk/time4lunch
 	name = "record - \"Lunch4Laika\""
 	record_name = "Lunch4Laika"
-	song = "sound/radio_station/music/lunch.ogg"
+	song = 'sound/radio_station/music/lunch.ogg'
+
+/obj/item/record/random/funk/monkey_riot
+	name = "record - \"Monkey Riot\""
+	record_name = "Monkey Riot"
+	song = 'sound/radio_station/music/monkey_riot.ogg'
+
+/obj/item/record/random/funk/space_gardener
+	name = "record - \"Space Gardener\""
+	record_name = "Space Gardener"
+	song = 'sound/radio_station/music/space_gardener.ogg'
 
 ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 /obj/item/record/random/notaquario
@@ -585,24 +727,29 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 		src.desc += {" A record from the Aquario and Not Tom Mixtape, looks pretty old!"}
 
 /obj/item/record/random/notaquario/beaches
+	name = "record - \"Beaches\""
 	record_name = "Beaches"
-	song = "sound/radio_station/music/beaches.ogg"
+	song = 'sound/radio_station/music/beaches.ogg'
 
 /obj/item/record/random/notaquario/graveyard
+	name = "record - \"Graveyard\""
 	record_name = "Graveyard"
-	song = "sound/radio_station/music/graveyard.ogg"
+	song = 'sound/radio_station/music/graveyard.ogg'
 
 /obj/item/record/random/notaquario/floaty
-	record_name = "I'm Floaty In Space But Thats Ok"
-	song = "sound/radio_station/music/floaty.ogg"
+	name = "record - \"I'm Floaty In Space But That's Ok\""
+	record_name = "I'm Floaty In Space But That's Ok"
+	song = 'sound/radio_station/music/floaty.ogg'
 
 /obj/item/record/random/notaquario/repose
+	name = "record - \"Repose\""
 	record_name = "Repose"
-	song = "sound/radio_station/music/repose.ogg"
+	song = 'sound/radio_station/music/repose.ogg'
 
 /obj/item/record/random/notaquario/biodome
+	name = "record - \"Biodome\""
 	record_name = "Biodome"
-	song = "sound/radio_station/music/biodome.ogg"
+	song = 'sound/radio_station/music/biodome.ogg'
 
 /obj/item/record/spacebux/New()
 	..()
@@ -618,59 +765,94 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	desc = "A fairly large record. It has a scratch on one side."
 	add_overlay = 0
 	icon_state = "record_blue"
-	song = "sound/radio_station/music/poo.ogg"
+	song = 'sound/radio_station/music/poo.ogg'
 
-/obj/item/record/poo/attackby(obj/item/P as obj, mob/user as mob)
+/obj/item/record/poo/attackby(obj/item/P, mob/user)
 	if (istype(P, /obj/item/magnifying_glass))
-		boutput(user, "<span class='notice'>You examine the record with the magnifying glass.</span>")
+		boutput(user, SPAN_NOTICE("You examine the record with the magnifying glass."))
 		sleep(2 SECONDS)
 		boutput(user, "The scratch on the record, upon close examination, is actually tiny lettering. It says, <i>Fuck Discount Dan's. I hope more of your factories go under and you all drown in your toxic sewage.</i>")
 
 /obj/item/record/atlas
 	desc = "Ode to a space ship."
-	song = "sound/radio_station/music/atlas.ogg"
+	song = 'sound/radio_station/music/atlas.ogg'
 
 /obj/item/record/honey
 	desc = "A fairly large record. It's all sticky and coated in honey!"
 	add_overlay = 0
 	icon_state = "record_honey"
-	song = "sound/radio_station/music/bumblebee.ogg"
+	song = 'sound/radio_station/music/bumblebee.ogg'
 
 /obj/item/record/christmas
 	desc = "A truly nefarious and unholy record that has been banned in most of space."
 	add_overlay = 0
 	icon_state = "record_red"
-	song = "sound/radio_station/music/christmassong.ogg"
+	song = 'sound/radio_station/music/christmassong.ogg'
 
 /obj/item/record/honkmas
 	desc = "Wow, this fruitcake record is almost as good as the real thing!"
 	add_overlay = 0
 	icon_state = "record_fruit"
-	song = "sound/radio_station/music/honkmas.ogg"
+	song = 'sound/radio_station/music/honkmas.ogg'
+
+/obj/item/record/lay_egg_is_true
+	desc = "This egg seems to be laid particularly TRUE!!!"
+	add_overlay = 0
+	icon_state = "record_duck"
+	song = 'sound/radio_station/music/lay_egg_is_true.ogg'
 
 /obj/item/record/clown_collection // By Arborinus. Honk!
 	add_overlay = 0
 	icon_state = "record_yellow"
 
 /obj/item/record/clown_collection/honk
-	song = "sound/radio_station/music/warriors_honk.ogg"
+	song = 'sound/radio_station/music/warriors_honk.ogg'
 	color = "#DED347"
 
 /obj/item/record/clown_collection/uguu
-	song = "sound/radio_station/music/uguu.ogg"
+	song = 'sound/radio_station/music/uguu.ogg'
 	color = "#DEC647"
 
 /obj/item/record/clown_collection/eggshell
-	song = "sound/radio_station/music/eggshell.ogg"
+	song = 'sound/radio_station/music/eggshell.ogg'
 	color = "#DEB947"
 
 /obj/item/record/clown_collection/disco
-	song = "sound/radio_station/music/disco_poo.ogg"
+	song = 'sound/radio_station/music/disco_poo.ogg'
 	color = "#DEAC47"
 
 /obj/item/record/clown_collection/poo
-	song = "sound/radio_station/music/core_of_poo.ogg"
+	song = 'sound/radio_station/music/core_of_poo.ogg'
 	color = "#DE9F47"
+
+/obj/item/record/remote
+	name = "remote record"
+	desc = "You know those casettes that you put in tape decks that are actually aux cables? This is like that, but for records! You have no idea how it works."
+	icon_state = "record_red"
+	var/youtube = null
+
+	get_desc()
+		if (src.youtube)
+			. += " It looks like it will play <a href=\"[copytext(src.youtube,1,5) == "http" ? "[src.youtube]" : "https://youtu.be/[src.youtube]"]\">this</a>, whatever that is."
+		else
+			. += " It looks like this isn't connected to anything. You should probably call an admin."
+
+	attack_self(mob/user as mob)
+		if (!src.youtube && isadmin(user))
+			var/yt = input(user, "Input the Youtube video information\nEither the full URL e.g. https://www.youtube.com/watch?v=145RCdUwAxM\nOr just the video ID e.g. 145RCdUwAxM", "Set Record Audio") as null|text
+			if (yt)
+				boutput(user, SPAN_NOTICE("You configure the record's radio. This makes sense, I promise."))
+				src.name = "remote record - \"???\""
+				src.youtube = yt
+				src.record_name = yt
+				var/de = input(user, "What should the name of this record be?", "Set Record Name") as null|text
+				if (de)
+					src.name = "remote record - \"[de]\""
+					src.record_name = de
+		else if (!src.youtube && !isadmin(user))
+			boutput(user, SPAN_NOTICE("You have no idea how to configure this thing! It's written in some sort of weird language that makes your head hurt and your ears throb with knocking sounds."))
+		return
+
 
 // Record sets
 /obj/item/storage/box/record
@@ -678,7 +860,7 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	icon = 'icons/obj/radiostation.dmi'
 	icon_state = "sleeve_1"
 	desc = "A sturdy record sleeve, designed to hold multiple records."
-	max_wclass = 3
+	max_wclass = W_CLASS_NORMAL
 	can_hold = list(/obj/item/record)
 
 /obj/item/storage/box/record/clown_collection
@@ -698,20 +880,20 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	icon_state = "sleeve_[rand(4,36)]"
 
 /obj/item/storage/box/record/radio/one
-	spawn_contents = list(/obj/item/record/january,
-	/obj/item/record/february,
-	/obj/item/record/march,
-	/obj/item/record/april,
-	/obj/item/record/may,
-	/obj/item/record/june)
+	spawn_contents = list(/obj/item/record/random/january,
+	/obj/item/record/random/february,
+	/obj/item/record/random/march,
+	/obj/item/record/random/april,
+	/obj/item/record/random/may,
+	/obj/item/record/random/june)
 
 /obj/item/storage/box/record/radio/two
-	spawn_contents = list(/obj/item/record/july,
-	/obj/item/record/august,
-	/obj/item/record/september,
-	/obj/item/record/october,
-	/obj/item/record/november,
-	/obj/item/record/december)
+	spawn_contents = list(/obj/item/record/random/july,
+	/obj/item/record/random/august,
+	/obj/item/record/random/september,
+	/obj/item/record/random/october,
+	/obj/item/record/random/november,
+	/obj/item/record/random/december)
 
 /obj/item/storage/box/record/radio/nostalgic
 	name = "\improper Nostalgic Dance record sleeve"
@@ -757,13 +939,13 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 /obj/item/storage/box/record/radio/host
 	desc = "A sleeve of exclusive radio station songs."
 
-/obj/item/storage/box/record/radio/host/New()
+/obj/item/storage/box/record/radio/host/make_my_stuff()
 	..()
 	var/list/possibilities = concrete_typesof(/obj/item/record/random, cache=FALSE)
 	possibilities = possibilities.Copy() // so we don't modify the cached version if someone else cached it I guess
-	for (var/i = 1, i < 8, i++)
+	while (!src.storage.is_full() && length(possibilities))
 		var/obj/item/record/R = pick(possibilities)
-		new R(src)
+		src.storage.add_contents(new R(src))
 		possibilities -= R
 
 // Tape deck
@@ -772,44 +954,61 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	desc = "A large standalone reel-to-reel tape deck."
 	icon = 'icons/obj/radiostation.dmi'
 	icon_state = "tapedeck"
-	anchored = 1.0
+	anchored = ANCHORED
 	density = 1
-	var/has_tape = 0
-	var/is_playing = 0
+	var/has_tape = FALSE
+	var/can_play_tapes = TRUE
 	var/obj/item/radio_tape/tape_inside = null
 
-/obj/submachine/tape_deck/attackby(obj/item/W as obj, mob/user as mob)
+	New()
+		. = ..()
+		START_TRACKING
+		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, "pda", FREQ_PDA)
+
+	get_desc()
+		if(!src.can_play_tapes)
+			. += " There's an \"out of order\" label on it."
+
+	disposing()
+		STOP_TRACKING
+		. = ..()
+
+/obj/submachine/tape_deck/attackby(obj/item/W, mob/user)
 	if (istype(W, /obj/item/radio_tape))
+		if(!src.can_play_tapes)
+			boutput(user, SPAN_ALERT("You insert the tape into the tape deck, but it won't turn on."))
+			return
 		if(has_tape)
 			boutput(user, "The tape deck already has a tape inserted!")
-		else if(!is_playing)
-			src.visible_message("<span class='notice'><b>[user] inserts the compact tape into the tape deck.</b></span>",
+		else if(is_music_playing())
+			boutput(user, SPAN_ALERT("Music is already playing, it'd be rude to interrupt!"))
+		else if(GET_COOLDOWN(src, "play"))
+			boutput(user, SPAN_ALERT("The tape deck is still rewinding!"))
+		else
+			src.visible_message(SPAN_NOTICE("<b>[user] inserts the compact tape into the tape deck.</b>"),
 			"You insert the compact tape into the tape deck.")
 			user.drop_item()
 			W.set_loc(src)
 			src.tape_inside = W
-			src.has_tape = 1
-			src.is_playing = 1
+			src.has_tape = TRUE
 			user.client.play_music_radio(tape_inside.audio)
 			/// PDA message ///
 			var/datum/signal/pdaSignal = get_free_signal()
 			pdaSignal.data = list("command"="text_message", "sender_name"="RADIO-STATION", "sender"="00000000", "message"="Now playing: [src.tape_inside.audio_type] for [src.tape_inside.name_of_thing].", "group" = MGA_RADIO)
 			SEND_SIGNAL(src, COMSIG_MOVABLE_POST_RADIO_PACKET, pdaSignal, null, "pda")
-			//////
-			sleep(6000)
-			is_playing = 0
+			EXTEND_COOLDOWN(src, "play", 600 SECONDS)
 
-/obj/submachine/tape_deck/attack_hand(mob/user as mob)
+/obj/submachine/tape_deck/attack_hand(mob/user)
 	if(has_tape)
-		if(!is_playing)
+		if(!GET_COOLDOWN(src, "play"))
 			if(istype(src.tape_inside,/obj/item/radio_tape/advertisement))
-				src.visible_message("<span class='alert'><b>[src.tape_inside]'s copyright preserving self destruct feature activates!</b></span>")
+				src.visible_message(SPAN_ALERT("<b>[src.tape_inside]'s copyright preserving self destruct feature activates!</b>"))
 				qdel(src.tape_inside)
 				src.tape_inside = null
 				src.has_tape = 0
 			else
 				boutput(user, "You remove the tape from the tape deck.")
-				src.visible_message("<span class='notice'><b>[user] removes the tape from the tape deck.</b></span>")
+				src.visible_message(SPAN_NOTICE("<b>[user] removes the tape from the tape deck.</b>"))
 				user.put_in_hand_or_drop(src.tape_inside)
 				src.tape_inside = null
 				src.has_tape = 0
@@ -833,36 +1032,36 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 
 /obj/item/radio_tape/advertisement/grones
 	name = "compact tape - 'Grones Soda'"
-	audio = "sound/radio_station/adverts/grones.ogg"
+	audio = 'sound/radio_station/adverts/grones.ogg'
 	name_of_thing = "Grones Soda"
 
 /obj/item/radio_tape/advertisement/dans_tickets
 	name = "compact tape - 'Discount Dan's GTMs'"
-	audio = "sound/radio_station/adverts/dans_tickets.ogg"
+	audio = 'sound/radio_station/adverts/dans_tickets.ogg'
 	name_of_thing = "Discount Dan's GTMs"
 
 /obj/item/radio_tape/advertisement/quik_noodles
 	name = "compact tape - 'Discount Dan's Quik Noodles'"
-	audio = "sound/radio_station/adverts/quik_noodles.ogg"
+	audio = 'sound/radio_station/adverts/quik_noodles.ogg'
 	name_of_thing = "Discount Dan's Quik Noodles"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	The music is "Palast Rock by Stefan Kartenberg (CC BY-NC 3.0)"}
 
 /obj/item/radio_tape/advertisement/danitos_burritos
 	name = "compact tape - 'Descuento Danito's Burritos'"
-	audio = "sound/radio_station/adverts/danitos_burritos.ogg"
+	audio = 'sound/radio_station/adverts/danitos_burritos.ogg'
 	name_of_thing = "Descuento Danito's Burritos"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	The music is "Requiem for a Fish" by The Freak Fandango Orchestra (CC BY-NC 4.0)"}
 
 /obj/item/radio_tape/advertisement/movie
 	name = "compact tape - 'Movie Ad'"
-	audio = "sound/radio_station/adverts/bill_movie.ogg"
+	audio = 'sound/radio_station/adverts/bill_movie.ogg'
 	name_of_thing = "some shitty movie"
 
 /obj/item/radio_tape/advertisement/pope_crunch
 	name = "compact tape - 'Pope Crunch'"
-	audio = "sound/radio_station/adverts/pope_crunch_cereal.ogg"
+	audio = 'sound/radio_station/adverts/pope_crunch_cereal.ogg'
 	name_of_thing = "Pope Crunch Cereal"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Puppet Master and HeadsmanStukka of the Black Pants Legion. <br>
@@ -870,7 +1069,7 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 
 /obj/item/radio_tape/advertisement/cloning_psa
 	name = "compact tape - 'Cloning PSA'"
-	audio = "sound/radio_station/adverts/cloning_psa.ogg"
+	audio = 'sound/radio_station/adverts/cloning_psa.ogg'
 	name_of_thing = "Cloning Public Service Announcement"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Cenith of the Black Pants Legion<br>
@@ -878,7 +1077,7 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 
 /obj/item/radio_tape/advertisement/captain_psa
 	name = "compact tape - 'Captain's Training Program'"
-	audio = "sound/radio_station/adverts/captain_training.ogg"
+	audio = 'sound/radio_station/adverts/captain_training.ogg'
 	name_of_thing = "Nanotrasen Captain's Training Promotional Tape"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Tex of the Black Pants Legion<br>
@@ -886,14 +1085,14 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 
 /obj/item/radio_tape/advertisement/security_psa
 	name = "compact tape - 'Nanotrasen Security PSA'"
-	audio = "sound/radio_station/adverts/security_psa.ogg"
+	audio = 'sound/radio_station/adverts/security_psa.ogg'
 	name_of_thing = "Security Department Public Service Announcement"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Squidchild of the Black Pants Legion"}
 
 /obj/item/radio_tape/advertisement/cargonia
 	name = "compact tape - 'Scuffed Compact Tape'"
-	audio = "sound/radio_station/adverts/Cargonia.ogg"
+	audio = 'sound/radio_station/adverts/Cargonia.ogg'
 	name_of_thing = "Cargo Union Advertisement <VERY ILLEGAL>"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	You found this in a locked up chest in the depths. Someone went to a lot of trouble to get rid of it.<br>
@@ -901,16 +1100,16 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	Musical Backing is "Valor" by David Fesliyan"}
 
 /obj/item/radio_tape/advertisement/chemistry
-	name = "charred compact tape - 'Unofficial Chemsitry Advertisment tape'"
-	audio = "sound/radio_station/adverts/Chemistry.ogg"
-	name_of_thing = "Unofficial Chemsitry Advertisment"
+	name = "charred compact tape - 'Unofficial Chemsitry Advertisement tape'"
+	audio = 'sound/radio_station/adverts/Chemistry.ogg'
+	name_of_thing = "Unofficial Chemsitry Advertisement"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Brixx79 of Goonstation"}
 
 /obj/item/radio_tape/advertisement/robotics
-	name = "bloodied compact tape stained with oil - 'Unofficial Robotics Advertisment tape'"
-	audio = "sound/radio_station/adverts/Robotics.ogg"
-	name_of_thing = "Unofficial Robotics Advertisment"
+	name = "bloodied compact tape stained with oil - 'Unofficial Robotics Advertisement tape'"
+	audio = 'sound/radio_station/adverts/Robotics.ogg'
+	name_of_thing = "Unofficial Robotics Advertisement"
 	desc = {"A small audio tape. It looks too big to fit in an audio log.<br>
 	Voiceover by Brixx79 of Goonstation"}
 
@@ -919,34 +1118,42 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 
 /obj/item/radio_tape/audio_book/heisenbee
 	name = "compact tape - 'The Trial of Heisenbee'"
-	audio = "sound/radio_station/trial_of_heisenbee.ogg"
+	audio = 'sound/radio_station/trial_of_heisenbee.ogg'
 	name_of_thing = "The Trial of Heisenbee"
 
-/obj/item/radio_tape/audio_book/commander_announcement
-	name = "Commander's Log - 'You Got A Small Arsenal'"
-	name_of_thing = "You Got A Small Arsenal"
-	audio = "sound/radio_station/commander_announcement.ogg"
+///obj/item/radio_tape/audio_book/commander_announcement
+//	name = "Commander's Log - 'You Got A Small Arsenal'"
+//	name_of_thing = "You Got A Small Arsenal"
+//	audio = 'sound/radio_station/commander_announcement.ogg'
 
 /obj/item/radio_tape/audio_book/commander_support
 	name = "Commander's Log - 'Customer Support Ticket #121'"
 	name_of_thing = "Customer Support Ticket #121"
-	audio = "sound/radio_station/commander_support.ogg"
+	audio = 'sound/radio_station/commander_support.ogg'
 
 /obj/item/radio_tape/audio_book/commander_resignation
 	name = "Commander's Log - 'I Quit'"
 	name_of_thing = "I Quit"
-	audio = "sound/radio_station/commander_resignation.ogg"
+	audio = 'sound/radio_station/commander_resignation.ogg'
 
 /obj/item/radio_tape/audio_book/commander_figurines
 	name = "Commander's Log - 'They're Called Collectibles'"
 	name_of_thing = "They're Called Collectibles"
-	audio = "sound/radio_station/commander_figurines.ogg"
+	audio = 'sound/radio_station/commander_figurines.ogg'
 
 /obj/item/radio_tape/owl
 	audio_type = "???"
 	name = "compact tape - 'Owls'"
-	audio = "sound/radio_station/adverts/owl.ogg"
+	audio = 'sound/radio_station/adverts/owl.ogg'
 	name_of_thing = "Owls"
+
+/obj/item/radio_tape/adventure
+	audio_type = "???"
+	name = "compact tape - 'Unlabeled'"
+	audio = 'sound/ambience/spooky/Somewhere_Tone.ogg'
+	name_of_thing = "found tape"
+	interesting = "The tape seems pretty corrupted."
+
 
 // Drawer
 /*/obj/table/wood/auto/desk/radio
@@ -972,55 +1179,55 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 		/obj/item/radio_tape/audio_book/heisenbee)*/
 
 //Fake objects
-/obj/decal/fakeobjects/cpucontroller
+/obj/fakeobject/cpucontroller
 	name = "central processing unit"
 	desc = "The computing core of the mainframe."
 	icon = 'icons/obj/large/64x64.dmi'
 	icon_state = "gannets_machine1"
 	bound_width = 64
-	bound_height = 64
-	anchored = 1
+	bound_height = 32
+	anchored = ANCHORED
 	density = 1
 
-/obj/decal/fakeobjects/vacuumtape
+/obj/fakeobject/vacuumtape
 	name = "vacuum column tape drive"
 	desc = "A large 9 track magnetic tape storage unit."
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "gannets_machine2"
 	bound_width = 32
 	bound_height = 64
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-/obj/decal/fakeobjects/operatorconsole
+/obj/fakeobject/operatorconsole
 	name = "operator's console"
-	desc = "The computer operating console, covered in fancy toggle swtiches and register value lamps."
+	desc = "The computer operating console, covered in fancy toggle switches and register value lamps."
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "gannets_machine1"
 	bound_width = 32
 	bound_height = 64
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-/obj/decal/fakeobjects/broadcastcomputer
+/obj/fakeobject/broadcastcomputer
 	name = "broadcast server"
 	icon = 'icons/obj/decoration.dmi'
 	icon_state = "gannets_machine11"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-/obj/decal/fakeobjects/tapedeck
+/obj/fakeobject/tapedeck
 	name = "reel to reel tape deck"
 	icon = 'icons/obj/decoration.dmi'
 	icon_state = "gannets_machine20"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
 //Computer, disk and files.
 
-/obj/item/disk/data/fixed_disk/radioship
+/obj/item/disk/data/fixed_disk/hd32/radioship
 
-/obj/item/disk/data/fixed_disk/radioship/New()
+/obj/item/disk/data/fixed_disk/hd32/radioship/New()
 	..()
 
 	var/datum/computer/folder/newfolder = new /datum/computer/folder(  )
@@ -1040,7 +1247,7 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 	newfolder.add_file( new /datum/computer/file/record/radioship/testlog2 (src))
 
 /obj/machinery/computer3/generic/personal/radioship
-	setup_drive_type = /obj/item/disk/data/fixed_disk/radioship
+	setup_drive_type = /obj/item/disk/data/fixed_disk/hd32/radioship
 
 /datum/computer/file/record/radioship
 
@@ -1057,3 +1264,13 @@ ABSTRACT_TYPE(/obj/item/record/random/notaquario)
 /datum/computer/file/record/radioship/testlog2/New()
 	..()
 	fields = strings("radioship/radioship_records.txt","log_2")
+
+
+TYPEINFO(/obj/item/device/radio/intercom/radiostation)
+	analyser_flags = ANALYSER_BLACKLIST
+/obj/item/device/radio/intercom/radiostation
+	name = "broadcast radio"
+	desc = "A powerful radio transmitter. Enable the microphone to begin broadcasting your radio show."
+	device_color = "#E52780"
+	icon = 'icons/obj/radiostation.dmi'
+	icon_state = "mixtable-1"

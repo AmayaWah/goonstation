@@ -8,12 +8,12 @@
 	can_recycle = FALSE
 
 	New(var/loc, var/forceartiorigin)
-		..()
+		..(loc, null) // do not pass our artifact origin as a reagent type
 		var/datum/artifact/watercan/AS = new /datum/artifact/watercan(src)
 		if (forceartiorigin)
 			AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 
 		var/capacity = rand(5,20)
@@ -81,11 +81,14 @@
 			reagents.add_reagent("werewolf_serum", 2) // awoo
 			usedCapacity += 2
 		if (prob(2))
-			reagents.add_reagent("liquid plasma", 15)
+			reagents.add_reagent("activated plasma", 15)
 			usedCapacity += 15
 		if (prob(3))
 			reagents.add_reagent("liquid spacetime", 25)
 			usedCapacity += 25
+		if (prob(3))
+			reagents.add_reagent("rat_spit", 5)
+			usedCapacity += 5
 		if (prob(1))
 			reagents.add_reagent("rat_venom", 5) // THE MOST DANGEROUS
 			usedCapacity += 5
@@ -149,7 +152,7 @@
 		reagents.add_reagent("saltpetre", max((capacity-usedCapacity) / 2, 0))
 		//reagents.add_reagent("water", max((capacity-usedCapacity) / 2, 0)) // Was diluting the fliptonium, can't have that
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
 
@@ -162,6 +165,7 @@
 /datum/artifact/watercan
 	associated_object = /obj/item/reagent_containers/glass/wateringcan/artifact
 	type_name = "Beaker"
+	type_size = ARTIFACT_SIZE_MEDIUM
 	rarity_weight = 350
 	validtypes = list("martian","wizard","precursor")
 	min_triggers = 0

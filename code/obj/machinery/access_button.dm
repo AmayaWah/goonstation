@@ -6,7 +6,7 @@ obj/machinery/access_button
 
 	layer = NOLIGHT_EFFECTS_LAYER_BASE
 
-	anchored = 1
+	anchored = ANCHORED
 
 	var/master_tag
 	var/frequency = FREQ_AIRLOCK_CONTROL
@@ -15,7 +15,7 @@ obj/machinery/access_button
 
 	var/on = 1
 
-	proc/update_icon()
+	update_icon()
 		if(on)
 			icon_state = "access_button_standby"
 		else
@@ -28,9 +28,9 @@ obj/machinery/access_button
 		signal.data["command"] = command
 
 		SEND_SIGNAL(src, COMSIG_MOVABLE_POST_RADIO_PACKET, signal, AIRLOCK_CONTROL_RANGE)
-		flick("access_button_cycle", src)
+		FLICK("access_button_cycle", src)
 
 	New()
 		..()
 		UnsubscribeProcess()
-		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, frequency)
+		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, null, frequency)

@@ -4,19 +4,24 @@
 	icon = 'icons/obj/janitor.dmi'
 	icon_state = "mopbucket"
 	density = 1
-	flags = FPRINT
+	pass_unstable = TRUE
 	pressure_resistance = ONE_ATMOSPHERE
-	flags = FPRINT | TABLEPASS | OPENCONTAINER
+	flags = TABLEPASS | OPENCONTAINER | ACCEPTS_MOUSEDROP_REAGENTS
+	default_material = "plastic"
+	HELP_MESSAGE_OVERRIDE("You can drag and drop yourself to move onto the bucket.<br>The bucket has 7 storage slots inside of it.<br>To pour reagents into the bucket from a <b>cup</b> or similar, drag and drop the cup to the bucket.")
 	var/rc_flags = RC_FULLNESS | RC_VISIBLE | RC_SPECTRO
 	var/image/fluid_image
 	p_class = 1.2
 
 	New()
 		. = ..()
+		src.create_reagents(400)
 		src.fluid_image = image(src.icon, "fluid", -1)
+		src.create_storage(/datum/storage/unholdable, max_wclass = W_CLASS_NORMAL, params = list("rustle"=TRUE))
+		START_TRACKING
 
-	proc/update_icon()
-		if (reagents.total_volume)
+	update_icon()
+		if (reagents?.total_volume)
 			var/datum/color/average = reagents.get_average_color()
 			src.fluid_image.color = average.to_rgba()
 			src.UpdateOverlays(src.fluid_image, "fluid")
@@ -25,12 +30,16 @@
 
 	on_reagent_change()
 		..()
-		src.update_icon()
+		src.UpdateIcon()
 
-/obj/mopbucket/New()
-	..()
-	create_reagents(400)
-	START_TRACKING
+	Cross(atom/movable/mover)
+		if(isliving(mover)) // let people climb onto the bucket if the bucket is against a wall basically
+			var/move_dir = get_dir(mover, src)
+			var/turf/next_turf = get_step(src, move_dir)
+			if(next_turf && !total_cross(next_turf, src))
+				return TRUE
+		. = ..()
+
 
 /obj/mopbucket/disposing()
 	. = ..()
@@ -41,35 +50,34 @@
 		return
 	if (!reagents)
 		return
-	. = "<br><span class='notice'>[reagents.get_description(user,rc_flags)]</span>"
-	return
+	. = "<br>[SPAN_NOTICE("[reagents.get_description(user,rc_flags)]")]"
 
-/obj/mopbucket/attackby(obj/item/W as obj, mob/user as mob)
+/obj/mopbucket/attackby(obj/item/W, mob/user)
 	if (istype(W, /obj/item/mop))
 		if (src.reagents.total_volume >= 3)
 			if (W.reagents)
 				W.reagents.trans_to(src,W.reagents.total_volume)
 			src.reagents.trans_to(W, W.reagents ? W.reagents.maximum_volume : 10)
 
-			boutput(user, "<span class='notice'>You dunk the mop into [src].</span>")
-			playsound(src.loc, "sound/impact_sounds/Liquid_Slosh_1.ogg", 25, 1)
+			boutput(user, SPAN_NOTICE("You dunk the mop into [src]."))
+			playsound(src.loc, 'sound/impact_sounds/Liquid_Slosh_1.ogg', 25, 1)
 		if (src.reagents.total_volume < 1)
-			boutput(user, "<span class='notice'>[src] is empty!</span>")
+			boutput(user, SPAN_NOTICE("[src] is empty!"))
 	else
 		return ..()
 
-/obj/mopbucket/MouseDrop(atom/over_object as obj)
+/obj/mopbucket/mouse_drop(atom/over_object as obj)
 	if (!istype(over_object, /obj/item/reagent_containers/glass) && !istype(over_object, /obj/item/reagent_containers/food/drinks) && !istype(over_object, /obj/item/spraybottle) && !istype(over_object, /obj/machinery/plantpot) && !istype(over_object, /obj/mopbucket))
 		return ..()
 
-	if (get_dist(usr, src) > 1 || get_dist(usr, over_object) > 1)
-		boutput(usr, "<span class='alert'>That's too far!</span>")
+	if (BOUNDS_DIST(usr, src) > 0 || BOUNDS_DIST(usr, over_object) > 0)
+		boutput(usr, SPAN_ALERT("That's too far!"))
 		return
 
 	src.transfer_all_reagents(over_object, usr)
 
 /obj/mopbucket/MouseDrop_T(atom/movable/O as mob|obj, mob/user as mob)
-	if (!in_interact_range(user, src) || user.restrained() || user.getStatusDuration("paralysis") || user.sleeping || user.stat || user.lying || user.buckled)
+	if (!in_interact_range(user, src) || user.restrained() || user.getStatusDuration("unconscious") || user.sleeping || user.stat || user.lying || user.buckled)
 		return
 
 	if (O == user)
@@ -89,11 +97,11 @@
 		if (iscarbon(O))
 			var/mob/living/carbon/M = user
 			if (M.bioHolder && M.bioHolder.HasEffect("clumsy") && prob(40))
-				user.visible_message("<span class='alert'><b>[user]</b> trips over [src]!</span>",\
-				"<span class='alert'>You trip over [src]!</span>")
+				user.visible_message(SPAN_ALERT("<b>[user]</b> trips over [src]!"),\
+				SPAN_ALERT("You trip over [src]!"))
 				playsound(user.loc, 'sound/impact_sounds/Generic_Hit_2.ogg', 15, 1, -3)
 				user.set_loc(src.loc)
-				user.changeStatus("weakened", 1 SECOND)
+				user.changeStatus("knockdown", 1 SECOND)
 				JOB_XP(user, "Clown", 1)
 				return
 			else
@@ -109,14 +117,14 @@
 
 /obj/mopbucket/ex_act(severity)
 	switch(severity)
-		if(1.0)
+		if(1)
 			qdel(src)
 			return
-		if(2.0)
+		if(2)
 			if (prob(50))
 				qdel(src)
 				return
-		if(3.0)
+		if(3)
 			if (prob(5))
 				qdel(src)
 				return

@@ -4,20 +4,25 @@
 // using this solves the problem of having the APC in a wall yet also inside an area
 
 /obj/machinery/power/terminal
-	name = "terminal"
+	name = "power terminal"
 	icon_state = "term"
 	desc = "An underfloor wiring terminal for power equipment"
 	level = 1
 	layer = FLOOR_EQUIP_LAYER1
 	plane = PLANE_NOSHADOW_BELOW
-	var/obj/machinery/power/master = null
-	anchored = 1
+	var/obj/machinery/master = null
+	anchored = ANCHORED
 	directwired = 0		// must have a cable on same turf connecting to terminal
 
 /obj/machinery/power/terminal/New(var/new_loc)
 	..()
 	var/turf/T = new_loc
-	if(istype(T) && level==1) hide(T.intact)
+	if(istype(T) && level==UNDERFLOOR) hide(T.intact)
+
+/// Sets `master`, use this instead of assigning it directly
+/obj/machinery/power/terminal/proc/set_master(obj/machinery/new_master, net_id)
+	src.master = new_master
+	src.update_wired_route(new_master, net_id)
 
 /obj/machinery/power/terminal/disposing()
 	if (src.powernet && src.powernet.data_nodes)
@@ -26,7 +31,12 @@
 		if (istype(src.master,/obj/machinery/power/apc))
 			var/obj/machinery/power/apc/APC = src.master
 			if (APC.terminal == src)
+				APC.terminal_repair_status = TERMINAL_REPAIR_STEP_WIRING
 				APC.terminal = null
+		if (istype(src.master, /obj/machinery/power/smes))
+			var/obj/machinery/power/smes/SMES = src.master
+			if (SMES.terminal == src)
+				SMES.terminal = null
 	..()
 
 /obj/machinery/power/terminal/hide(var/i)
@@ -61,9 +71,7 @@
 			signal.transmission_method = TRANSMISSION_WIRE
 			signal.channels_passed += "PN[src.netnum];"
 
-			for (var/obj/machinery/power/device as anything in src.powernet.data_nodes)
-				if(device != src)
-					device.receive_signal(signal, TRANSMISSION_WIRE)
+			src.send_data_signal(signal)
 
 			//qdel(signal)
 			return
@@ -72,6 +80,9 @@
 //It sends wired /datum/signal information between its master obj and other
 //data terminals in its powernet's nodes.
 
+TYPEINFO(/obj/machinery/power/data_terminal)
+	mats = 5
+
 /obj/machinery/power/data_terminal //The data terminal is remarkably similar to a regular terminal
 	name = "data terminal"
 	icon_state = "dterm"
@@ -79,18 +90,17 @@
 	level = 1
 	layer = FLOOR_EQUIP_LAYER1
 	plane = PLANE_NOSHADOW_BELOW
-	anchored = 1
+	anchored = ANCHORED
 	directwired = 0
 	use_datanet = 1
-	mats = 5
 	deconstruct_flags = DECON_SCREWDRIVER | DECON_CROWBAR | DECON_WELDER | DECON_WIRECUTTERS | DECON_MULTITOOL
 	var/obj/master = null //It can be any obj that can use receive_signal
 
 	ex_act()
-		if (master)
-			return
-
-		return ..()
+		SPAWN(1)
+			if (master)
+				return
+			..()
 
 /obj/machinery/power/data_terminal
 
@@ -99,11 +109,16 @@
 
 		var/turf/T = new_loc
 
-		if(level==1 && istype(T)) hide(T.intact)
+		if(level==UNDERFLOOR && istype(T)) hide(T.intact)
 
 	disposing()
 		master = null
 		..()
+
+	/// Sets `master`, use this instead of assigning it directly
+	proc/set_master(atom/movable/new_master, net_id)
+		src.master = new_master
+		src.update_wired_route(new_master, net_id)
 
 	receive_signal(datum/signal/signal)
 		if(!signal)
@@ -124,15 +139,18 @@
 			if(!src.powernet || !signal)
 				return
 
+			var/sender = signal.data["sender"]
+			//block any packet asking every device to send a ping back, trivial amplification attack that can seriously lag the server
+			if (sender == "ping")
+				return
+
 			if(source != src.master || !DATA_TERMINAL_IS_VALID_MASTER(src, src.master))
 				return
 
 			signal.transmission_method = TRANSMISSION_WIRE
 			signal.channels_passed += "PN[src.netnum];"
 
-			for (var/obj/machinery/power/device as anything in src.powernet.data_nodes)
-				if(device != src)
-					device.receive_signal(signal, TRANSMISSION_WIRE)
+			src.send_data_signal(signal)
 
 			if(signal)
 				qdel(signal)
@@ -141,18 +159,20 @@
 		invisibility = i ? INVIS_ALWAYS : INVIS_NONE
 		alpha = invisibility ? 128 : 255
 
+TYPEINFO(/obj/machinery/power/data_terminal/cable_tray)
+	analyser_flags = ANALYSER_BLACKLIST // uh no thanks
+
 /obj/machinery/power/data_terminal/cable_tray
 	name = "cable tray"
 	desc = "A connector that goes off into somewhere..."
 	icon_state = "vterm"
-	mats = 0 // uh no thanks
 
 	New()
 		..()
 		var/turf/T = get_turf(src)
 		if(!src.netnum && !length(T.connections) )
 			//Re-attempt connection to power nets due to delayed disjoint connections
-			SPAWN_DBG(0.2 SECONDS)
+			SPAWN(0.2 SECONDS)
 				src.netnum = 0
 				if(makingpowernets)
 					return

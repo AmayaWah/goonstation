@@ -1,13 +1,15 @@
 /obj/item/cell/artifact
 	name = "artifact power cell"
 	icon = 'icons/obj/artifacts/artifactsitemS.dmi'
-	maxcharge = 10000
-	var/chargeCap = 10000
-	genrate = 50
+	maxcharge = 1
+	genrate = 0
 	specialicon = 1
 	artifact = 1
 	mat_changename = 0
 	mat_changedesc = 0
+
+	var/chargeCap = 10000
+	var/activation_genrate = 50
 	var/effectProbModifier = 0
 	var/noise = null
 	var/leakChem = null
@@ -18,7 +20,7 @@
 		if (forceartiorigin)
 			AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 		..()
 
@@ -27,13 +29,13 @@
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/A = src.artifact
-		if (istext(A.examine_hint))
-			. += A.examine_hint
+		if (istext(A.examine_hint) && (usr && (usr.traitHolder?.hasTrait("training_scientist")) || isobserver(usr)))
+			. += SPAN_ARTHINT(A.examine_hint)
 
 	UpdateName()
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
 
@@ -44,7 +46,7 @@
 		if(prob(10 + amount*effectProbModifier))
 			var/turf/T = get_turf(src.loc)
 			if(src.noise)
-				playsound(T, noise, 50, 1, -1)
+				playsound(T, noise, 50, TRUE, -1)
 
 			if(leakChem && prob(50))
 				if(src.smoky)
@@ -60,12 +62,14 @@
 	ArtifactActivated()
 		. = ..()
 		src.maxcharge = src.chargeCap
+		src.genrate = src.activation_genrate
 		processing_items |= src				// in case someone decides to make big cells work like small cells
 
 	ArtifactDeactivated()
 		. = ..()
+		src.genrate = 0
+		src.charge = 0
 		src.maxcharge = 1
-		src.charge = 1
 
 	reagent_act(reagent_id,volume)
 		if (..())
@@ -79,10 +83,10 @@
 
 /datum/artifact/powercell
 	associated_object = /obj/item/cell/artifact
-	type_name = "Large power cell"
+	type_name = "Large Power Cell"
+	type_size = ARTIFACT_SIZE_TINY
 	rarity_weight = 350
 	validtypes = list("ancient","martian","wizard","precursor")
-	automatic_activation = 1
 	react_elec = list("equal",0,10)
 	react_xray = list(10,80,95,11,"SEGMENTED")
 	examine_hint = "It kinda looks like it's supposed to be inserted into something."
@@ -94,31 +98,29 @@
 	post_setup()
 		..()
 		var/obj/item/cell/artifact/O = src.holder
-		O.maxcharge = rand(15,1000)
-		O.maxcharge *= 100
-		O.chargeCap = O.maxcharge
-		src.react_elec[2] = O.maxcharge
+		O.chargeCap = rand(15,1000) * 100
+		src.react_elec[2] = O.chargeCap
 
 		// effects
 		O.effectProbModifier = 1/rand(10,50) 	// probability
 		switch(src.artitype.name)					// noise
 			if ("martian")
-				O.noise = pick("sound/voice/babynoise.ogg", "sound/voice/animal/bugchitter.ogg", "sound/voice/blob/blobdeath.ogg", "sound/voice/farts/frogfart.ogg", "sound/effects/splort.ogg")
+				O.noise = pick('sound/voice/babynoise.ogg', 'sound/voice/animal/bugchitter.ogg', 'sound/voice/blob/blobdeath.ogg', 'sound/voice/farts/frogfart.ogg', 'sound/effects/splort.ogg')
 			if ("ancient")
-				O.noise = pick("sound/effects/electric_shock_short.ogg", "sound/effects/creaking_metal2.ogg","sound/machines/weapons-reloading.ogg", "sound/machines/glitch1.ogg","sound/machines/glitch2.ogg", "sound/machines/glitch3.ogg","sound/machines/glitch4.ogg", "sound/machines/glitch5.ogg", "sound/machines/scan.ogg")
+				O.noise = pick('sound/effects/electric_shock_short.ogg', 'sound/effects/creaking_metal2.ogg','sound/machines/weapons-reloading.ogg', 'sound/machines/glitch1.ogg','sound/machines/glitch2.ogg', 'sound/machines/glitch3.ogg','sound/machines/glitch4.ogg', 'sound/machines/glitch5.ogg', 'sound/machines/scan.ogg')
 			if ("wizard")
-				O.noise = pick("sound/weapons/airzooka.ogg", "sound/misc/newsting.ogg", "sound/misc/chair/glass/scoot5.ogg", "sound/misc/chair/glass/scoot2.ogg")
+				O.noise = pick('sound/weapons/airzooka.ogg', 'sound/misc/chair/glass/scoot5.ogg', 'sound/misc/chair/glass/scoot2.ogg')
 			if ("precursor") // what does precursor stuff even sound like???
-				O.noise = pick("sound/effects/singsuck.ogg", "sound/effects/screech_tone.ogg")
+				O.noise = pick('sound/effects/singsuck.ogg', 'sound/effects/screech_tone.ogg','sound/effects/gust.ogg')
 
-		if(prob(O.maxcharge/1000)) 			// the more charge the bigger the chance it does dumb stuff
+		if(prob(O.chargeCap/1000)) // the more charge the bigger the chance it does dumb stuff
 			switch(src.artitype.name) 		// leakage
 				if ("martian")
-					O.leakChem = pick("space_fungus","blood","vomit","gvomit","urine","meat_slurry","grease","butter","synthflesh","bread","poo","ants","spiders")
+					O.leakChem = pick("space_fungus","blood","vomit","gvomit","meat_slurry","grease","butter","synthflesh","bread","poo","ants","spiders","slime")
 				if ("ancient")
 					O.leakChem = pick("voltagen","ash","cleaner", "oil", "thermite", "acid", "fuel", "nanites", "radium", "mercury")
 				if ("wizard")
-					O.leakChem = pick("glitter","sakuride","grassgro","sparkles","glowing_fliptonium", "mugwort")
+					O.leakChem = pick("glitter","sakuride","grassgro","sparkles","mirabilis", "mugwort", "carpet")
 				if ("precursor")
 					O.leakChem = pick(all_functional_reagent_ids) // no way this goes wrong
 			if(prob(10))

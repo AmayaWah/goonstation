@@ -25,7 +25,7 @@
 		if (!silent)
 			return ..(msg, render)
 
-		return ESIG_SUCCESS
+		return DWAINE::ERR::SIG::SUCCESS
 
 	initialize(var/initparams)
 		if (..())
@@ -45,7 +45,7 @@
 				var/flag = copytext(flagString, n, n+1)
 				switch (flag)
 					if ("b") //Batch operation
-						//todo
+						; //todo
 
 					if ("s") //Silent operation
 						silent = 1
@@ -61,7 +61,7 @@
 			mainframe_prog_exit
 			return
 
-		var/list/testDrivers = signal_program(1, list("command"=DWAINE_COMMAND_DLIST, "dtag"="test_appt", "mode"=0))
+		var/list/testDrivers = signal_program(1, list("command"= DWAINE::SYSCALL::DLIST, "dtag"="test_appt", "mode"=0))
 		if (!istype(testDrivers))
 			return
 
@@ -82,8 +82,8 @@
 					var/driverID = ckey(initlist[1])
 					if (driverID in testDrivers)
 						var/targetID = testDrivers.Find(driverID)
-						var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="info"))
-						if (success == ESIG_SUCCESS)
+						var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="info"))
+						if (success == DWAINE::ERR::SIG::SUCCESS)
 							message_user("Loading...")
 							response_timeout = 2
 							return
@@ -98,8 +98,8 @@
 								findSuccess = 1
 								var/targetID = testDrivers.Find(x)
 
-								var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="info"))
-								if (success == ESIG_SUCCESS)
+								var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="info"))
+								if (success == DWAINE::ERR::SIG::SUCCESS)
 									message_user("Loading...")
 									response_timeout = 2
 									return
@@ -122,10 +122,10 @@
 					if (driverID in testDrivers)
 						var/targetID = testDrivers.Find(driverID)
 
-						if (initlist.len >= 2)
+						if (length(initlist) >= 2)
 							var/fieldName = ckey(initlist[2])
 							if (fieldName)
-								if(signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="peek", "field"="[fieldName]")) == ESIG_SUCCESS)
+								if(signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="peek", "field"="[fieldName]")) == DWAINE::ERR::SIG::SUCCESS)
 									message_user("Loading...")
 									response_timeout = 2
 									return
@@ -142,10 +142,10 @@
 								findSuccess = 1
 								var/targetID = testDrivers.Find(x)
 
-								if (initlist.len >= 2)
+								if (length(initlist) >= 2)
 									var/fieldName = ckey(initlist[2])
 									if (fieldName)
-										if(signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="peek", "field"="[fieldName]")) == ESIG_SUCCESS)
+										if(signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="peek", "field"="[fieldName]")) == DWAINE::ERR::SIG::SUCCESS)
 											message_user("Loading...")
 											response_timeout = 2
 											return
@@ -170,11 +170,11 @@
 					if (driverID in testDrivers)
 						var/targetID = testDrivers.Find(driverID)
 
-						if (initlist.len >= 3)
+						if (length(initlist) >= 3)
 							var/fieldName = ckey(initlist[2])
 							var/newValue = ckey(initlist[3])
 							if (fieldName && newValue)
-								if(signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="poke", "field"="[fieldName]", "value"="[newValue]")) == ESIG_SUCCESS)
+								if(signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="poke", "field"="[fieldName]", "value"="[newValue]")) == DWAINE::ERR::SIG::SUCCESS)
 									message_user("Sending...")
 									response_timeout = 2
 									return
@@ -191,11 +191,11 @@
 								findSuccess = 1
 								var/targetID = testDrivers.Find(x)
 
-								if (initlist.len >= 3)
+								if (length(initlist) >= 3)
 									var/fieldName = ckey(initlist[2])
 									var/newValue = ckey(initlist[3])
 									if (fieldName && newValue)
-										if(signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="poke", "field"="[fieldName]", "value"="[newValue]")) == ESIG_SUCCESS)
+										if(signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="poke", "field"="[fieldName]", "value"="[newValue]")) == DWAINE::ERR::SIG::SUCCESS)
 											message_user("Sending...")
 											response_timeout = 2
 											return
@@ -222,22 +222,22 @@
 
 						//Pulses have a duration from 1 to 255.
 						var/duration = 1
-						if (initlist.len >= 2)
+						if (length(initlist) >= 2)
 							duration = text2num_safe(initlist[2])
 							if (isnum(duration))
 								duration = round(duration)
 								if (duration < 1 || duration > 255)
-									duration = max(1, min(duration, 255))
+									duration = clamp(duration, 1, 255)
 									message_user("Warning: Pulse duration out of bounds \[1 - 255]. Value clamped.")
 							else
 								duration = 1
 								message_user("Warning: Non-numeric pulse duration! Argument ignored.")
 
-						var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="pulse", "duration"=duration))
-						if (success == ESIG_SUCCESS)
+						var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="pulse", "duration"=duration))
+						if (success == DWAINE::ERR::SIG::SUCCESS)
 							message_user("OK")
 
-						else if (success == ESIG_BADCOMMAND)
+						else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 							message_user("Error: Device is not ENACTOR (Cannot provide stimulus).")
 						else
 							message_user("Error: Unable to signal device.")
@@ -250,22 +250,22 @@
 								var/targetID = testDrivers.Find(x)
 
 								var/duration = 1
-								if (initlist.len >= 2)
+								if (length(initlist) >= 2)
 									duration = text2num_safe(initlist[2])
 									if (isnum(duration))
 										duration = round(duration)
 										if (duration < 1 || duration > 255)
-											duration = max(1, min(duration, 255))
+											duration = clamp(duration, 1, 255)
 											message_user("Warning: Pulse duration out of bounds \[1 - 255]. Value clamped.")
 									else
 										duration = 1
 										message_user("Warning: Non-numeric pulse duration! Argument ignored.")
 
-								var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="pulse", "duration"=duration))
-								if (success == ESIG_SUCCESS)
+								var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="pulse", "duration"=duration))
+								if (success == DWAINE::ERR::SIG::SUCCESS)
 									message_user("OK")
 
-								else if (success == ESIG_BADCOMMAND)
+								else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 									message_user("Error: Device is not ENACTOR (Cannot provide stimulus).")
 								else
 									message_user("Error: Unable to signal device.")
@@ -283,11 +283,11 @@
 					var/driverID = ckey(initlist[1])
 					if (driverID in testDrivers)
 						var/targetID = testDrivers.Find(driverID)
-						var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"=command))
-						if (success == ESIG_SUCCESS)
+						var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"=command))
+						if (success == DWAINE::ERR::SIG::SUCCESS)
 							message_user("OK")
 
-						else if (success == ESIG_BADCOMMAND)
+						else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 							message_user("Error: Device is not [(command == "sense") ? "SENSOR (Cannot measure stimulus)" : "ENACTOR (Cannot provide stimulus)."]")
 						else
 							message_user("Error: Unable to signal device.")
@@ -299,11 +299,11 @@
 								findSuccess = 1
 								var/targetID = testDrivers.Find(x)
 
-								var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"=command))
-								if (success == ESIG_SUCCESS)
+								var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"=command))
+								if (success == DWAINE::ERR::SIG::SUCCESS)
 									message_user("OK")
 
-								else if (success == ESIG_BADCOMMAND)
+								else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 									message_user("Error: Device is not [(command == "sense") ? "SENSOR (Cannot measure stimulus)" : "ENACTOR (Cannot provide stimulus)."]")
 								else
 									message_user("Error: Unable to signal device.")
@@ -321,13 +321,13 @@
 					var/driverID = ckey(initlist[1])
 					if (driverID in testDrivers)
 						var/targetID = testDrivers.Find(driverID)
-						var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="sense"))
-						if (success == ESIG_SUCCESS && signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="read")) == ESIG_SUCCESS)
+						var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="sense"))
+						if (success == DWAINE::ERR::SIG::SUCCESS && signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="read")) == DWAINE::ERR::SIG::SUCCESS)
 							message_user("Loading...")
 							response_timeout = 2
 							return
 
-						else if (success == ESIG_BADCOMMAND)
+						else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 							message_user("Error: Device is not SENSOR (Cannot measure stimulus)")
 						else
 							message_user("Error: Unable to signal device.")
@@ -338,13 +338,13 @@
 								findSuccess = 1
 								var/targetID = testDrivers.Find(x)
 
-								var/success = signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="sense"))
-								if (success == ESIG_SUCCESS && signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=targetID, "dcommand"="read")) == ESIG_SUCCESS)
+								var/success = signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="sense"))
+								if (success == DWAINE::ERR::SIG::SUCCESS && signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=targetID, "dcommand"="read")) == DWAINE::ERR::SIG::SUCCESS)
 									message_user("Loading...")
 									response_timeout = 2
 									return
 
-								else if (success == ESIG_BADCOMMAND)
+								else if (success == DWAINE::ERR::SIG::BADCOMMAND)
 									message_user("Error: Device is not SENSOR (Cannot measure stimulus)")
 								else
 									message_user("Error: Unable to signal device.")
@@ -366,14 +366,14 @@
 
 	receive_progsignal(var/sendid, var/list/data, var/datum/computer/file/file)
 		if (..())
-			return ESIG_GENERIC
+			return DWAINE::ERR::SIG::GENERIC
 
 		if (!data["command"])
-			return ESIG_GENERIC
+			return DWAINE::ERR::SIG::GENERIC
 
-		if (data["command"] == DWAINE_COMMAND_REPLY)
+		if (data["command"] == DWAINE::SYSCALL::REPLY)
 			if (!data["data"])
-				return ESIG_GENERIC
+				return DWAINE::ERR::SIG::GENERIC
 
 			switch (lowertext(data["format"]))
 				if ("values") //Multiple read, formatted as comma separated list.
@@ -393,7 +393,7 @@
 				if ("field")	//Single value from a peeked field. fieldname-fieldvalue
 					var/list/splitData = splittext(data["data"], "-")
 					if (length(splitData) < 2)
-						return ESIG_GENERIC
+						return DWAINE::ERR::SIG::GENERIC
 
 					message_user("[splitData[1]]: \[[splitData[2]]]")
 
@@ -405,7 +405,7 @@
 						formatted += "| Active: [(rawDataList[1] == "1") ? "YES" : "NO"]|n| ID: [rawDataList[2]]|n| Enactor: [(rawDataList[3] == "1") ? "YES" : "NO"]|n| Sensor: [(rawDataList[4] == "1") ? "YES" : "NO"]|n+--------|Configuration Values|--------+|n"
 
 						. = ""
-						if (rawDataList.len > 4)
+						if (length(rawDataList) > 4)
 							for (var/i = rawDataList.len, i > 4, i--)
 								. = "| \[[add_zero("[i-4]",4)]] | [uppertext(rawDataList[i])]|n[.]"
 
@@ -421,10 +421,10 @@
 					message_user("[data["data"]]", "multiline")
 
 			mainframe_prog_exit
-			return ESIG_SUCCESS
+			return DWAINE::ERR::SIG::SUCCESS
 
 
-		return ESIG_BADCOMMAND
+		return DWAINE::ERR::SIG::BADCOMMAND
 
 //#define GRUMPY_DEBUG
 
@@ -469,7 +469,7 @@
 		if (..())
 			return 1
 
-		SPAWN_DBG(1 SECOND)
+		SPAWN(1 SECOND)
 			update_known_devices()
 
 
@@ -610,15 +610,15 @@
 										valueToAdjust++
 
 								//Now we try to set that value on the actual device.
-								var/driverID = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-								if (!(driverID & ESIG_DATABIT))
+								var/driverID = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+								if (!(driverID & DWAINE::ERR::SIG::DATABIT))
 									return
 
-								driverID &= ~ESIG_DATABIT
+								driverID &= ~DWAINE::ERR::SIG::DATABIT
 
-								signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driverID, "dcommand"="poke", "field"=current_field, "value"=valueToAdjust))
-								SPAWN_DBG(0.5 SECONDS)
-									signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driverID, "dcommand"="peek", "field"=current_field))
+								signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driverID, "dcommand"="poke", "field"=current_field, "value"=valueToAdjust))
+								SPAWN(0.5 SECONDS)
+									signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driverID, "dcommand"="peek", "field"=current_field))
 
 							return
 
@@ -630,14 +630,14 @@
 							if (!current_device_id || !(current_device_id in known_devices))
 								return
 
-							var/driver_id = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-							if (!(driver_id & ESIG_DATABIT))
+							var/driver_id = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+							if (!(driver_id & DWAINE::ERR::SIG::DATABIT))
 								return
 
-							driver_id &= ~ESIG_DATABIT
+							driver_id &= ~DWAINE::ERR::SIG::DATABIT
 
-							if (signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driver_id, "dcommand"="sense")) == ESIG_SUCCESS)
-								signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driver_id, "dcommand"="read"))
+							if (signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driver_id, "dcommand"="sense")) == DWAINE::ERR::SIG::SUCCESS)
+								signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driver_id, "dcommand"="read"))
 
 							return
 
@@ -645,11 +645,11 @@
 							if (!current_device_id || !(current_device_id in known_devices))
 								return
 
-							var/driver_id = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-							if (!(driver_id & ESIG_DATABIT))
+							var/driver_id = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+							if (!(driver_id & DWAINE::ERR::SIG::DATABIT))
 								return
 
-							signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=(driver_id & ~ESIG_DATABIT), "dcommand"="pulse", "duration"=1))
+							signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=(driver_id & ~DWAINE::ERR::SIG::DATABIT), "dcommand"="pulse", "duration"=1))
 
 							return
 
@@ -664,14 +664,14 @@
 
 							mode = (mode == MODE_BASE_MENU) ? MODE_DEVICE_ADJUST: MODE_DEVICE_SUBADJ
 
-							var/driverID = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-							if (driverID & ESIG_DATABIT)
-								driverID &= ~ESIG_DATABIT
+							var/driverID = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+							if (driverID & DWAINE::ERR::SIG::DATABIT)
+								driverID &= ~DWAINE::ERR::SIG::DATABIT
 							else
 								driverID = 0
 
 							if (!current_device_known_fields.len)
-								signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driverID, "dcommand"="info"))
+								signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driverID, "dcommand"="info"))
 								return null
 
 							. = ""
@@ -679,7 +679,7 @@
 								. += "| [value_entry] IS [(current_device_known_fields[uppertext(value_entry)]) ? current_device_known_fields[uppertext(value_entry)] : "LOADING"]|n"
 
 								if (driverID)
-									signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driverID, "dcommand"="peek", "field"="[value_entry]"))
+									signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driverID, "dcommand"="peek", "field"="[value_entry]"))
 
 							if (.)
 								message_device("command=message&title=Adjust Values&blank=1&data=[.]")
@@ -694,14 +694,14 @@
 
 	receive_progsignal(var/sendid, var/list/data, var/datum/computer/file/file)
 		if (..())
-			return ESIG_GENERIC
+			return DWAINE::ERR::SIG::GENERIC
 
 		if (!data["command"])
-			return ESIG_GENERIC
+			return DWAINE::ERR::SIG::GENERIC
 
-		if (data["command"] == DWAINE_COMMAND_REPLY)
+		if (data["command"] == DWAINE::SYSCALL::REPLY)
 			if (!data["data"])
-				return ESIG_GENERIC
+				return DWAINE::ERR::SIG::GENERIC
 
 			switch (lowertext(data["format"]))
 				if ("values") //Multiple read, formatted as comma separated list.
@@ -728,14 +728,14 @@
 					var/separatorPosition = findtext(data["data"],"-")
 					if (!separatorPosition)
 						DEBUG_OUT("Unable to find separator in data.")
-						return ESIG_GENERIC
+						return DWAINE::ERR::SIG::GENERIC
 
 					DEBUG_OUT("Separator found at position [separatorPosition].")
 					var/fieldName = uppertext( copytext( data["data"], 1, separatorPosition ) )
 					var/fieldValue = copytext(data["data"], separatorPosition+1, separatorPosition+65)
 					if (!fieldName || !fieldValue)
 						DEBUG_OUT("No fieldName or maybe no fieldValue.  One of the two.  Or both.")
-						return ESIG_GENERIC
+						return DWAINE::ERR::SIG::GENERIC
 
 					DEBUG_OUT("fieldName found as \"[fieldName]\" and fieldValue found as \"[fieldValue]\"")
 					if (current_device_id)
@@ -764,8 +764,8 @@
 								current_device_known_fields = list()
 
 							. = ""
-							if (rawDataList.len > 4)
-								if (rawDataList.len > 7)
+							if (length(rawDataList) > 4)
+								if (length(rawDataList) > 7)
 									formatted += "|------|Configuration Values (1/[(rawDataList.len-7)%3])|--------||n"
 									moreDisplayBuffer.len = 0
 									for (var/i = rawDataList.len, i > 7, i--)
@@ -795,14 +795,14 @@
 
 						var/driverID
 						if (current_device_id)
-							driverID = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-							if (driverID & ESIG_DATABIT)
-								driverID &= ~ESIG_DATABIT
+							driverID = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+							if (driverID & DWAINE::ERR::SIG::DATABIT)
+								driverID &= ~DWAINE::ERR::SIG::DATABIT
 							else
 								driverID = 0
 
 
-						if (rawDataList.len > 4)
+						if (length(rawDataList) > 4)
 							for (var/i = rawDataList.len, i > 4, i--)
 								if (cmptext(rawDataList[i], "none"))
 									break
@@ -812,7 +812,7 @@
 								formatted += "| [.] IS LOADING|n"
 
 								if (driverID)
-									signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driverID, "dcommand"="peek", "field"="[.]"))
+									signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driverID, "dcommand"="peek", "field"="[.]"))
 
 						if (formatted)
 							message_device("command=message&title=Adjust Values&blank=1&data=[formatted]")
@@ -823,14 +823,14 @@
 			//	else
 			//		message_user("[data["data"]]", "multiline")
 
-			return ESIG_SUCCESS
+			return DWAINE::ERR::SIG::SUCCESS
 
 
-		return ESIG_BADCOMMAND
+		return DWAINE::ERR::SIG::BADCOMMAND
 
 
 	proc/update_known_devices()
-		var/list/potential_new_devices = signal_program(1, list("command"=DWAINE_COMMAND_DLIST, "dtag"="test_appt", "mode"=0))
+		var/list/potential_new_devices = signal_program(1, list("command"= DWAINE::SYSCALL::DLIST, "dtag"="test_appt", "mode"=0))
 		if (!istype(potential_new_devices))
 			return 1
 
@@ -849,14 +849,14 @@
 		if (!current_device_id)
 			return
 
-		var/driver_id = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-		if (!(driver_id & ESIG_DATABIT))
+		var/driver_id = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+		if (!(driver_id & DWAINE::ERR::SIG::DATABIT))
 			return
 
-		driver_id &= ~ESIG_DATABIT
+		driver_id &= ~DWAINE::ERR::SIG::DATABIT
 
 		for (var/field in current_device_known_fields)
-			signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driver_id, "dcommand"="peek", "field"="[field]"))
+			signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driver_id, "dcommand"="peek", "field"="[field]"))
 
 
 	proc/get_main_menu()
@@ -893,12 +893,12 @@
 			message_device("command=message&blank=1&data=[get_main_menu()]")
 			return
 
-		var/driver_id = signal_program(1, list("command"=DWAINE_COMMAND_DGET, "dnetid"=current_device_id))
-		if (!(driver_id & ESIG_DATABIT))
+		var/driver_id = signal_program(1, list("command"= DWAINE::SYSCALL::DGET, "dnetid"=current_device_id))
+		if (!(driver_id & DWAINE::ERR::SIG::DATABIT))
 			return
 
 		mode = MODE_DEVICE_INFO
-		signal_program(1, list("command"=DWAINE_COMMAND_DMSG, "target"=driver_id & ~ESIG_DATABIT, "dcommand"="info"))
+		signal_program(1, list("command"= DWAINE::SYSCALL::DMSG, "target"=driver_id & ~DWAINE::ERR::SIG::DATABIT, "dcommand"="info"))
 
 /*
 		var/list/testDrivers = signal_program(1, list("command"="dlist", "dtag"="test_appt", "mode"=0))
@@ -923,12 +923,13 @@
 //very WIP ok
 /obj/machinery/networked/artifact_console
 	name = "artifact research console"
+	desc = "It just sorta showed up in a giant box of test equipment."
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	device_tag = "PNET_ARTCONSOL"
 	timeout = 10
 	icon = 'icons/obj/networked.dmi'
-	icon_state = "generic0"
+	icon_state = "artconsol0"
 	var/list/entries
 	var/screen_title = "Devices"
 	var/highlightMap = 0
@@ -938,9 +939,11 @@
 
 	New()
 		..()
+		if (prob(10))
+			src.desc = "Giant mystery science doodad."
 
 		entries = list("","","","","|cLoading...","","","")
-		SPAWN_DBG(0.5 SECONDS)
+		SPAWN(0.5 SECONDS)
 			src.net_id = generate_net_id(src)
 
 			if(!src.link)
@@ -948,14 +951,14 @@
 				var/obj/machinery/power/data_terminal/test_link = locate() in T
 				if(test_link && !DATA_TERMINAL_IS_VALID_MASTER(test_link, test_link.master))
 					src.link = test_link
-					src.link.master = src
+					src.link.set_master(src, src.net_id)
 
 	power_change()
 		if(powered())
-			icon_state = "generic[src.host_id != null]"
+			icon_state = "artconsol[src.host_id != null]"
 		else
-			SPAWN_DBG(rand(0, 15))
-				icon_state = "generic-p"
+			SPAWN(rand(0, 15))
+				icon_state = "artconsol-p"
 				status |= NOPOWER
 
 	receive_signal(datum/signal/signal)
@@ -972,7 +975,7 @@
 
 		if(signal.data["address_1"] != src.net_id)
 			if((signal.data["address_1"] == "ping") && ((signal.data["net"] == null) || ("[signal.data["net"]]" == "[src.net_number]")) && signal.data["sender"])
-				SPAWN_DBG(0.5 SECONDS)
+				SPAWN(0.5 SECONDS)
 					src.post_status(target, "command", "ping_reply", "device", src.device_tag, "netid", src.net_id, "net", "[net_number]")
 
 			return
@@ -987,7 +990,7 @@
 					src.host_id = null
 					src.entries[5] = "No Connection"
 					src.updateUsrDialog(REASON_ALERT)
-					SPAWN_DBG(0.3 SECONDS)
+					SPAWN(0.3 SECONDS)
 						src.post_status(target, "command","term_disconnect")
 					return
 
@@ -1113,7 +1116,7 @@
 
 		return
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if (..(user))
 			return
 
@@ -1142,7 +1145,7 @@
 		background-color:#1B1E1B;
 		color:#19A319;
 		font-family: "Consolas", monospace;
-		font-size: 19px;
+		font-size: 18px;
 	}
 
 	.consolelog_entry
@@ -1335,10 +1338,10 @@
 		onclose(user, "art_computer")
 		return
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		/*
 		if (isscrewingtool(W))
-			playsound(src.loc, "sound/items/Screwdriver.ogg", 50, 1)
+			playsound(src.loc, 'sound/items/Screwdriver.ogg', 50, 1)
 			src.panel_open = !src.panel_open
 			boutput(user, "You [src.panel_open ? "unscrew" : "secure"] the cover.")
 			src.updateUsrDialog()
@@ -1395,7 +1398,7 @@
 			DEBUG_OUT(6)
 			src.post_status(old, "command", "term_connect", "device", src.device_tag)
 
-			SPAWN_DBG(1 SECOND)
+			SPAWN(1 SECOND)
 				if (!old_host_id)
 					old_host_id = old
 

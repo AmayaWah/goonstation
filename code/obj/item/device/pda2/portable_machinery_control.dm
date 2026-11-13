@@ -20,6 +20,18 @@
 	proc/get_machinery()
 		return
 
+	///Used for get_machinery polling; returns TRUE when passed a turf that exists and isn't in a restricted Z (with some special exemptions for Menhir if pertinent)
+	proc/loc_eval(var/turf/T)
+		. = FALSE
+		if(!T || !isturf(T)) return
+		if(isrestrictedz(T.z))
+#ifdef MAP_OVERRIDE_MENHIR
+			if (in_menhir_zone(T))
+				. = TRUE
+#endif
+			return
+		return TRUE
+
 	// As to avoid a separate lookup for every remote.
 	proc/teleport_sanity_check(var/obj/machinery/test_machinery, var/mob/test_mob, var/turf/test_turf, var/no_zlevel_check = 0)
 		// Failure states:
@@ -51,7 +63,7 @@
 				return 0 // It's not a Port-a-Sci, okay.
 
 		var/turf/our_loc = get_turf(src.master)
-		if(istype(test_mob, /mob/dead/aieye))
+		if(isAIeye(test_mob))
 			our_loc = get_turf(test_mob)
 		if (our_loc.loc:teleport_blocked == 2) return 0
 
@@ -59,7 +71,8 @@
 		if (test_turf)
 			if (test_turf.loc:teleport_blocked == 2) return 0
 			if (!no_zlevel_check && (isrestrictedz(test_turf.z) || isrestrictedz(our_loc.z))) // Somebody will find a way to abuse it if I don't put this here.
-				return 0
+				if (!in_menhir_zone(test_turf)) //Special Exemption
+					return 0
 			if (test_turf.density)
 				return 5
 			for (var/obj/thing in view(0, test_turf))
@@ -74,7 +87,8 @@
 			if (!our_loc || !isturf(our_loc))
 				return 0
 			if (!no_zlevel_check && isrestrictedz(our_loc.z)) // Somebody will find a way to abuse it if I don't put this here.
-				return 0
+				if (!in_menhir_zone(test_turf)) //Special Exemption
+					return 0
 			if (our_loc.density)
 				return 4
 			for (var/obj/thing2 in view(0, our_loc))
@@ -102,24 +116,50 @@
 		. += "<h4>[src.machinery_name] Interlink</h4>"
 
 		if (!src.active) // Show us the list.
-			if (!src.machinerylist || (src.machinerylist && src.machinerylist.len == 0))
+			if (!src.machinerylist || (src.machinerylist && length(src.machinerylist) == 0))
 				. += "No linkable machinery found.<BR>"
 
 			else
 				for (var/obj/O in src.machinerylist )
 					if (istype(O, src.our_machinery))
-						. += "<A href='byond://?src=\ref[src];op=control;machinery=\ref[O]'>[O] at [get_area(O)]</A><BR>"
+						var/area/A = get_area(O)
+						var/area_string = "Off-[global.station_or_ship()] Location"
+						if (istype(A, /area/station))
+							area_string = A
+#ifdef MAP_OVERRIDE_MENHIR
+						if (istype(A, /area/precursor/menhir) || istype(A,/area/station/crown) || istype(A,/area/unspace))
+							area_string = "TOREADOR-7I-22408"
+#endif
+						. += "<A href='byond://?src=\ref[src];op=control;machinery=\ref[O]'>[O] at [area_string]</A><BR>"
 
 			. += "<BR><A href='byond://?src=\ref[src];op=scanmachinery'>Scan for linkable machinery</A><BR>"
 
 		else // Control a particular piece of machinery.
 
 			. += "<B>[src.active]</B><BR> Status: (<A href='byond://?src=\ref[src];op=control;machinery=\ref[src.active]'><i>refresh</i></A>)<BR>"
+			var/area_string = "Off-[global.station_or_ship()] Location"
+			var/area/A = get_area(src.active)
+			if (istype(A, /area/station))
+				area_string = A.name
+			#ifdef MAP_OVERRIDE_MENHIR
+			if (istypes(A, list(/area/precursor/menhir, /area/station/crown, /area/unspace)))
+				area_string = "TOREADOR-7I-22408"
+			#endif
+			var/home_string = "Off-[global.station_or_ship()] Location"
 
 			if (istype(src.active, /obj/machinery/port_a_brig/))
 				var/obj/machinery/port_a_brig/P2 = src.active
-
-				. += "Location: [get_area(P2)] (Home: [P2.homeloc ? "[get_area(P2.homeloc)]" : "N/A"])<BR>"
+				if (!P2.homeloc)
+					home_string = "N/A"
+				else
+					var/area/home_area = get_area(P2.homeloc)
+					if (istype(home_area, /area/station))
+						home_string = home_area.name
+					#ifdef MAP_OVERRIDE_MENHIR
+					if (istypes(home_area, list(/area/precursor/menhir, /area/station/crown, /area/unspace)))
+						home_string = "TOREADOR-7I-22408"
+					#endif
+				. += "Location: [area_string] (Home: [home_string])<BR>"
 				. += "Occupant: [P2.occupant ? "[P2.occupant.name]" : "None"] ([P2.locked ? "locked" : "unlocked"])"
 
 				. += "<BR>\[<A href='byond://?src=\ref[src];op=lock'>Toggle lock</A>\] "
@@ -129,8 +169,14 @@
 
 			else if (istype(src.active, /obj/machinery/sleeper/port_a_medbay))
 				var/obj/machinery/sleeper/port_a_medbay/P2 = src.active
+				if (!P2.homeloc)
+					home_string = "N/A"
+				else
+					var/area/home_area = get_area(P2.homeloc)
+					if (istype(home_area, /area/station))
+						home_string = home_area.name
 
-				. += "Location: [get_area(P2)] (Home: [P2.homeloc ? "[get_area(P2.homeloc)]" : "N/A"])<BR>"
+				. += "Location: [area_string] (Home: [home_string])<BR>"
 				. += "Occupant: [P2.occupant ? "[P2.occupant.name]" : "None"]"
 
 				. += "<BR>\[<A href='byond://?src=\ref[src];op=summon'>Summon</A>\] "
@@ -139,8 +185,14 @@
 
 			else if (istype(src.active, /obj/machinery/vending/port_a_nanomed/))
 				var/obj/machinery/vending/port_a_nanomed/P2 = src.active
+				if (!P2.homeloc)
+					home_string = "N/A"
+				else
+					var/area/home_area = get_area(P2.homeloc)
+					if (istype(home_area, /area/station))
+						home_string = home_area.name
 
-				. += "Location: [get_area(P2)] (Home: [P2.homeloc ? "[get_area(P2.homeloc)]" : "N/A"])"
+				. += "Location: [area_string] (Home: [home_string])<BR>"
 
 				. += "<BR>\[<A href='byond://?src=\ref[src];op=summon'>Summon</A>\] "
 				. += "\[<A href='byond://?src=\ref[src];op=return'>Send to home turf</A>\]<BR>"
@@ -148,8 +200,14 @@
 
 			else if (istype(src.active, /obj/storage/closet/port_a_sci/))
 				var/obj/storage/closet/port_a_sci/P2 = src.active
+				if (!P2.homeloc)
+					home_string = "N/A"
+				else
+					var/area/home_area = get_area(P2.homeloc)
+					if (istype(home_area, /area/station))
+						home_string = home_area.name
 
-				. += "Location: [get_area(P2)] (Home: [P2.homeloc ? "[get_area(P2.homeloc)]" : "N/A"])"
+				. += "Location: [area_string] (Home: [home_string])<BR>"
 
 				. += "\[<A href='byond://?src=\ref[src];op=return'>Send to home turf</A>\]<BR>"
 				. += "<HR><A href='byond://?src=\ref[src];op=machinerylist'>Return to list</A>"
@@ -186,9 +244,9 @@
 						P3.locked = 1
 
 					if (P3.occupant)
-						logTheThing("station", usr, P3.occupant, "[P3.locked ? "locks" : "unlocks"] [P3.name] with [constructTarget(P3.occupant,"station")] inside at [log_loc(P3)].")
+						logTheThing(LOG_STATION, usr, "[P3.locked ? "locks" : "unlocks"] [P3.name] with [constructTarget(P3.occupant,"station")] inside at [log_loc(P3)].")
 
-					PDA.display_alert("<span style=\"color:blue\">The [src.machinery_name] is now [P3.locked ? "locked" : "unlocked"].</span>")
+					PDA.display_alert(SPAN_NOTICE("The [src.machinery_name] is now [P3.locked ? "locked" : "unlocked"]."))
 
 				else return
 
@@ -197,8 +255,8 @@
 				var/turf/our_loc = get_turf(PDA)
 				if (isAIeye(usr))
 					our_loc = get_turf(usr)
-					if (!(our_loc.cameras && length(our_loc.cameras)))
-						boutput(usr, "<span class='alert'>This area is not within your range of influence.</span>")
+					if (!seen_by_camera(our_loc))
+						boutput(usr, SPAN_ALERT("This area is not within your range of influence."))
 						return
 
 				// Z-level check bypass for Port-a-Sci.
@@ -208,15 +266,15 @@
 
 				switch (src.teleport_sanity_check(P4, usr, null, zlevel_check_bypass))
 					if (0)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to unknown interference!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to unknown interference!"))
 					if (2)
-						PDA.display_alert("<span style=\"color:red\">The [src.machinery_name] is recharging!</span>")
+						PDA.display_alert(SPAN_ALERT("The [src.machinery_name] is recharging!"))
 					if (3)
-						PDA.display_alert("<span style=\"color:red\">Cannot teleport unlocked [src.machinery_name] with someone inside!</span>")
+						PDA.display_alert(SPAN_ALERT("Cannot teleport unlocked [src.machinery_name] with someone inside!"))
 					if (4)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to obstacle!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to obstacle!"))
 					if (5)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to obstacle at home turf!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to obstacle at home turf!"))
 
 					else
 						src.anti_spam = world.time
@@ -235,7 +293,9 @@
 							var/obj/storage/closet/port_a_sci/PS = P4
 							PS.on_teleport()
 
+						FLICK("[P4.icon_state]-tele", P4)
 						elecflash(P4)
+						logTheThing(LOG_STATION, usr, "teleports [P4] to [log_loc(our_loc)].")
 
 			if ("return")
 				var/obj/P5 = src.active
@@ -244,7 +304,7 @@
 					dest_loc = get_turf(P5:homeloc) // I have sinned, though the BAD OPERATOR might be unproblematic here.
 
 				if (!dest_loc || !isturf(dest_loc))
-					PDA.display_alert("<span style=\"color:red\">No home turf assigned to [src.machinery_name], can't teleport!</span>")
+					PDA.display_alert(SPAN_ALERT("No home turf assigned to [src.machinery_name], can't teleport!"))
 					return
 
 				// Z-level check bypass for Port-a-Sci.
@@ -254,15 +314,15 @@
 
 				switch (src.teleport_sanity_check(P5, usr, dest_loc, zlevel_check_bypass))
 					if (0)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to unknown interference!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to unknown interference!"))
 					if (2)
-						PDA.display_alert("<span style=\"color:red\">The [src.machinery_name] is recharging!</span>")
+						PDA.display_alert(SPAN_ALERT("The [src.machinery_name] is recharging!"))
 					if (3)
-						PDA.display_alert("<span style=\"color:red\">Cannot teleport unlocked [src.machinery_name] with someone inside!</span>")
+						PDA.display_alert(SPAN_ALERT("Cannot teleport unlocked [src.machinery_name] with someone inside!"))
 					if (4)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to obstacle!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to obstacle!"))
 					if (5)
-						PDA.display_alert("<span style=\"color:red\">Teleportation failed due to obstacle at home turf!</span>")
+						PDA.display_alert(SPAN_ALERT("Teleportation failed due to obstacle at home turf!"))
 
 					else
 						src.anti_spam = world.time
@@ -281,8 +341,9 @@
 						if (istype(P5, /obj/storage/closet/port_a_sci/))
 							var/obj/storage/closet/port_a_sci/PS2 = P5
 							PS2.on_teleport()
-
+						FLICK("[P5.icon_state]-tele", P5)
 						elecflash(P5)
+						logTheThing(LOG_STATION, usr, "teleports [P5] to its home turf [log_loc(dest_loc)].")
 
 		PDA.updateSelfDialog()
 		return
@@ -297,16 +358,16 @@
 		if (!src.master)
 			return
 
-		for (var/obj/machinery/port_a_brig/M in portable_machinery)
+		for (var/obj/machinery/port_a_brig/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
 				src.machinerylist += M
 		return
 
 /datum/computer/file/pda_program/portable_machinery_control/portamedbay
-	name = "P-Medbay Remote" // Damn forced line breaks.
+	name = "Port-a-Medbay Remote" // Damn forced line breaks.
 	our_machinery = /obj/machinery/sleeper/port_a_medbay
 	machinery_name = "Port-a-Medbay"
 	size = 4
@@ -315,16 +376,16 @@
 		if (!src.master)
 			return
 
-		for (var/obj/machinery/sleeper/port_a_medbay/M in portable_machinery)
+		for (var/obj/machinery/sleeper/port_a_medbay/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
 				src.machinerylist += M
 		return
 
 /datum/computer/file/pda_program/portable_machinery_control/portananomed
-	name = "NanoMed Remote" // Damn forced line breaks.
+	name = "Port-a-NanoMed Remote" // Damn forced line breaks.
 	our_machinery = /obj/machinery/vending/port_a_nanomed/
 	machinery_name = "Port-a-NanoMed"
 	size = 4
@@ -333,9 +394,9 @@
 		if (!src.master)
 			return
 
-		for (var/obj/machinery/vending/port_a_nanomed/M in portable_machinery)
+		for (var/obj/machinery/vending/port_a_nanomed/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue
 			if (!(M in src.machinerylist))
 				src.machinerylist += M
@@ -352,9 +413,9 @@
 		if (!src.master)
 			return
 
-		for (var/obj/storage/closet/port_a_sci/M in portable_machinery)
+		for (var/obj/storage/closet/port_a_sci/M in by_cat[TR_CAT_PORTABLE_MACHINERY])
 			/*var/turf/M_loc = get_turf(M)
-			if (M && M_loc && isturf(M_loc) && isrestrictedz(M_loc.z)) // Don't show stuff in "somewhere", okay.
+			if (M && !src.loc_eval(M_loc)) // Don't show stuff in "somewhere", okay.
 				continue*/
 			if (!(M in src.machinerylist))
 				src.machinerylist += M

@@ -27,23 +27,40 @@
 	} \
 } while (FALSE)
 
-/// *Only* run the test provided within the parentheses
-/// This is useful for debugging when you want to reduce noise, but should never be pushed
-/// Intended to be used in the manner of `TEST_FOCUS(/datum/unit_test/math)`
-#define TEST_FOCUS(test_path) ##test_path { focus = TRUE; }
-
 /// Constants indicating unit test completion status
 #define UNIT_TEST_PASSED 0
 #define UNIT_TEST_FAILED 1
 
+#include "metadata_type_typos.dm"
 #include "rand.dm"
 #include "deletions.dm"
+#include "explosions.dm"
+#include "string_prefix_suffix.dm"
+#include "monkey_thunderdome.dm"
 #include "reagent_id_typos.dm"
 #include "record_database.dm"
+#include "passability_cache.dm"
+#include "bsp.dm"
 #include "unit_test.dm"
+#include "building_materials_mat_amount.dm"
+#include "bioeffect_id_uniqueness.dm"
+#include "reagent_id_uniqueness.dm"
+#include "trait_id_uniqueness.dm"
+#include "material_id_uniqueness.dm"
+#include "action_id_uniqueness.dm"
+#include "antag_popup_existence.dm"
+#include "job_name_uniqueness.dm"
+#include "mutation_combo_valid_ids.dm"
+#include "od_compile_bot.dm"
+#include "terrainify.dm"
+
+/// regression tests
+#include "regression/opaque_atom_tracking.dm"
+#include "regression/opaque_lighting.dm"
+#include "regression/reagent_transfer.dm"
+#include "regression/say_message.dm"
 
 #undef TEST_ASSERT
 #undef TEST_ASSERT_EQUAL
 #undef TEST_ASSERT_NOTEQUAL
-#undef TEST_FOCUS
 #endif

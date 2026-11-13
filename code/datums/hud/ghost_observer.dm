@@ -14,6 +14,8 @@
 
 	proc/get_respawn_timer()
 		RETURN_TYPE(/atom/movable/screen/respawn_timer)
+		if(master.mind?.get_player()?.joined_observer)
+			return null
 		if(isnull(src.respawn_timer))
 			src.respawn_timer = new
 			src.add_object(src.respawn_timer)
@@ -38,6 +40,9 @@
 			return
 
 		for(var/obj/ability_button/B in master.client.screen)
+			master.client.screen -= B
+
+		for(var/atom/movable/screen/ability/B in master.client.screen)
 			master.client.screen -= B
 
 		if (master.abilityHolder) //abilities come first. no overlap from the upcoming buttons!

@@ -7,12 +7,12 @@ Shield and graivty well generators
 /obj/shieldgen
 	name = "shield generator"
 	desc = "Used to seal minor hull breaches."
-	icon = 'icons/obj/objects.dmi'
+	icon = 'icons/obj/shield_gen.dmi'
 	icon_state = "shieldoff"
 
 	density = 1
 	opacity = 0
-	anchored = 0
+	anchored = UNANCHORED
 	pressure_resistance = 2*ONE_ATMOSPHERE
 
 	var/active = 0
@@ -38,11 +38,11 @@ Shield and graivty well generators
 				if (malfunction && prob(33) || !malfunction)
 					deployed_shields += new /obj/shield(target_tile)
 
-		src.anchored = 1
+		src.anchored = ANCHORED
 		src.active = 1
 		src.icon_state = malfunction ? "shieldonbr":"shieldon"
 
-		SPAWN_DBG(0) src.process()
+		SPAWN(0) src.process()
 
 	shields_down()
 		if(!active) return 0
@@ -50,7 +50,7 @@ Shield and graivty well generators
 		for(var/obj/shield/shield_tile in deployed_shields)
 			qdel(shield_tile)
 
-		src.anchored = 0
+		src.anchored = UNANCHORED
 		src.active = 0
 		src.icon_state = malfunction ? "shieldoffbr":"shieldoff"
 
@@ -62,7 +62,7 @@ Shield and graivty well generators
 			while(prob(10))
 				qdel(pick(deployed_shields))
 
-		SPAWN_DBG(3 SECONDS)
+		SPAWN(3 SECONDS)
 			src.process()
 	return
 
@@ -85,38 +85,38 @@ Shield and graivty well generators
 	return
 
 /obj/shield/meteorhit(obj/O as obj)
-	playsound(src.loc, "sound/impact_sounds/Energy_Hit_1.ogg", 50, 1)
+	playsound(src.loc, 'sound/impact_sounds/Energy_Hit_1.ogg', 50, 1)
 	return
 
 /obj/shieldgen/ex_act(severity)
 	switch(severity)
-		if(1.0)
+		if(1)
 			src.health -= 75
 			src.checkhp()
-		if(2.0)
+		if(2)
 			src.health -= 30
 			if (prob(15))
 				src.malfunction = 1
 			src.checkhp()
-		if(3.0)
+		if(3)
 			src.health -= 10
 			src.checkhp()
 	return
 
 /obj/shield/ex_act(severity)
 	switch(severity)
-		if(1.0)
+		if(1)
 			if (prob(75))
 				qdel(src)
-		if(2.0)
+		if(2)
 			if (prob(50))
 				qdel(src)
-		if(3.0)
+		if(3)
 			if (prob(25))
 				qdel(src)
 	return
 
-/obj/shieldgen/attack_hand(mob/user as mob)
+/obj/shieldgen/attack_hand(mob/user)
 	if (active)
 		src.visible_message("<font color='blue'>[bicon(src)] [user] deactivated the shield generator.</font>")
 
@@ -134,8 +134,8 @@ Shield and graivty well generators
 	icon_state = "shieldsparkles"
 	density = 1
 	opacity = 0
-	anchored = 1
-	event_handler_flags = USE_FLUID_ENTER 
+	anchored = ANCHORED
+	event_handler_flags = USE_FLUID_ENTER | IMMUNE_TRENCH_WARP
 	gas_impermeable = TRUE
 
 	New()
@@ -150,38 +150,39 @@ Shield and graivty well generators
 
 		..()
 	proc/update_nearby_tiles(need_rebuild)
-		var/turf/simulated/source = loc
+		var/turf/source = src.loc
 		if (istype(source))
 			return source.update_nearby_tiles(need_rebuild)
 
 		return 1
 
-/obj/shieldwall
-	name = "shield"
-	desc = "An energy shield."
-	icon = 'icons/effects/effects.dmi'
-	icon_state = "test"
-	density = 1
-	opacity = 0
-	anchored = 1
-
+TYPEINFO(/obj/gravity_well_generator)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = 14
 
 /obj/gravity_well_generator
 	name = "gravity well generator"
 	desc = "A complex piece of machinery that alters gravity."
 	icon = 'icons/obj/stationobjs.dmi'
 	icon_state = "gravgen-off"
-	mats = 14
 
 	density = 1
 	opacity = 0
-	anchored = 0
+	anchored = UNANCHORED
 	pressure_resistance = 2*ONE_ATMOSPHERE
 
 	var/active = 0
 	var/strength = 144		//strength is basically G if you know your newton law of gravitation
 
 /obj/gravity_well_generator
+
+	New()
+		. = ..()
+		START_TRACKING_CAT(TR_CAT_SINGULO_MAGNETS)
+
+	disposing()
+		STOP_TRACKING_CAT(TR_CAT_SINGULO_MAGNETS)
+		. = ..()
 
 	meteorhit(obj/O as obj)
 		if(prob(75))
@@ -190,31 +191,31 @@ Shield and graivty well generators
 
 	ex_act(severity)
 		switch(severity)
-			if(1.0)
+			if(1)
 				if (prob(75))
 					qdel(src)
-			if(2.0)
+			if(2)
 				if (prob(50))
 					qdel(src)
-			if(3.0)
+			if(3)
 				if (prob(25))
 					qdel(src)
 		return
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if (active)
-			src.visible_message("<font color='blue'>[bicon(src)] [user] deactivated the gravity well.</font>")
+			src.visible_message(SPAN_NOTICE("[bicon(src)] [user] deactivated the gravity well."), group = "gravity_well")
 
 			icon_state = "gravgen-off"
-			src.anchored = 0
+			src.anchored = UNANCHORED
 			src.active = 0
 
 		else
-			src.visible_message("<font color='blue'>[bicon(src)] [user] activated the gravity well.</font>")
+			src.visible_message(SPAN_NOTICE("[bicon(src)] [user] activated the gravity well."), group = "gravity_well")
 
 			icon_state = "gravgen-on"
 			src.active = 1
-			src.anchored = 1
+			src.anchored = ANCHORED
 			src.Life()
 
 	proc/Life()
@@ -227,13 +228,13 @@ Shield and graivty well generators
 
 		for (var/atom/X in orange(range,src))
 			//Skip if they're right beside the thing
-			if (get_dist(src,X) <= 1)
+			if (BOUNDS_DIST(src, X) == 0)
 				continue
 			//Get the distance
-			var/dist = get_dist(src,X)
+			var/dist = GET_DIST(src,X)
 
 			//Adjust probability accordingly
-			if ((istype(X,/obj) || isliving(X)) && prob(100/dist))
+			if ((istype(X,/obj) || isliving(X)) && prob(100/dist) && !isintangible(X))
 				//Skip if wearing magnetic shoes
 				if (ishuman(X))
 					var/mob/living/carbon/human/H = X
@@ -243,6 +244,6 @@ Shield and graivty well generators
 				if (!X:anchored)
 					step_towards(X,src)
 
-		SPAWN_DBG(1.7 SECONDS)
+		SPAWN(1.7 SECONDS)
 			src.Life()
 

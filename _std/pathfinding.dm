@@ -1,15 +1,37 @@
-/**
+/*
  * This file contains the stuff you need for using JPS (Jump Point Search) pathing, an alternative to A* that skips
  * over large numbers of uninteresting tiles resulting in much quicker pathfinding solutions. Mind that diagonals
  * cost the same as cardinal moves currently, so paths may look a bit strange, but should still be optimal.
+ * Ported from TGStation with permission from @Ryll-Ryll, also ryll is cool
  */
+
+/// Pathfind option key; The maximum number of steps we can take in a given path to search (default: 30, 0 = infinite)
+#define POP_MAX_DIST "max_distance"
+/// Pathfind option key; The maximum number of actual tiles seen. Sometimes a better limiter maybe?
+#define POP_MAX_SEEN "max_seen"
+/// Pathfind option key; Minimum distance to the target before path returns, could be used to get near a target, but not right to it - for an AI mob with a gun, for example.
+#define POP_MIN_DIST "min_distance"
+/// Pathfind option key; An ID card representing what access we have and what doors we can open. Its location relative to the pathing atom is irrelevant
+#define POP_ID "id"
+/// Pathfind option key; Whether we consider turfs without atmos simulation (AKA do we want to ignore space)
+#define POP_SIMULATED_ONLY "simulated_only"
+/// Pathfind option key; If we want to avoid a specific turf, like if we're a mulebot who already got blocked by some turf
+#define POP_EXCLUDE "exclude"
+/// Pathfind option key; Whether to find only paths consisting of cardinal steps.
+#define POP_CARDINAL_ONLY "cardinal_only"
+/// Pathfind option key; Whether or not to check if doors are blocked (welded, out of power, locked, etc...)
+#define POP_DOOR_CHECK "do_doorcheck"
+/// Pathfind option key; Whether to ignore passability caching (for extremely weird cases; like pods.)
+#define POP_IGNORE_CACHE "ignore_cache"
+
+// uncomment for debugging pathfinding
+//#define VISUALIZE_PATHFINDING
 
 /**
  * This is the proc you use whenever you want to have pathfinding more complex than "try stepping towards the thing".
- * If no path was found, returns an empty list, which is important for bots like medibots who expect an empty list rather than nothing.
  *
  * Arguments:
- * * caller: The movable atom that's trying to find the path
+ * * caller_am: The movable atom that's trying to find the path
  * * ends: What we're trying to path to. It doesn't matter if this is a turf or some other atom, we're gonna just path to the turf it's on anyway
  * * max_distance: The maximum number of steps we can take in a given path to search (default: 30, 0 = infinite)
  * * mintargetdistance: Minimum distance to the target before path returns, could be used to get near a target, but not right to it - for an AI mob with a gun, for example.
@@ -19,32 +41,61 @@
  * * skip_first: Whether or not to delete the first item in the path. This would be done because the first item is the starting tile, which can break movement for some creatures.
  * * cardinal_only: Whether to find only paths consisting of cardinal steps.
  * * required_goals: How many goals to find to succeed. Null for all.
+ * * do_doorcheck: Whether or not to check if doors are blocked (welded, out of power, locked, etc...)
+ *
+ * Returns: List of turfs from the caller_am to the end or a list of lists of the former if multiple ends are specified.
+ * If no paths were found, returns an empty list, which is important for bots like medibots who expect an empty list rather than nothing.
  */
-/proc/get_path_to(caller, ends, max_distance = 30, mintargetdist, id=null, simulated_only=TRUE, turf/exclude=null, skip_first=FALSE, cardinal_only=TRUE, required_goals=null)
+/proc/get_path_to(caller_am, ends, max_distance = 30, max_seen = null, mintargetdist, id=null, simulated_only=TRUE, turf/exclude=null, skip_first=FALSE, cardinal_only=TRUE, required_goals=null, do_doorcheck=FALSE)
+	if(isnull(ends))
+		return
 	var/single_end = !islist(ends)
 	if(single_end)
 		ends = list(ends)
-	if(!caller || !length(ends))
+	if(!caller_am || !length(ends))
 		return
 
-	var/datum/pathfind/pathfind_datum = new(caller, ends, id, max_distance, mintargetdist, simulated_only, exclude, cardinal_only)
+	var/list/options = list(
+		POP_MAX_DIST=max_distance,
+		POP_MAX_SEEN=max_seen,
+		POP_MIN_DIST=mintargetdist,
+		POP_ID=id,
+		POP_SIMULATED_ONLY=simulated_only,
+		POP_EXCLUDE=exclude,
+		POP_CARDINAL_ONLY=cardinal_only,
+		POP_DOOR_CHECK=do_doorcheck,
+	)
+	if(istype(caller_am, /obj/machinery/bot) && isnull(id)) // Stonepillar: remove this when amy finishes mob-ifying /obj/machinery/bot
+		var/obj/machinery/bot/bot = caller_am
+		options[POP_ID] = bot.botcard
+	if(istype(caller_am, /obj/machinery/vehicle))
+		options[POP_IGNORE_CACHE] = TRUE
+
+	var/datum/pathfind/pathfind_datum = new(caller_am, ends, options)
 	if(!isnull(required_goals))
 		pathfind_datum.n_target_goals = required_goals
 	pathfind_datum.search()
 	var/list/list/paths = pathfind_datum.paths
 	qdel(pathfind_datum)
 
+	#ifdef VISUALIZE_PATHFINDING
+	for(var/path_key in paths)
+		for(var/turf/T in paths[path_key])
+			animate(T, color="#ff0000", time=0.1 SECONDS, easing=SINE_EASING)
+			animate(color=null, time=4 SECONDS, easing=SINE_EASING)
+	#endif
+
 	if(single_end)
 		var/list/path = paths[ends[1]]
 		if(isnull(path))
 			return null
-		if(length(path) > 0 && skip_first)
+		if(length(path) && skip_first)
 			path.Cut(1,2)
 		return path
 
 	if(skip_first)
 		for(var/goal in paths)
-			if(length(paths[goal]) > 0)
+			if(length(paths[goal]))
 				paths[goal].Cut(1,2)
 	return paths
 
@@ -53,7 +104,7 @@
  * Note that this can only be used inside the [datum/pathfind][pathfind datum] since it uses variables from said datum.
  * If you really want to optimize things, optimize this, cuz this gets called a lot.
  */
-#define CAN_STEP(cur_turf, next) (next && !next.density && jpsTurfPassable(next, source=cur_turf, passer=caller, id=id) && !(simulated_only && !istype(next, /turf/simulated)) && (next != avoid))
+#define CAN_STEP(cur_turf, next) (next && jpsTurfPassable(next, cur_turf, caller_am, options) && !(simulated_only && !istype(next, /turf/simulated)) && (next != avoid))
 /// Another helper macro for JPS, for telling when a node has forced neighbors that need expanding
 #define STEP_NOT_HERE_BUT_THERE(cur_turf, dirA, dirB) ((!CAN_STEP(cur_turf, get_step(cur_turf, dirA)) && CAN_STEP(cur_turf, get_step(cur_turf, dirB))))
 
@@ -99,7 +150,7 @@
 /datum/jps_node/proc/update_parent(datum/jps_node/new_parent)
 	previous_node = new_parent
 	node_goals = previous_node.node_goals
-	jumps = get_dist(tile, previous_node.tile)
+	jumps = GET_DIST(tile, previous_node.tile)
 	number_tiles = previous_node.number_tiles + jumps
 	heuristic = INFINITY
 	for(var/turf/goal as anything in node_goals)
@@ -113,7 +164,7 @@
 /// The datum used to handle the JPS pathfinding, completely self-contained
 /datum/pathfind
 	/// The thing that we're actually trying to path for
-	var/atom/movable/caller
+	var/atom/movable/caller_am
 	/// The turf where we started at
 	var/turf/start
 	/// The number of goals we need to find to succeed
@@ -126,24 +177,29 @@
 	var/list/sources
 	/// The list we compile at the end if successful to pass back
 	var/list/list/turf/paths
+	/// The total number of tiles seen so far
+	var/total_seen = 0
 
 	// general pathfinding vars/args
-	/// An ID card representing what access we have and what doors we can open. Its location relative to the pathing atom is irrelevant
-	var/obj/item/card/id/id
+
 	/// How far away we have to get to the end target before we can call it quits
 	var/mintargetdist = 0
 	/// I don't know what this does vs , but they limit how far we can search before giving up on a path
 	var/max_distance = 30
+	/// Max number of tiles seen, null skips the check
+	var/max_seen = null
 	/// Space is big and empty, if this is TRUE then we ignore pathing through unsimulated tiles
 	var/simulated_only
 	/// A specific turf we're avoiding, like if a mulebot is being blocked by someone t-posing in a doorway we're trying to get through
 	var/turf/avoid
 	/// Whether we only want cardinal steps
 	var/cardinal_only = FALSE
+	/// Raw associative list of options passed from get_path_to.
+	var/list/options
 
-/datum/pathfind/New(atom/movable/caller, list/atom/goals, id, max_distance, mintargetdist, simulated_only, avoid, cardinal_only=FALSE)
+/datum/pathfind/New(atom/movable/caller_am, list/atom/goals, list/options)
 	..()
-	src.caller = caller
+	src.caller_am = caller_am
 	ends = list()
 	n_target_goals = length(goals)
 	for(var/goal in goals)
@@ -157,12 +213,13 @@
 			ends[T] = list(goal)
 	open = new /datum/heap(/proc/HeapPathWeightCompare)
 	sources = new()
-	src.id = id
-	src.max_distance = max_distance
-	src.mintargetdist = mintargetdist
-	src.simulated_only = simulated_only
-	src.avoid = avoid
-	src.cardinal_only = cardinal_only
+	src.options = options
+	src.max_distance = options[POP_MAX_DIST]
+	src.max_seen = options[POP_MAX_SEEN]
+	src.mintargetdist = options[POP_MIN_DIST]
+	src.simulated_only = options[POP_SIMULATED_ONLY]
+	src.avoid = options[POP_EXCLUDE]
+	src.cardinal_only = options[POP_CARDINAL_ONLY]
 	src.paths = list()
 
 /**
@@ -172,7 +229,7 @@
  * return null, which [/proc/get_path_to] translates to an empty list (notable for simple bots, who need empty lists)
  */
 /datum/pathfind/proc/search()
-	start = get_turf(caller)
+	start = get_turf(caller_am)
 	if(!start || !length(ends))
 		stack_trace("Invalid A* start or destination")
 		return
@@ -180,6 +237,10 @@
 	var/possible_goal_count = 0
 	for(var/turf/end as anything in ends)
 		if(end.z != search_z || max_distance && (max_distance < GET_DIST(start, end)))
+			ends -= end
+		else if(end == start)
+			for(var/goal in ends[end])
+				src.paths[goal] = list(start)
 			ends -= end
 		else
 			possible_goal_count += length(ends[end])
@@ -194,7 +255,10 @@
 
 	//then run the main loop
 	while(!open.is_empty() && !FINISHED_SEARCH)
-		if(!caller)
+		if (src.max_seen && (src.total_seen > src.max_seen))
+			// boutput(world, "ending search early due to total_seen limit")
+			return
+		if(!caller_am)
 			return
 		current_processed_node = open.pop() //get the lower f_value turf in the open list
 		if(max_distance && (current_processed_node.number_tiles > max_distance))//if too many steps, don't process that path
@@ -215,7 +279,6 @@
 		if(path)
 			for(var/i = 1 to round(0.5 * length(path)))
 				path.Swap(i, length(path) - i + 1)
-
 	sources = null
 	qdel(open)
 
@@ -228,7 +291,7 @@
 	while(unwind_node.previous_node)
 		var/dir_goal = get_dir(iter_turf, unwind_node.previous_node.tile)
 
-		for(var/i = 1 to unwind_node.jumps)
+		for(var/i in 1 to unwind_node.jumps)
 			var/turf/next_turf = get_step(iter_turf,dir_goal)
 			if(cardinal_only && !is_cardinal(dir_goal))
 				var/candidate_dir = dir_goal & (prob(50) ? (NORTH | SOUTH) : (EAST | WEST))
@@ -265,6 +328,7 @@
 			return
 		lag_turf = current_turf
 		current_turf = get_step(current_turf, heading)
+		src.total_seen++
 		steps_taken++
 		if(!CAN_STEP(lag_turf, current_turf))
 			return
@@ -276,7 +340,7 @@
 		var/list/reached_target_goals = null
 		if(mintargetdist)
 			for(var/turf/T as anything in ends)
-				if(get_dist(current_turf, T) <= mintargetdist)
+				if(GET_DIST(current_turf, T) <= mintargetdist && !istype(current_turf, /turf/simulated/wall))
 					LAZYLISTADD(reached_target_goals, ends[T])
 					ends -= T
 		else if(current_turf in ends)
@@ -338,6 +402,7 @@
 			return
 		lag_turf = current_turf
 		current_turf = get_step(current_turf, heading)
+		src.total_seen++
 		steps_taken++
 		if(!CAN_STEP(lag_turf, current_turf))
 			return
@@ -351,7 +416,7 @@
 		var/list/reached_target_goals = null
 		if(mintargetdist)
 			for(var/turf/T as anything in ends)
-				if(get_dist(current_turf, T) <= mintargetdist)
+				if(GET_DIST(current_turf, T) <= mintargetdist && !istype(current_turf,/turf/simulated/wall))
 					LAZYLISTADD(reached_target_goals, ends[T])
 					ends -= T
 		else if(current_turf in ends)
@@ -408,29 +473,40 @@
 
 /// this is a slight modification of /proc/checkTurfPassable to avoid indirect proc call overhead
 /// Returns false if there is a dense atom on the turf, unless a custom hueristic is passed.
-/proc/jpsTurfPassable(turf/T, turf/source=null, atom/passer=null, id=null)
+/proc/jpsTurfPassable(turf/T, turf/source, atom/passer, list/options)
 	. = TRUE
-	if(T.density || !T.pathable) // simplest case
+	options ||= list()
+	if(istype(T, /turf/space/fluid/warp_z5))
 		return FALSE
+	if(istype(passer,/mob/living/critter/flock/drone) && istype(T, /turf/simulated/wall/auto/feather))
+		var/mob/living/critter/flock/drone/F = passer
+		var/turf/simulated/wall/auto/feather/wall = T
+		if(!wall.broken && (F.floorrunning || (F.can_floorrun && F.resources >= 10))) //greater than 10 to give some wiggle room, actual cost is 1 per wall tile
+			return TRUE // floor running drones can *always* pass through flockwalls
+
 	var/direction = get_dir(source, T)
 	if(!direction)
+		return FALSE
+	if(T.passability_cache != null && !options[POP_IGNORE_CACHE] \
+			&& !T.pass_unstable && !source.pass_unstable && \
+			is_cardinal(direction))
+		return T.passability_cache
+	if(T.density || !T.pathable)
 		return FALSE
 	if(!is_cardinal(direction))
 		var/turf/corner_1 = get_step(source, turn(direction, 45))
 		var/turf/corner_2 = get_step(source, turn(direction, -45))
-		return jpsTurfPassable(corner_1, source, passer, id) && jpsTurfPassable(T, corner_1, passer, id) || \
-				jpsTurfPassable(corner_2, source, passer, id) && jpsTurfPassable(T, corner_2, passer, id)
-	if(isnull(id) && istype(passer, /obj/machinery/bot))
-		var/obj/machinery/bot/bot = passer
-		id = bot.botcard
+		return jpsTurfPassable(corner_1, source, passer, options) && jpsTurfPassable(T, corner_1, passer, options) || \
+				jpsTurfPassable(corner_2, source, passer, options) && jpsTurfPassable(T, corner_2, passer, options)
 	// if a source turf was included check for directional blocks between the two turfs
 	if (source && (T.blocked_dirs || source.blocked_dirs))
 		// do either of these turfs explicitly block entry or exit to the other?
-		if (HAS_FLAG(T.blocked_dirs, turn(direction, 180)))
+		if (HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, 180)))
 			return FALSE
-		else if (source && HAS_FLAG(source.blocked_dirs, direction))
+		else if (source && HAS_ALL_FLAGS(source.blocked_dirs, direction))
 			return FALSE
-	for(var/atom/A in T.contents)
+	var/id = options[POP_ID]
+	for(var/atom/A as anything in T.contents)
 		if (isobj(A))
 			var/obj/O = A
 			// only skip if we did the source check, otherwise fall back to normal density checks
@@ -439,16 +515,20 @@
 			if (istype(A, /obj/overlay) || istype(A, /obj/effects)) continue
 			if ((passer || id) && A.density)
 				if (O.object_flags & BOTS_DIRBLOCK) //NEW - are we a door-like-openable-thing?
-					if (O.has_access_requirements()) //are we a door w/ access?
-						if (ismob(passer) && O.allowed(passer) == 2 || id && O.check_access(id)) // do you have explicit access
-							continue
-						else
+					if(options[POP_DOOR_CHECK] && istype(O, /obj/machinery/door))
+						var/obj/machinery/door/door = O
+						if (door.isblocked())
 							return FALSE
-					else //we must be a public door
+					if (ismob(passer) && O.allowed(passer) || id && O.check_access(id)) // do you have explicit access
 						continue
-				return FALSE
-		else if (A.density)
-			return FALSE // not a special case, so this is a blocking object
+					else
+						return FALSE
+		if(!A.Cross(passer))
+			if(!T.pass_unstable && !source.pass_unstable)
+				T.passability_cache = FALSE
+			return FALSE
+	if(!T.pass_unstable && !source.pass_unstable) // Only these are cached, the rest are speical cases for unstable interactibles.
+		T.passability_cache = .
 
 #undef CAN_STEP
 #undef STEP_NOT_HERE_BUT_THERE
@@ -492,25 +572,25 @@
 /// Returns false if there is a dense atom on the turf, unless a custom hueristic is passed.
 /proc/checkTurfPassable(turf/T, heuristic = null, heuristic_args = null, turf/source = null)
 	. = TRUE
-	if(T.density || !T.pathable) // simplest case
+	if(!T || T.density || !T.pathable) // simplest case
 		return FALSE
 	// if a source turf was included check for directional blocks between the two turfs
 	if (source && (T.blocked_dirs || source.blocked_dirs))
 		var/direction = get_dir(source, T)
 
 		// do either of these turfs explicitly block entry or exit to the other?
-		if (HAS_FLAG(T.blocked_dirs, turn(direction, 180)))
+		if (HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, 180)))
 			return FALSE
-		else if (source && HAS_FLAG(source.blocked_dirs, direction))
+		else if (source && HAS_ALL_FLAGS(source.blocked_dirs, direction))
 			return FALSE
 
 		if (direction in ordinal) // ordinal? That complicates things...
 			if (source.blocked_dirs && T.blocked_dirs)
 				// check for "wall" blocks
 				// ex. trying to move NE source blocking north exit and destination (T) blocking south entry
-				if (HAS_FLAG(source.blocked_dirs, turn(direction, 45)) && HAS_FLAG(T.blocked_dirs, turn(direction, -135)))
+				if (HAS_ALL_FLAGS(source.blocked_dirs, turn(direction, 45)) && HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, -135)))
 					return FALSE
-				else if (HAS_FLAG(source.blocked_dirs, turn(direction, -45)) && HAS_FLAG(T.blocked_dirs, turn(direction, 135)))
+				else if (HAS_ALL_FLAGS(source.blocked_dirs, turn(direction, -45)) && HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, 135)))
 					return FALSE
 
 			var/turf/corner_1 = get_step(source, turn(direction, 45))
@@ -518,33 +598,33 @@
 
 			// check for potential blocks form the two corners
 			if (corner_1.blocked_dirs && corner_2.blocked_dirs)
-				if (HAS_FLAG(corner_1.blocked_dirs, turn(direction, -45)))
-					if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 45)))
+				if (HAS_ALL_FLAGS(corner_1.blocked_dirs, turn(direction, -45)))
+					if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 45)))
 						return FALSE // entry to dest blocked by corners
-					else if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 135)))
+					else if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 135)))
 						// check for "wall" blocks
 						// ex. trying to move NE with C1 blocking south entry and C2 blocking north exit
 						return FALSE
-				if (HAS_FLAG(corner_1.blocked_dirs, turn(direction, -135)))
-					if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 135)))
+				if (HAS_ALL_FLAGS(corner_1.blocked_dirs, turn(direction, -135)))
+					if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 135)))
 						return FALSE // exit from source blocked by corners
-					else if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 45)))
+					else if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 45)))
 						return FALSE // "wall" block
 
 			// we got past the combinations of the two corners ok, but what about the corners combined with the source and destination?
 			// entry blocked by an object in destination and in one or more of the corners
 			if (T.blocked_dirs && (corner_1.blocked_dirs || corner_2.blocked_dirs))
-				if (HAS_FLAG(corner_1.blocked_dirs, turn(direction, -45)) && HAS_FLAG(T.blocked_dirs, turn(direction, -135)))
+				if (HAS_ALL_FLAGS(corner_1.blocked_dirs, turn(direction, -45)) && HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, -135)))
 					return FALSE
-				else if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 45)) && HAS_FLAG(T.blocked_dirs, turn(direction, 135)))
+				else if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 45)) && HAS_ALL_FLAGS(T.blocked_dirs, turn(direction, 135)))
 					return FALSE
 			// entry blocked by an object in source and in one or more of the corners
 			if (source.blocked_dirs && (corner_1.blocked_dirs || corner_2.blocked_dirs))
-				if (HAS_FLAG(corner_1.blocked_dirs, turn(direction, -135)) && HAS_FLAG(source.blocked_dirs, turn(direction, -45)))
+				if (HAS_ALL_FLAGS(corner_1.blocked_dirs, turn(direction, -135)) && HAS_ALL_FLAGS(source.blocked_dirs, turn(direction, -45)))
 					return FALSE
-				else if (HAS_FLAG(corner_2.blocked_dirs, turn(direction, 135)) && HAS_FLAG(source.blocked_dirs, turn(direction, 45)))
+				else if (HAS_ALL_FLAGS(corner_2.blocked_dirs, turn(direction, 135)) && HAS_ALL_FLAGS(source.blocked_dirs, turn(direction, 45)))
 					return FALSE
-	for(var/atom/A in T.contents)
+	for(var/atom/A as anything in T.contents)
 		if (isobj(A))
 			var/obj/O = A
 			// only skip if we did the source check, otherwise fall back to normal density checks
@@ -568,51 +648,6 @@
 // Navigation procs
 // Used for A-star pathfinding
 
-/// Returns the surrounding cardinal turfs with open links
-/// Including through doors openable with the ID
-/turf/proc/CardinalTurfsWithAccess(obj/item/card/id/ID)
-	. = list()
-
-	for(var/d in cardinal)
-		var/turf/simulated/T = get_step(src, d)
-		if (T?.pathable && !T.density)
-			if(!LinkBlockedWithAccess(src, T, ID))
-				. += T
-
-/// Returns surrounding card+ord turfs with open links
-/turf/proc/AllDirsTurfsWithAccess(obj/item/card/id/ID)
-	. = list()
-
-	for(var/d in alldirs)
-		var/turf/simulated/T = get_step(src, d)
-		//if(istype(T) && !T.density)
-		if (T?.pathable && !T.density)
-			if(!LinkBlockedWithAccess(src, T, ID))
-				. += T
-
-// Fixes floorbots being terrified of space
-turf/proc/CardinalTurfsAndSpaceWithAccess(obj/item/card/id/ID)
-	. = list()
-
-	for(var/d in cardinal)
-		var/turf/T = get_step(src, d)
-		if (T && (T.pathable || istype(T, /turf/space)) && !T.density)
-			if(!LinkBlockedWithAccess(src, T, ID))
-				. += T
-
-var/static/obj/item/card/id/ALL_ACCESS_CARD = new /obj/item/card/id/captains_spare()
-
-/turf/proc/AllDirsTurfsWithAllAccess()
-	return AllDirsTurfsWithAccess(ALL_ACCESS_CARD)
-
-/turf/proc/CardinalTurfsSpace()
-	. = list()
-
-	for (var/d in cardinal)
-		var/turf/T = get_step(src, d)
-		if (T && (T.pathable || istype(T, /turf/space)) && !T.density)
-			if (!LinkBlockedWithAccess(src, T))
-				. += T
 
 // Returns true if a link between A and B is blocked
 // Movement through doors allowed if ID has access
@@ -687,41 +722,9 @@ var/static/obj/item/card/id/ALL_ACCESS_CARD = new /obj/item/card/id/captains_spa
 				else if (!exiting_this_tile) //dont bother checking if we are EXITING this tile
 					return 0
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/turf/proc
-	AdjacentTurfs()
-		. = list()
-		for(var/turf/simulated/t in oview(src,1))
-			if(!t.density)
-				if(!LinkBlocked(src, t) && !TurfBlockedNonWindow(t))
-					. += t
-
-	AdjacentTurfsSpace()
-		. = list()
-		for(var/turf/t in oview(src,1))
-			if(!t.density)
-				if(!LinkBlocked(src, t) && !TurfBlockedNonWindow(t))
-					. += t
-
-	Distance(turf/t)
-		return sqrt((src.x - t.x) ** 2 + (src.y - t.y) ** 2)
-
+/turf/proc/AdjacentTurfs()
+	. = list()
+	for(var/turf/simulated/t in oview(src,1))
+		if(!t.density)
+			if(!LinkBlocked(src, t) && !TurfBlockedNonWindow(t))
+				. += t

@@ -7,13 +7,18 @@
 	can_recycle = 0
 
 	New(var/loc, var/forceartiorigin)
-		..()
+		..(loc)
 		var/datum/artifact/pitcher/AS = new /datum/artifact/pitcher(src)
 		if (forceartiorigin)
 			AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
+
+		src.RemoveComponentsOfType(/datum/component/reagent_overlay)
+
+		if (prob(15))
+			src.reagents.inert = TRUE
 
 		gulp_size = rand(2, 10) * 5 //How fast will you drink from this? Who knows!
 		var/capacity = rand(5,20)
@@ -64,6 +69,8 @@
 			reagents.add_reagent("werewolf_serum", 2)
 		if (prob(3))
 			reagents.add_reagent("liquid spacetime", 25)
+		if (prob(3))
+			reagents.add_reagent("rat_spit", 5)
 		if (prob(1))
 			reagents.add_reagent("rat_venom", 5)
 		if (prob(3))
@@ -102,6 +109,8 @@
 			reagents.add_reagent("omnizine", 50)
 		if (prob(15))
 			reagents.add_reagent("mutagen", 30)
+		if (prob(5))
+			reagents.add_reagent("hyper_vomitium", 10)
 		if (prob(10))
 			reagents.add_reagent("omega_mutagen", 30)
 		if (prob(5))
@@ -114,8 +123,10 @@
 			reagents.add_reagent("bee", 10)
 		if(prob(15))
 			reagents.add_reagent("port", 30)
+		#ifdef SECRETS_ENABLED
 		if(prob(7))
 			reagents.add_reagent("bombini", 15)
+		#endif
 		if(prob(3))
 			reagents.add_reagent("medusa", 10)
 
@@ -128,14 +139,9 @@
 		for(var/i in 1 to fillerAmt)
 			reagents.add_reagent(pick(fillerDrinks), 50)
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
-
-	attack(mob/M, mob/user, def_zone)
-		. = ..()
-		if(.) // successfully made person drink
-			src.ArtifactFaultUsed(M)
 
 	examine()
 		return list(desc)
@@ -144,6 +150,7 @@
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
 
 	update_icon()
+
 		return //Can't be activated, so the icon should never change
 
 	smash()
@@ -152,13 +159,13 @@
 	//Annoyingly duplicated code to override pitcher's explosion behavior (smashing)
 	ex_act(severity)
 		switch(severity)
-			if(1.0)
+			if(1)
 				src.ArtifactStimulus("force", 200)
 				src.ArtifactStimulus("heat", 500)
-			if(2.0)
+			if(2)
 				src.ArtifactStimulus("force", 75)
 				src.ArtifactStimulus("heat", 450)
-			if(3.0)
+			if(3)
 				src.ArtifactStimulus("force", 25)
 				src.ArtifactStimulus("heat", 380)
 		return
@@ -181,6 +188,7 @@
 /datum/artifact/pitcher
 	associated_object = /obj/item/reagent_containers/food/drinks/drinkingglass/artifact
 	type_name = "Pitcher"
+	type_size = ARTIFACT_SIZE_MEDIUM
 	rarity_weight = 350
 	validtypes = list("martian","wizard","eldritch")
 	min_triggers = 0

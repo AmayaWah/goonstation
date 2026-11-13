@@ -6,83 +6,51 @@
 /obj/item/reagent_containers/glass/beaker
 	name = "beaker"
 	desc = "A beaker. Can hold up to 50 units."
-	icon = 'icons/obj/chemical.dmi'
+	icon = 'icons/obj/items/chemistry_glassware.dmi'
 	inhand_image_icon = 'icons/mob/inhand/hand_medical.dmi'
 	icon_state = "beaker"
 	item_state = "beaker"
 	initial_volume = 50
-	var/image/fluid_image
-	var/icon_style = "beaker"
+	accepts_lid = TRUE
 	rc_flags = RC_SCALE | RC_VISIBLE | RC_SPECTRO
+	item_function_flags = /obj/item/reagent_containers/glass::item_function_flags | ASSEMBLY_NEEDS_MESSAGING
+	object_flags = NO_GHOSTCRITTER
+	fluid_overlay_states = 7
+	container_style = "beaker"
 
-	on_reagent_change()
-		src.update_icon()
+	New()
+		..()
+		RegisterSignal(src, COMSIG_ITEM_ASSEMBLY_ITEM_SETUP, PROC_REF(assembly_setup))
+		RegisterSignal(src, COMSIG_ITEM_ASSEMBLY_ITEM_REMOVAL, PROC_REF(assembly_removal))
 
-	proc/update_icon()
-		src.underlays = null
-		if (reagents.total_volume)
-			var/fluid_state = round(clamp((src.reagents.total_volume / src.reagents.maximum_volume * 5 + 1), 1, 5))
-			if (!src.fluid_image)
-				src.fluid_image = image(src.icon, "fluid-[src.icon_style][fluid_state]", -1)
-			else
-				src.fluid_image.icon_state = "fluid-[src.icon_style][fluid_state]"
-			src.icon_state = "[src.icon_style][fluid_state]"
-			var/datum/color/average = reagents.get_average_color()
-			src.fluid_image.color = average.to_rgba()
-			src.underlays += src.fluid_image
-		else
-			src.icon_state = src.icon_style
+	disposing()
+		UnregisterSignal(src, COMSIG_ITEM_ASSEMBLY_ITEM_SETUP)
+		UnregisterSignal(src, COMSIG_ITEM_ASSEMBLY_ITEM_REMOVAL)
+		..()
 
-		if (istype(src.master,/obj/item/assembly))
-			var/obj/item/assembly/A = src.master
-			A.c_state(1)
+
+	/// ----------- Trigger/Applier/Target-Assembly-Related Procs -----------
+
+	assembly_get_admin_log_message(var/mob/user, var/obj/item/assembly/parent_assembly)
+		return " [log_reagents(src)]"
+
+
+	proc/assembly_setup(var/manipulated_bomb, var/obj/item/assembly/parent_assembly, var/mob/user, var/is_build_in)
+		//we need to displace the icon a bit more with beakers than with other items
+		if (is_build_in && parent_assembly.target == src)
+			parent_assembly.icon_base_offset = 4
+
+
+	proc/assembly_removal(var/manipulated_bomb, var/obj/item/assembly/parent_assembly, var/mob/user)
+		//we need to reset the base icon offset
+		parent_assembly.icon_base_offset = 0
+
+	/// ----------------------------------------------
+
+	update_icon()
+		. = ..()
 		signal_event("icon_updated")
 
-	attackby(obj/A as obj, mob/user as mob)
-		if (istype(A, /obj/item/assembly/time_ignite) && !(A:status))
-			var/obj/item/assembly/time_ignite/W = A
-			if (!W.part3)
-				W.part3 = src
-				src.master = W
-				src.layer = initial(src.layer)
-				user.u_equip(src)
-				src.set_loc(W)
-				W.c_state(0)
-
-				boutput(user, "You attach [W.name] to [src].")
-			else
-				boutput(user, "You must remove [W.part3] from the assembly before transferring chemicals to it!")
-			return
-
-		if (istype(A, /obj/item/assembly/prox_ignite) && !(A:status))
-			var/obj/item/assembly/prox_ignite/W = A
-			if (!W.part3)
-				W.part3 = src
-				src.master = W
-				src.layer = initial(src.layer)
-				user.u_equip(src)
-				src.set_loc(W)
-				W.c_state(0)
-
-				boutput(user, "You attach [W.name] to [src].")
-			else boutput(user, "You must remove [W.part3] from the assembly before transferring chemicals to it!")
-			return
-
-		if (istype(A, /obj/item/assembly/rad_ignite) && !(A:status))
-			var/obj/item/assembly/rad_ignite/W = A
-			if (!W.part3)
-				W.part3 = src
-				src.master = W
-				src.layer = initial(src.layer)
-				user.u_equip(src)
-				src.set_loc(W)
-				W.c_state(0)
-
-				boutput(user, "You attach [W.name] to [src].")
-			else boutput(user, "You must remove [W.part3] from the assembly before transferring chemicals to it!")
-			return
-
-		..(A, user)
 
 /* =================================================== */
 /* -------------------- Sub-Types -------------------- */
@@ -90,9 +58,11 @@
 
 /obj/item/reagent_containers/glass/beaker/cryoxadone
 	name = "beaker (cryoxadone)"
-	icon_state = "roundflask"
-	icon_style = "roundflask"
-	initial_reagents = list("cryoxadone"=40)
+	icon_state = "round_flask"
+	initial_reagents = list("cryoxadone" = 40)
+	fluid_overlay_states = 8
+	container_style = "round_flask"
+	fluid_overlay_scaling = RC_REAGENT_OVERLAY_SCALING_SPHERICAL
 
 /obj/item/reagent_containers/glass/beaker/epinephrine
 	name = "beaker (epinephrine)"
@@ -110,6 +80,22 @@
 	name = "beaker (silver sulfadiazine)"
 	initial_reagents = "silver_sulfadiazine"
 
+/obj/item/reagent_containers/glass/beaker/egg
+	name = "Beaker of Eggs"
+	desc = "Eggs; fertile ground for some microbes."
+
+	New()
+		..()
+		src.reagents.add_reagent("egg", 50)
+
+/obj/item/reagent_containers/glass/beaker/stablemut
+	name = "Beaker of Stable Mutagen"
+	desc = "Stable Mutagen; fertile ground for some microbes."
+
+	New()
+		..()
+		src.reagents.add_reagent("dna_mutagen", 50)
+
 /* ======================================================= */
 /* -------------------- Large Beakers -------------------- */
 /* ======================================================= */
@@ -117,13 +103,23 @@
 /obj/item/reagent_containers/glass/beaker/large
 	name = "large beaker"
 	desc = "A large beaker. Can hold up to 100 units."
-	icon_state = "beakerlarge"
+	icon_state = "large_beaker"
 	initial_volume = 100
-	icon_style = "beakerlarge"
+	fluid_overlay_states = 9
+	container_style = "large_beaker"
 
 /* =================================================== */
 /* -------------------- Sub-Types -------------------- */
 /* =================================================== */
+
+/obj/item/reagent_containers/glass/beaker/large/round
+	name = "round-bottom flask"
+	desc = "A large round-bottom flask, for all your chemistry needs."
+	icon_state = "large_flask"
+	item_state = "large_flask"
+	fluid_overlay_states = 11
+	container_style = "large_flask"
+	fluid_overlay_scaling = RC_REAGENT_OVERLAY_SCALING_SPHERICAL
 
 /obj/item/reagent_containers/glass/beaker/large/epinephrine
 	name = "epinephrine reserve tank"
@@ -150,12 +146,12 @@
 	initial_volume = 400
 	amount_per_transfer_from_this = 25
 	incompatible_with_chem_dispensers = 1
-	flags = FPRINT | TABLEPASS | OPENCONTAINER
+	flags = TABLEPASS | OPENCONTAINER
 	rc_flags = RC_SCALE
 
 /obj/item/reagent_containers/food/drinks/reserve/brute
 	name = "high capacity styptic powder reserve tank"
-	desc = "A high capacitiy reserve tank filled with styptic powder."
+	desc = "A high capacity reserve tank filled with styptic powder."
 	icon_state = "largebottle-brute"
 	initial_reagents = "styptic_powder"
 
@@ -164,6 +160,9 @@
 	desc = "A high capacity reserve tank filled with silver sulfadiazine."
 	icon_state = "largebottle-burn"
 	initial_reagents = "silver_sulfadiazine"
+
+/obj/item/reagent_containers/glass/beaker/large/cyborg
+	shatter_immune = TRUE
 
 /*  Now found in hydroponics.dm!
 
@@ -182,6 +181,11 @@
 	name = "reagent extractor tank"
 	desc = "A large tank used in the reagent extractors. You probably shouldn't be able to see this!"
 	initial_volume = 500
+	shatter_immune = TRUE
+
+// ORGONEIC CHAMISTREY FOR MUSTY JEANS
+/obj/item/reagent_containers/glass/beaker/extractor_tank/thick
+	initial_volume = 1000
 
 /* ================================================= */
 /* -------------------- Flasks -------------------- */
@@ -189,46 +193,41 @@
 
 /obj/item/reagent_containers/glass/flask
 	name = "flask"
-	desc = "Looks pretty fragile, better not drop this."
-	icon = 'icons/obj/chemical.dmi'
+	desc = "Looks surprisingly robust."
+	icon = 'icons/obj/items/chemistry_glassware.dmi'
 	inhand_image_icon = 'icons/mob/inhand/hand_medical.dmi'
-	icon_state = "eflask"
+	icon_state = "conical_flask"
 	item_state = "flask"
-	var/icon_style = "eflask"
 	rc_flags = RC_SPECTRO | RC_FULLNESS | RC_VISIBLE
 	initial_volume = 15
+	accepts_lid = TRUE
+	fluid_overlay_states = 8
+	container_style = "conical_flask"
 	var/smashed = 0
 	var/shard_amt = 1
-	var/image/fluid_image
-
-	on_reagent_change()
-		src.update_icon()
-
-	proc/update_icon() //updates icon based on fluids inside
-		src.underlays = null
-		if (src.reagents && src.reagents.total_volume)
-			var/fluid_state = round(clamp((src.reagents.total_volume / src.reagents.maximum_volume * 5 + 1), 1, 5))
-			var/datum/color/average = reagents.get_average_color()
-			var/average_rgb = average.to_rgba()
-			src.icon_state = "[src.icon_style][fluid_state]"
-			if (!src.fluid_image)
-				src.fluid_image = image('icons/obj/chemical.dmi', "fluid-[icon_style][fluid_state]", -1)
-			else
-				src.fluid_image.icon_state = "fluid-[src.icon_style][fluid_state]"
-			src.fluid_image.color = average_rgb
-			src.underlays += fluid_image
-		else
-			src.icon_state = src.icon_style
-
-	throw_impact(atom/A, datum/thrown_thing/thr)
-		var/turf/T = get_turf(A)
-		..()
-		src.smash(T)
 
 /obj/item/reagent_containers/glass/flask/round
 	name = "round flask"
-	icon_state = "roundflask"
-	icon_style = "roundflask"
+	icon_state = "round_flask"
+	fluid_overlay_states = 8
+	container_style = "round_flask"
+	fluid_overlay_scaling = RC_REAGENT_OVERLAY_SCALING_SPHERICAL
 
 /obj/item/reagent_containers/glass/flask/black_powder //prefab shit
 	initial_reagents = "blackpowder"
+
+/obj/item/reagent_containers/glass/flask/heartbottle //goes in Jan's admin office
+	name = "The Secret Ingredient"
+	desc = "You feel strangely warm and relaxed just looking at it."
+	icon = 'icons/misc/janstuff.dmi'
+	icon_state = "heartbottle"
+	initial_volume = 50
+	initial_reagents = "love"
+	container_icon = 'icons/misc/janstuff.dmi'
+	container_style = "heartbottle"
+	fluid_overlay_states = 5
+
+/obj/item/reagent_containers/glass/beaker/large/round/random_acid
+	New()
+		. = ..()
+		src.reagents.add_reagent(pick("pacid", "clacid", "acid"), src.initial_volume)

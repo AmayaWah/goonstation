@@ -26,33 +26,7 @@
 	proc/apply_to_obj(var/obj/O)
 		return
 
-/datum/material_recipe/spacelag
-	name = "spacelag"
-	result_id = "spacelag"
-	result_item = /obj/item/material_piece/spacelag
-
-	validate(var/datum/material/M)
-		if(M.hasProperty("stability") && M.getProperty("stability") <= 1) return 1
-		else return 0
-
-/datum/material_recipe/dyneema
-	name = "dyneema"
-	result_id = "dyneema"
-	result_item = /obj/item/material_piece/cloth/dyneema
-
-	validate(var/datum/material/M)
-		var/hasCarbon = 0
-		var/hasSilk = 0
-
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "carbonfibre") hasCarbon = 1
-			if(CM.mat_id == "spidersilk") hasSilk = 1
-
-		if(M.mat_id == "carbonfibre") hasCarbon = 1
-		if(M.mat_id == "spidersilk") hasSilk = 1
-
-		if(hasCarbon && hasSilk) return 1
-		else return 0
+// Metal
 
 /datum/material_recipe/hauntium
 	name = "hauntium"
@@ -63,12 +37,12 @@
 		var/hasSteel = 0
 		var/hasKosh = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "soulsteel") hasSteel = 1
-			if(CM.mat_id == "koshmarite") hasKosh = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "soulsteel") hasSteel = 1
+			if(CM.getID() == "koshmarite") hasKosh = 1
 
-		if(M.mat_id == "soulsteel") hasSteel = 1
-		if(M.mat_id == "koshmarite") hasKosh = 1
+		if(M.getID() == "soulsteel") hasSteel = 1
+		if(M.getID() == "koshmarite") hasKosh = 1
 
 		if(hasSteel && hasKosh) return 1
 		else return 0
@@ -81,12 +55,12 @@
 		var/hasSoul = 0
 		var/hasSteel = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "ectoplasm") hasSoul = 1
-			if(CM.mat_id == "steel") hasSteel = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "ectoplasm") hasSoul = 1
+			if(CM.getID() == "steel") hasSteel = 1
 
-		if(M.mat_id == "ectoplasm") hasSoul = 1
-		if(M.mat_id == "steel") hasSteel = 1
+		if(M.getID() == "ectoplasm") hasSoul = 1
+		if(M.getID() == "steel") hasSteel = 1
 
 		if(hasSoul && hasSteel) return 1
 		else return 0
@@ -99,9 +73,54 @@
 		var/one = 0
 		var/two = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "mauxite") one = 1
-			if(CM.mat_id == "char") two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "mauxite") one = 1
+			if(CM.getID() == "char") two = 1
+
+		if(one && two) return 1
+		else return 0
+
+/datum/material_recipe/copper // this doesn't REALLY make sense how steel recipe does but I don't care. Need a way to make copper for coroisum
+	name = "copper"
+	result_id = "copper"
+
+	validate(var/datum/material/M)
+		var/one = 0
+		var/two = 0
+
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "pharosium") one = 1
+			if(CM.getID() == "char") two = 1
+
+		if(one && two) return 1
+		else return 0
+
+/datum/material_recipe/glass // yeah whatever sure char and molitz makes glass who gives a shit
+	name = "glass"
+	result_id = "glass"
+
+	validate(datum/material/M)
+		var/one = FALSE
+		var/two = FALSE
+
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "molitz") one = TRUE
+			if(CM.getID() == "char") two = TRUE
+
+		if(one && two) return TRUE
+		else return FALSE
+
+/datum/material_recipe/silver
+	name = "silver"
+	result_id = "silver"
+
+	validate(var/datum/material/M)
+		var/one = 0
+		var/two = 0
+
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "cobryl") one = 1
+			if(CM.getID() == "char") two = 1
 
 		if(one && two) return 1
 		else return 0
@@ -114,12 +133,28 @@
 		var/one = 0
 		var/two = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "gold") one = 1
-			if(CM.mat_id == "cobryl") two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "gold") one = 1
+			if(CM.getID() == "cobryl" || CM.getID() == "silver") two = 1
 
 		if(one && two) return 1
 		else return 0
+
+/datum/material_recipe/voltite
+	name = "voltite"
+	result_id = "voltite"
+
+	validate(datum/material/M)
+		var/has_electrum = FALSE
+		var/has_veranium = FALSE
+
+		for (var/datum/material/mat in M.getParentMaterials())
+			if (mat.getID() == "electrum")
+				has_electrum = TRUE
+			else if (mat.getID() == "veranium")
+				has_veranium = TRUE
+
+		return has_electrum && has_veranium
 
 /datum/material_recipe/plasmasteel
 	name = "plasmasteel"
@@ -129,12 +164,46 @@
 		var/one = 0
 		var/two = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "plasmastone") one = 1
-			if(CM.mat_id == "steel") two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "plasmastone") one = 1
+			if(CM.getID() == "steel") two = 1
 
 		if(one && two) return 1
 		else return 0
+
+/datum/material_recipe/neutrite
+	name = "neutrite"
+	result_id = "neutrite"
+
+	validate(datum/material/M)
+		var/has_yuranite = FALSE
+		var/has_plutonium = FALSE
+
+		for (var/datum/material/mat in M.getParentMaterials())
+			if (mat.getID() == "yuranite")
+				has_yuranite = TRUE
+			else if (mat.getID() == "plutonium")
+				has_plutonium = TRUE
+
+		return has_yuranite && has_plutonium
+
+/datum/material_recipe/neutronium
+	name = "neutronium"
+	result_id = "neutronium"
+
+	validate(datum/material/M)
+		var/has_neutrite = FALSE
+		var/has_erebite = FALSE
+
+		for (var/datum/material/mat in M.getParentMaterials())
+			if (mat.getID() == "neutrite")
+				has_neutrite = TRUE
+			else if (mat.getID() == "erebite")
+				has_erebite = TRUE
+
+		return has_neutrite && has_erebite
+
+// Glass
 
 /datum/material_recipe/plasmaglass
 	name = "plasmaglass"
@@ -144,11 +213,32 @@
 		var/one = 0
 		var/two = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "plasmastone") one = 1
-			if(CM.mat_id == "glass") two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "plasmastone") one = 1
+			if(CM.getID() == "glass") two = 1
 
 		if(one && two) return 1
+		else return 0
+
+// Cloths // Organics // Leathers
+
+/datum/material_recipe/dyneema
+	name = "dyneema"
+	result_id = "dyneema"
+	result_item = /obj/item/material_piece/cloth/dyneema
+
+	validate(var/datum/material/M)
+		var/hasCarbon = 0
+		var/hasSilk = 0
+
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "carbonfibre") hasCarbon = 1
+			if(CM.getID() == "spidersilk") hasSilk = 1
+
+		if(M.getID() == "carbonfibre") hasCarbon = 1
+		if(M.getID() == "spidersilk") hasSilk = 1
+
+		if(hasCarbon && hasSilk) return 1
 		else return 0
 
 /datum/material_recipe/synthleather
@@ -159,9 +249,9 @@
 		var/one = 0
 		var/two = 0
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "latex") one = 1
-			if(CM.mat_id == "cotton") two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "latex") one = 1
+			if(CM.getID() == "cotton") two = 1
 
 		if(one && two) return 1
 		else return 0
@@ -176,9 +266,9 @@
 
 		var/regex/R = regex("rubber")
 
-		for(var/datum/material/CM in M.parent_materials)
-			if(CM.mat_id == "coral") one = 1
-			if(R.Find(CM.mat_id)) two = 1
+		for(var/datum/material/CM in M.getParentMaterials())
+			if(CM.getID() == "coral") one = 1
+			if(R.Find(CM.getID())) two = 1
 
 		if(one && two) return 1
 		else return 0

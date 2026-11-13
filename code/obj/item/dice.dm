@@ -1,5 +1,4 @@
 #define MAX_DICE_GROUP 6
-#define ROLL_WAIT_TIME 30
 var/list/rollList = list()
 
 /obj/item/dice
@@ -13,7 +12,6 @@ var/list/rollList = list()
 	stamina_cost = 0
 	var/sides = 6
 	var/last_roll = null
-	var/last_roll_time = null
 	var/can_have_pals = 1
 	var/list/obj/item/dice/dicePals = list() // for combined dice rolls, up to 9 in a stack
 	var/sound_roll = 'sound/items/dicedrop.ogg'
@@ -31,7 +29,7 @@ var/list/rollList = list()
 
 	New()
 		..()
-		SPAWN_DBG(0)
+		SPAWN(0)
 			initialName = name
 			initialDesc = desc
 
@@ -46,22 +44,25 @@ var/list/rollList = list()
 	suicide(var/mob/user as mob)
 		if (!src.user_can_suicide(user))
 			return 0
-		user.visible_message("<span class='alert'><b>[user] attempts to swallow [src] and chokes on it.</b></span>")
+		user.visible_message(SPAN_ALERT("<b>[user] attempts to swallow [src] and chokes on it.</b>"))
 		user.take_oxygen_deprivation(160)
-		SPAWN_DBG(50 SECONDS)
+		SPAWN(50 SECONDS)
 			if (user && !isdead(user))
 				user.suiciding = 0
 		return 1
 
 	proc/roll_dat_thang() // fine if I can't use proc/roll() then we'll all just have to suffer this
-		if (src.last_roll_time && world.time < (src.last_roll_time + ROLL_WAIT_TIME))
+		if (ON_COOLDOWN(src,"roll", 3 SECONDS))
 			return
 		var/roll_total = null
 
 		if (src.sound_roll)
-			playsound(src, src.sound_roll, 100, 1)
+			playsound(src, src.sound_roll, 50, 1)
 
 		if (!src.cant_drop)
+			if (!src.cant_drop && ismob(src.loc))
+				var/mob/user = src.loc
+				user.u_equip(src)
 			src.set_loc(get_turf(src))
 			src.pixel_y = rand(-8,8)
 			src.pixel_x = rand(-8,8)
@@ -77,7 +78,7 @@ var/list/rollList = list()
 			if(src.loadprob && src.loadnumber && prob(src.loadprob)) //important for loading dice
 				src.last_roll = src.loadnumber
 				if(prob(33))
-					src.visible_message("<span class='alert'><b>Something wasn't right about that roll...</b></span>")
+					src.visible_message(SPAN_ALERT("<b>Something wasn't right about that roll...</b>"))
 			else
 				src.last_roll = rand(1, src.sides)
 			roll_total = src.last_roll
@@ -94,7 +95,7 @@ var/list/rollList = list()
 						continue
 					apc.overload_lighting()
 
-				playsound(T, 'sound/effects/ghost.ogg', 75, 0)
+				playsound(T, 'sound/effects/ghost.ogg', 75, FALSE)
 				new /obj/critter/bloodling(T)
 #endif
 
@@ -104,7 +105,7 @@ var/list/rollList = list()
 		else
 			src.last_roll = null
 			src.visible_message("[src] shows... um. Something. It hurts to look at. [pick("What the fuck?", "You should probably find the chaplain.")]")
-		tooltip_rebuild = 1
+		tooltip_rebuild = TRUE
 		if (src.dicePals.len)
 			shuffle_list(src.dicePals) // so they don't all roll in the same order they went into the pile
 			for (var/obj/item/dice/D in src.dicePals)
@@ -147,7 +148,7 @@ var/list/rollList = list()
 			return 0
 		if (!src.can_have_pals || !Pal.can_have_pals)
 			return 0
-		if (istype(Pal.loc, /obj/item/storage))
+		if (Pal.stored)
 			return 0
 
 		src.dicePals += Pal
@@ -155,7 +156,7 @@ var/list/rollList = list()
 		if (Pal.dicePals.len)
 
 			for (var/obj/item/dice/D in Pal.dicePals)
-				if (istype(D.loc, /obj/item/storage))
+				if (D.stored)
 					Pal.dicePals -= D
 					continue
 				if (ismob(D.loc))
@@ -169,11 +170,12 @@ var/list/rollList = list()
 			Pal.loc:u_equip(Pal)
 		Pal.set_loc(src)
 
-		if(src.dicePals.len == 1) //magic trick time
+		if(length(src.dicePals) == 1) //magic trick time
 			src.colorcache = src.color //removes src color, then overlays a decoy image to make the icon look unchanged
 			src.color = null
 			src.decoyimageicon = new /icon(src.icon,src.icon_state)
-			decoyimageicon.Blend(colorcache, ICON_MULTIPLY)
+			if(src.colorcache)
+				decoyimageicon.Blend(src.colorcache, ICON_MULTIPLY)
 			src.decoyimage = image(decoyimageicon)
 			src.UpdateOverlays(src.decoyimage,"0") //dats a zero :P
 
@@ -266,8 +268,6 @@ var/list/rollList = list()
 			return ..()
 
 	attack_self(mob/user as mob)
-		if (!src.cant_drop)
-			user.u_equip(src)
 		src.roll_dat_thang()
 		diceInChat()
 		rollList = list()
@@ -291,7 +291,7 @@ var/list/rollList = list()
 			if (src.addPal(O, user))
 				user.visible_message("<b>[user]</b> gathers up some dice.",\
 				"You gather up some dice.")
-				SPAWN_DBG(0.2 SECONDS)
+				SPAWN(0.2 SECONDS)
 					for (var/obj/item/dice/D in range(1, user))
 						if (D == src)
 							continue
@@ -312,13 +312,13 @@ var/list/rollList = list()
 // 				return
 // 			if(!H.shoes)
 // 				if((prob(2))&&(!istype(src,/obj/item/dice/magic8ball))&&(!istype(src,/obj/item/dice/coin)))
-// 					H.visible_message("<span class='alert'><B>[H.name] steps on the [src]!</B></span>", "<span class='alert'><B>You step on the [src]!</B></span>")
+// 					H.visible_message(SPAN_ALERT("<B>[H.name] steps on the [src]!</B>"), SPAN_ALERT("<B>You step on the [src]!</B>"))
 // 					var/obj/item/affecting = H.organs[pick("l_leg", "r_leg")]
 // 					H.weakened = max(3, H.weakened)
 // 					affecting.take_damage(5, 0)
 // 					H.UpdateDamageIcon()
 // 			if((prob(2)) && (H.m_intent != "walk") && (!istype(src,/obj/item/dice/coin)))
-// 				H.visible_message("<span class='alert'><B>[H.name] comically slips on the [src]!</B></span>", "<span class='alert'><B>You comically slip on the [src]!</B></span>")
+// 				H.visible_message(SPAN_ALERT("<B>[H.name] comically slips on the [src]!</B>"), SPAN_ALERT("<B>You comically slip on the [src]!</B>"))
 // 				H.weakened = max(2, M.weakened)
 // 				H.stunned = max(2, M.stunned)
 // 	..()
@@ -367,14 +367,14 @@ var/list/rollList = list()
 	suicide(var/mob/user as mob)
 		if (!src.user_can_suicide(user))
 			return 0
-		user.visible_message("<span class='alert'><b>[user] drop kicks [src], but it barely moves!</b></span>")
+		user.visible_message(SPAN_ALERT("<b>[user] drop kicks [src], but it barely moves!</b>"))
 		user.visible_message("[src] shows <i>[pick("Goodbye","You done fucked up now","Time to die","Outlook terrible","That was a mistake","You should not have done that","Foolish","Very well")]</i>.")
 		if (src.loc == user)
 			user.u_equip(src)
 			src.layer = initial(src.layer)
 			src.set_loc(user.loc)
-		SPAWN_DBG(1 SECOND)
-			user.visible_message("<span class='alert'><b>[user] is crushed into a bloody ball by an unseen force, and vanishes into nothingness!</b></span>")
+		SPAWN(1 SECOND)
+			user.visible_message(SPAN_ALERT("<b>[user] is crushed into a bloody ball by an unseen force, and vanishes into nothingness!</b>"))
 			user.implode()
 		return 1
 
@@ -423,14 +423,14 @@ var/list/rollList = list()
 	suicide(var/mob/user as mob)
 		if (!src.user_can_suicide(user))
 			return 0
-		user.visible_message("<span class='alert'><b>[user] attempts to swallow [src] and gets sucked in!</b></span>")
+		user.visible_message(SPAN_ALERT("<b>[user] attempts to swallow [src] and gets sucked in!</b>"))
 		user.mind.damned = 1
 		user.implode()
 		user.suiciding = 0
 		return 1
 
 	roll_dat_thang() // fine if I can't use proc/roll() then we'll all just have to suffer this
-		if (src.last_roll_time && world.time < (src.last_roll_time + ROLL_WAIT_TIME))
+		if (ON_COOLDOWN(src,"roll", 3 SECONDS))
 			return
 		var/roll_total = null
 
@@ -438,7 +438,7 @@ var/list/rollList = list()
 			usr.mind.damned = 1
 
 		if (src.sound_roll)
-			playsound(src, src.sound_roll, 100, 1)
+			playsound(src, src.sound_roll, 50, 1)
 
 		if (!src.cant_drop)
 			src.set_loc(get_turf(src))
@@ -462,7 +462,7 @@ var/list/rollList = list()
 						continue
 					apc.overload_lighting()
 
-				playsound(T, 'sound/effects/ghost.ogg', 75, 0)
+				playsound(T, 'sound/effects/ghost.ogg', 75, FALSE)
 				new /obj/critter/bloodling(T)
 #endif
 
@@ -544,7 +544,7 @@ var/list/rollList = list()
 		src.initialName = src.name
 		src.initialDesc = src.desc
 		src.last_roll = null
-		tooltip_rebuild = 1
+		tooltip_rebuild = TRUE
 
 		user.show_text("You reconfigure the [old_name] into a [name].")
 		return
@@ -613,7 +613,7 @@ var/list/rollList = list()
 				src.addeddice++
 				if(diceposition == 5)
 					break
-			if(D.dicePals.len == src.addeddice)
+			if(length(D.dicePals) == src.addeddice)
 				D.dicePals = list()
 				if(D.colorcache)
 					D.color = D.colorcache
@@ -638,7 +638,7 @@ var/list/rollList = list()
 		if((!D.dicePals.len)&&(src.diceposition<5))
 			if((!istype(D,/obj/item/dice/magic8ball))&&(!istype(D,/obj/item/dice/coin)))
 				src.diceposition++
-				user.visible_message("<span class='success'>[user] adds the [D] to the [src]</span>","<span class='success'>You add the [D] to the [src].</span>")
+				user.visible_message(SPAN_SUCCESS("[user] adds the [D] to the [src]"),SPAN_SUCCESS("You add the [D] to the [src]."))
 				src.overlaydie = new /icon('icons/obj/items/items.dmi',"[baseoverlay][src.diceposition]")
 				if((D.color)&&(D.color != "null"))
 					src.overlaydie.Blend(D.color, ICON_MULTIPLY)
@@ -648,7 +648,7 @@ var/list/rollList = list()
 				user.u_equip(D)
 				D.set_loc(src)
 		else
-			user.visible_message("<span class='alert'>The [src] is full!</span>")
+			user.visible_message(SPAN_ALERT("The [src] is full!"))
 
 	proc/removeDie(mob/living/user as mob) //requires the user to be passed to the proc
 		if(istype(src.dicelist[src.diceposition], /obj/item/dice))
@@ -663,7 +663,7 @@ var/list/rollList = list()
 		for(var/i=1, i<=dicelist.len, i++) //shuffle the overlay colors to give the illusion of dice rolling inside the cup?
 			if (src.dicelist[i].sides && isnum(src.dicelist[i].sides)) //index out of bounds
 				src.dicelist[i].last_roll = rand(1, src.dicelist[i].sides)
-				src.dicelist[i].tooltip_rebuild = 1
+				src.dicelist[i].tooltip_rebuild = TRUE
 				src.localRollList.Add(list(list("sides"=src.dicelist[i].sides,"roll"=src.dicelist[i].last_roll,"color"=src.dicelist[i].color))) //need a check for dice without a color
 				if(src.dicelist[i].sides == 6)
 					src.dicelist[i].icon_state = "d6_[src.dicelist[i].last_roll]"
@@ -694,6 +694,7 @@ var/list/rollList = list()
 	name = "dice box"
 	desc = "A fancy box for holding up to five dice."
 	icon_state = "dicebox"
+	default_material = "wood"
 	var/firstopen = 1 //helps organize overlays
 	var/setcolor //color of the dice set
 
@@ -724,15 +725,16 @@ var/list/rollList = list()
 				src.UpdateOverlays(null,"[i]",0,1)
 			src.icon_state = "dicebox"
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if((src in user.contents) && (src.icon_state != "dicebox"))
 			removeDie(user)
 		else
 			..()
 
-	attackby(obj/item/dice/W as obj, mob/living/user as mob)
-		if(src.icon_state != "dicebox")
-			addDice(W,"diceboxt",user)
+	attackby(obj/item/I, mob/user)
+		if (istype(I, /obj/item/dice))
+			if(src.icon_state != "dicebox")
+				addDice(I,"diceboxt",user)
 
 /obj/item/diceholder/dicecup
 	name = "dice cup"
@@ -744,6 +746,7 @@ var/list/rollList = list()
 			pourout(target,user)
 
 	dropped(mob/user as mob)
+		. = ..()
 		if((dicelist.len) && (user.a_intent != "help"))
 			src.ClearAllOverlays()
 			src.icon_state = "dicecupf"
@@ -751,21 +754,23 @@ var/list/rollList = list()
 			hiddenroll()
 			src.diceinchatstring = src.dicelist[1].diceInChat(1,src.localRollList)
 
+
 	attack_self(mob/user as mob)
 		if(src.icon_state == "dicecup")
-			if(diceposition != 0)
-				user.visible_message("<span class='notice'>[user] shakes the dice cup!</span>","<span class='notice'>You shake the dice cup!</span>")
+			if(dicelist.len)
+				user.visible_message(SPAN_NOTICE("[user] shakes the dice cup!"),SPAN_NOTICE("You shake the dice cup!"))
 				hiddenroll()
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		if((src in user.contents) && (src.icon_state == "dicecup"))
-			removeDie(user)
+			if(dicelist.len)
+				removeDie(user)
 		else if(src.icon_state == "dicecupf")
 			if(user.a_intent == "help")
 				if(user.name == diceowner)
-					user.visible_message("<span class='notice'>[user] peeks at their dice. </span>","<b>Your roll:</b><br>[src.diceinchatstring]<br><b>Total: [src.localtotal]</b>")
+					user.visible_message(SPAN_NOTICE("[user] peeks at their dice. "),"<b>Your roll:</b><br>[src.diceinchatstring]<br><b>Total: [src.localtotal]</b>")
 				else
-					user.visible_message("<span class='alert'>[user] peeks at [diceowner]'s dice!</span>","<b>[src.diceowner]'s roll:</b><br>[src.diceinchatstring]<br><b>Total: [src.localtotal]</b>")
+					user.visible_message(SPAN_ALERT("[user] peeks at [diceowner]'s dice!"),"<b>[src.diceowner]'s roll:</b><br>[src.diceinchatstring]<br><b>Total: [src.localtotal]</b>")
 			else
 				dicespawn(src.loc)
 				src.icon_state = "dicecup"
@@ -775,15 +780,16 @@ var/list/rollList = list()
 		else
 			..()
 
-	attackby(obj/item/dice/W as obj, mob/living/user as mob)
-		if(src.icon_state == "dicecup")
-			addDice(W,"dicecup",user)
+	attackby(obj/item/I, mob/user)
+		if (istype(I, /obj/item/dice))
+			if(src.icon_state == "dicecup")
+				addDice(I,"dicecup",user)
 
 /obj/item/storage/dicepouch
 	name = "dice pouch"
 	icon = 'icons/obj/items/items.dmi'
 	icon_state = "dicepouch"
-	max_wclass = 1
+	max_wclass = W_CLASS_TINY
 	w_class = W_CLASS_TINY
 	var/setcolor
 	can_hold=list(/obj/item/dice)
@@ -791,7 +797,7 @@ var/list/rollList = list()
 
 	proc/colorpick()
 		src.setcolor = pick("#D65555","#D88A41","#D8D856","#5FBF91","#6AC2D8","#9F6AD8", "null","#D882B3")
-		for(var/obj/item/dice/i in src)
+		for(var/obj/item/dice/i in src.storage.get_contents())
 			i.color = src.setcolor
 
 	make_my_stuff()

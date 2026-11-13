@@ -13,8 +13,12 @@
 			robot_owner.hud.update_charge()
 			robot_owner.hud.update_pulling()
 			robot_owner.hud.update_environment()
+			robot_owner.hud.update_gravity_indicator()
 
 		if (hivebot_owner)
+			hivebot_owner.hud.update_health()
+			hivebot_owner.hud.update_charge()
+			hivebot_owner.hud.update_pulling()
 			if (ticker?.mode && istype(ticker.mode, /datum/game_mode/construction))
 				hivebot_owner.see_invisible = INVIS_CONSTRUCTION
 
@@ -23,12 +27,16 @@
 			critter_owner.hud.update_temp_indicator()
 			critter_owner.hud.update_blood_indicator()
 			critter_owner.hud.update_pulling()
+			critter_owner.hud.update_rad_indicator()
+			critter_owner.hud.update_gravity_indicator()
 
 		if (human_owner)
 			human_owner.hud.update_health_indicator()
 			human_owner.hud.update_temp_indicator()
 			human_owner.hud.update_blood_indicator()
 			human_owner.hud.update_pulling()
+			human_owner.hud.update_rad_indicator()
+			human_owner.hud.update_gravity_indicator()
 
 			var/color_mod_r = 255
 			var/color_mod_g = 255

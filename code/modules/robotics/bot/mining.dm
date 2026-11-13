@@ -4,9 +4,9 @@
 	icon = 'icons/obj/bots/aibots.dmi'
 	icon_state = "digbot0"
 	var/const/base_sprite_pixels_from_floor = 5
-	layer = 5.0
+	layer = 5
 	density = 0
-	anchored = 0
+	anchored = UNANCHORED
 	on = 0
 	var/digging = 0
 	health = 25
@@ -70,14 +70,14 @@
 		src.UpdateOverlays(null, "hover")
 		var/const/volume = 50
 		var/const/vary = 1
-		playsound(src.loc, "sound/impact_sounds/Metal_Clang_3.ogg", volume, vary)
+		playsound(src.loc, 'sound/impact_sounds/Metal_Clang_3.ogg', volume, vary)
 		pixel_y = -base_sprite_pixels_from_floor
 	if(src.digging)
 		src.UpdateOverlays(display_tool_animated, "tool")
 	else
 		src.UpdateOverlays(display_tool_idle, "tool")
 
-/obj/machinery/bot/mining/attack_hand(user as mob)
+/obj/machinery/bot/mining/attack_hand(user)
 	src.add_fingerprint(user)
 	ui.show_ui(user)
 
@@ -90,12 +90,12 @@
 	///Emagged code///////
 	//////////////////////
 	if ((istype(W, /obj/item/card/emag)) && (!src.emagged))
-		boutput(user,  "<span class='alert'>You short out [src]. It.. didn't really seem to affect anything, though.</span>")
+		boutput(user,  SPAN_ALERT("You short out [src]. It.. didn't really seem to affect anything, though."))
 		for(var/mob/O in hearers(src, null))
 			O.show_message("<span class='alert bold'><B>[src] buzzes oddly!</span>", 1)
 		src.target = null
 		src.oldtarget = null
-		src.anchored = 0
+		src.anchored = UNANCHORED
 		src.emagged = 1
 		if(!src.on)
 			turnOn()
@@ -103,7 +103,7 @@
 /obj/machinery/bot/mining/process()
 	if(!src.on) return
 	if(src.digging) return
-	if(!istype(target, /turf/simulated/wall/asteroid/))
+	if(!istype(target, /turf/simulated/wall/auto/asteroid/))
 		src.target = null
 	if(!src.target)
 		src.findTarget()
@@ -129,7 +129,7 @@
 	digbottargets = list()
 	for(var/obj/machinery/bot/mining/bot in machine_registry[MACHINES_BOTS])
 		if(bot != src) digbottargets += bot.target
-	for (var/turf/simulated/wall/asteroid/D in view(7,src))
+	for (var/turf/simulated/wall/auto/asteroid/D in view(7,src))
 		if(!(D in digbottargets) && D != src.oldtarget)
 			if (D.hardness <= src.hardthreshold)
 				if (!src.digsuspicious && D.event)
@@ -143,8 +143,8 @@
 /obj/machinery/bot/mining/proc/pointAtTarget()
 	if (src.target)
 		for (var/mob/O in hearers(src, null))
-			O.show_message("<span class='subtle'><span class='game say'><span class='name'>[src]</span> points and beeps, \"Doomed rock detected!\"</span></span>", 2)
-		make_point(get_turf(target), pixel_x=target.pixel_x, pixel_y=target.pixel_y)
+			O.show_message(SPAN_SUBTLE(SPAN_SAY("[SPAN_NAME("[src]")] points and beeps, \"Doomed rock detected!\"")), 2)
+		point(target)
 
 /obj/machinery/bot/mining/proc/buildPath()
 	if (!isturf(src.loc)) return
@@ -159,16 +159,16 @@
 	actions.start(new/datum/action/bar/icon/digbotdig(src, target), src)
 
 /obj/machinery/bot/mining/proc/startDiggingEffects()
-	src.visible_message("<span class='alert'>[src] starts digging!</span>")
-	if (src.diglevel > 2) playsound(src.loc, "sound/items/Welder.ogg", 100, 1)
+	src.visible_message(SPAN_ALERT("[src] starts digging!"))
+	if (src.diglevel > 2) playsound(src.loc, 'sound/items/Welder.ogg', 100, 1)
 	else playsound(src.loc, 'sound/impact_sounds/Stone_Cut_1.ogg', 100, 1)
 	src.digging = 1
-	src.anchored = 1
+	src.anchored = ANCHORED
 	setEffectOverlays()
 
 /obj/machinery/bot/mining/proc/stopDiggingEffects()
 	src.digging = 0
-	src.anchored = 0
+	src.anchored = UNANCHORED
 	setEffectOverlays()
 
 
@@ -200,14 +200,14 @@
 /datum/action/bar/icon/digbotdig
 	duration = 3 SECONDS //This varies, see below
 	interrupt_flags = INTERRUPT_MOVE | INTERRUPT_STUNNED | INTERRUPT_ATTACKED
-	id = "digbot_dig"
 	icon = 'icons/obj/items/mining.dmi'
 	icon_state = "" //intentionaly blank
 	//The pick-variant has a mining animation, but the drill variant does not - and overrides icon_state
 	var/obj/machinery/bot/mining/bot
-	var/turf/simulated/wall/asteroid/target
+	var/turf/simulated/wall/auto/asteroid/target
+	var/mining_type = MINING_DMG_PICKAXE
 
-	New(var/obj/machinery/bot/mining/bot, var/turf/simulated/wall/asteroid/target)
+	New(var/obj/machinery/bot/mining/bot, var/turf/simulated/wall/auto/asteroid/target)
 		..()
 		src.bot = bot
 		src.target = target
@@ -232,8 +232,8 @@
 
 	onEnd()
 		if(checkStillValid())
-			target.damage_asteroid(bot.diglevel)
-			if(!istype(target, /turf/simulated/wall/asteroid/))
+			target.damage_asteroid(bot.diglevel, src.mining_type)
+			if(!istype(target, /turf/simulated/wall/auto/asteroid/))
 				bot.target = null
 		if(bot != null)
 			bot.stopDiggingEffects()
@@ -247,16 +247,16 @@
 	proc/checkStillValid()
 		if(bot == null || target == null)
 			interrupt(INTERRUPT_ALWAYS)
-			return false
-		if(!bot.on || !istype(target, /turf/simulated/wall/asteroid/))
+			return FALSE
+		if(!bot.on || !istype(target, /turf/simulated/wall/auto/asteroid/))
 			bot.target = null
 			interrupt(INTERRUPT_ALWAYS)
-			return false
-		return true
+			return FALSE
+		return TRUE
 
 /datum/action/bar/icon/digbotdig/drill
-	id = "digbot_drill"
-	icon_state = "lasdrill"
+	icon_state = "lasdrill-old"
+	mining_type = MINING_DMG_DRILL
 
 
 //////////////////////////////////////
@@ -287,15 +287,19 @@
 	show_ui(usr)
 
 /datum/digbot_ui/proc/show_ui(mob/user)
-	if (user.client.tooltipHolder)
-		user.client.tooltipHolder.showClickTip(bot, list("title" = "Digbot Controls", "content" = render()))
+	if (user.client?.tooltips)
+		user.client.tooltips.show(
+			TOOLTIP_PINNED, bot,
+			title = "Digbot Controls",
+			content = src.render(),
+		)
 
 /datum/digbot_ui/proc/render()
 	return {"
-<span>[bot.on ? "Active" : "Inactive"] - </span><a href="?src=\ref[src]&ui_target=digbot_ui&ui_action=toggle_power">Toggle Power</a><br />
+<span>[bot.on ? "Active" : "Inactive"] - </span><a href="byond://?src=\ref[src]&ui_target=digbot_ui&ui_action=toggle_power">Toggle Power</a><br />
 <span>Settings:<br />
-<a href="?src=\ref[src]&ui_target=digbot_ui&ui_action=toggle_suspicious">[bot.digsuspicious ? "Digging" : "Avoiding"] suspicious rocks</a><br />
-<a href="?src=\ref[src]&ui_target=digbot_ui&ui_action=hardness">Targeting rock hardness [bot.hardthreshold] and lower</a>
+<a href="byond://?src=\ref[src]&ui_target=digbot_ui&ui_action=toggle_suspicious">[bot.digsuspicious ? "Digging" : "Avoiding"] suspicious rocks</a><br />
+<a href="byond://?src=\ref[src]&ui_target=digbot_ui&ui_action=hardness">Targeting rock hardness [bot.hardthreshold] and lower</a>
 "}
 
 
@@ -316,6 +320,7 @@
 			if (src.build_step == 0)
 				if (user.r_hand == T) user.u_equip(T)
 				else user.u_equip(T)
+				T.forensic_holder.copy_to(src.forensic_holder)
 				qdel(T)
 				src.build_step = 1
 				src.name = "hard hat/sensor/robot arm assembly"
@@ -324,13 +329,16 @@
 			else
 				boutput(user,  "You already added that part!")
 				return
-		else if (istype(T, /obj/item/mining_tool/drill))
+		else if (istype(T, /obj/item/mining_tool/powered/drill))
 			if (src.build_step == 1)
 				if (user.r_hand == T) user.u_equip(T)
 				else user.u_equip(T)
 				boutput(user,  "You add [T.name]. Now you have a finished mining bot! Hooray!")
+				var/obj/machinery/bot/mining/drill/drillbot = new(user.loc)
+				drillbot.setMaterial(src.material)
+				drillbot.forensic_holder = src.forensic_holder
+				T.forensic_holder.copy_to(drillbot.forensic_holder)
 				qdel(T)
-				new /obj/machinery/bot/mining/drill(user.loc)
 				qdel(src)
 			else
 				boutput(user,  "It's not ready for that part yet.")
@@ -340,8 +348,11 @@
 				if (user.r_hand == T) user.u_equip(T)
 				else user.u_equip(T)
 				boutput(user,  "You add [T.name]. Now you have a finished mining bot! Hooray!")
+				var/obj/machinery/bot/mining/miningbot = new(get_turf(src))
+				miningbot.setMaterial(T.material)
+				miningbot.forensic_holder = src.forensic_holder
+				T.forensic_holder.copy_to(miningbot.forensic_holder)
 				qdel(T)
-				new /obj/machinery/bot/mining(get_turf(src))
 				qdel(src)
 			else
 				boutput(user,  "It's not ready for that part yet.")

@@ -1,12 +1,11 @@
-/mob/living/critter/drone
-	name = "Drone"
-	real_name = "Drone"
+/mob/living/critter/robotic/drone
+	name = "drone"
 	var/drone_designation = "SC"
 	var/num_max = 999
 	desc = "An armed and automated Syndicate scout drone."
 	density = 1
-	icon = 'icons/obj/ship.dmi'
-	icon_state = "drone"
+	icon = 'icons/mob/critter/robotic/drone/phaser.dmi'
+	icon_state = "drone_phaser"
 	custom_gib_handler = /proc/robogibs
 	hand_count = 1
 	can_throw = 0
@@ -14,20 +13,26 @@
 	can_disarm = 0
 	blood_id = "oil"
 	var/dying = 0
-	speechverb_say = "states"
-	speechverb_gasp = "states"
-	speechverb_stammer = "states"
-	speechverb_exclaim = "declares"
-	speechverb_ask = "queries"
+	speech_verb_say = "states"
+	speech_verb_gasp = "states"
+	speech_verb_stammer = "states"
+	speech_verb_exclaim = "declares"
+	speech_verb_ask = "queries"
 	metabolizes = 0
 	var/list/loot_table = list()
 	var/smashes_shit = 1
 	var/list/alert_sounds = list('sound/machines/whistlealert.ogg', 'sound/machines/whistlebeep.ogg')
 
+	faction = list(FACTION_SYNDICATE)
+
 	New()
 		..()
 		setup_loot_table()
-		name = "[initial(name)] [drone_designation]-[rand(num_max)]"
+		APPLY_ATOM_PROPERTY(src, PROP_ATOM_GRAVITY_IMMUNE, src)
+		src.remove_lifeprocess("gravity")
+
+		src.name = "[initial(name)] [drone_designation]-[rand(num_max)]"
+		src.real_name = src.name
 
 	bump(atom/movable/AM)
 		if(smashes_shit)
@@ -38,8 +43,8 @@
 					var/obj/window/W = AM
 					W.health = 0
 					W.smash()
-				else if(istype(AM,/obj/grille))
-					var/obj/grille/G = AM
+				else if(istype(AM,/obj/mesh/grille))
+					var/obj/mesh/grille/G = AM
 					G.damage_blunt(30)
 				else if(istype(AM, /obj/table))
 					AM.meteorhit()
@@ -48,18 +53,20 @@
 				else
 					AM.meteorhit()
 				playsound(src.loc, 'sound/effects/exlow.ogg', 70,1)
-				src.visible_message("<span class='alert'><B>[src]</B> smashes into \the [AM]!</span>")
+				src.visible_message(SPAN_ALERT("<B>[src]</B> smashes into \the [AM]!"))
 		..()
 
 	proc/setup_loot_table()
 		loot_table = list(/obj/item/device/prox_sensor = 25)
 
 	death(var/gibbed)
+		. = ..()
 		if (dying)
 			return
 		dying = 1
-		overlays += image('icons/obj/ship.dmi', "dying-overlay")
-		SPAWN_DBG(2 SECONDS)
+		var/image/dying_overlay = SafeGetOverlayImage("dying", 'icons/mob/critter/robotic/drone/overlays.dmi', "dying-overlay", MOB_OVERLAY_BASE)
+		src.UpdateOverlays(dying_overlay, "dying")
+		SPAWN(2 SECONDS)
 			ghostize()
 			var/turf/L = get_turf(src)
 			for (var/T in loot_table)
@@ -95,7 +102,6 @@
 	Life(datum/controller/process/mobs/parent)
 		if (..(parent))
 			return 1
-		inertia_dir = 0
 
 	examine(mob/user)
 		. = ..()
@@ -116,9 +122,9 @@
 	setup_hands()
 		..()
 		var/datum/handHolder/HH = hands[1]
-		HH.limb = new /datum/limb/gun/phaser
+		HH.limb = new /datum/limb/gun/energy/phaser
 		HH.name = "S-1 Light Anti-Personnel Energy Sling"
-		HH.icon = 'icons/mob/critter_ui.dmi'
+		HH.icon = 'icons/mob/critter_hands.dmi'
 		HH.icon_state = "handphs"
 		HH.limb_name = "S-1 Light Anti-Personnel Energy Sling"
 		HH.can_hold_items = 0

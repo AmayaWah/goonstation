@@ -1,14 +1,13 @@
 /datum/bioEffect/mutantrace
 	name = "Saurian Genetics"
-	desc = "Enables vestigal non-mammal traits in the subject's body."
+	desc = "Enables vestigial non-mammal traits in the subject's body."
 	id = "lizard"
 	mutantrace_option = "Lizard"
 	effectType = EFFECT_TYPE_MUTANTRACE
-	effect_group = "mutantrace"
 	probability = 33
 	msgGain = "Your skin feels oddly dry."
 	msgLose = "Your scales fall off."
-	mob_exclusive = /mob/living/carbon/human/
+	mob_exclusive = /mob/living/carbon/human
 	var/mutantrace_path = /datum/mutantrace/lizard
 	lockProb = 33
 	lockedGaps = 1
@@ -22,21 +21,19 @@
 		..() // caaaaaaall yooooooour paaaareeeeents
 		if (ishuman(owner))
 			var/mob/living/carbon/human/H = owner
+			if (!istype(H.mutantrace, src.mutantrace_path))
+				H.set_mutantrace(src.mutantrace_path)
 			for (var/ID in H.bioHolder.effects)
 				// clear away any existing mutantraces first
 				if (istype(H.bioHolder.GetEffect(ID), /datum/bioEffect/mutantrace) && ID != src.id)
 					H.bioHolder.RemoveEffect(ID)
-			if (!istype(H.mutantrace, src.mutantrace_path))
-				H.set_mutantrace(src.mutantrace_path)
-		return
 
 	OnRemove()
 		..()
 		if (ishuman(owner))
 			var/mob/living/carbon/human/H = owner
-			if (istype(H.mutantrace,src.mutantrace_path))
+			if (istype(H.mutantrace,src.mutantrace_path) && !ispath(H.default_mutantrace, src.mutantrace_path))
 				H.set_mutantrace(null)
-		return
 
 	OnLife()
 		if(..()) return
@@ -44,7 +41,6 @@
 			var/mob/living/carbon/human/H = owner
 			if (!istype(H.mutantrace, src.mutantrace_path))
 				holder.RemoveEffect(id)
-		return
 
 /datum/bioEffect/mutantrace/flashy
 	name = "Bioluminescent Overdrive"
@@ -65,11 +61,74 @@
 	msgGain = "You feel kinda thin."
 	msgLose = "You've put on a bit more weight."
 	icon_state  = "skeleton"
-	isBad = 1
+	// mimic parts of a genetic power so we can coast off that intrastructure
+	var/ability_path = /datum/targetable/geneticsAbility/remove_head
+
+	OnAdd()
+		. = ..()
+		src.onPowerChange(0, src.power)
+
+	OnRemove()
+		src.onPowerChange(src.power, 0)
+		. = ..()
+
+	onPowerChange(oldval, newval)
+		if (newval >= 2)
+			var/datum/targetable/geneticsAbility/AB = src.owner.abilityHolder?.addAbility(/datum/targetable/geneticsAbility/remove_head)
+			AB.owner = src.owner
+			AB.linked_power = src
+		else
+			src.owner.abilityHolder?.removeAbility(/datum/targetable/geneticsAbility/remove_head)
+
+#define HEAD_PROMPT_ON "Head on."
+#define HEAD_PROMPT_OFF "HEAD. OFF."
+/datum/targetable/geneticsAbility/remove_head
+	name = "Remove head"
+	desc = "Place your head into your hands, or drop it on the ground if your hands are full."
+	icon_state = "skeleton"
+	cooldown = 30 SECONDS
+	targeted = FALSE
+
+	cast()
+		if (..())
+			return CAST_ATTEMPT_FAIL_CAST_FAILURE
+
+		if (!isskeleton(src.owner)) // look, we both know this will somehow happen. by bug or by admin.
+			if(tgui_alert(src.owner, "This will probably kill you! Are you sure?", "Wait...", list(HEAD_PROMPT_ON, HEAD_PROMPT_OFF)) != HEAD_PROMPT_OFF)
+				return CAST_ATTEMPT_FAIL_CAST_FAILURE
+
+		if (ishuman(src.owner))
+			var/mob/living/carbon/human/H = src.owner
+			var/obj/item/organ/head/myHead = H.organHolder.get_organ("head")
+			if (!istype(myHead))
+				return CAST_ATTEMPT_FAIL_CAST_FAILURE
+			H.organHolder.drop_organ(myHead)
+			H.visible_message(SPAN_ALERT("<b>[H]</b> takes [his_or_her(H)] head clean off!"))
+			H.put_in_hand_or_drop(myHead)
+			playsound(H, 'sound/items/capsule_pop.ogg', 50, TRUE, pitch=0.7)
+
+			if (isskeleton(H))
+				var/datum/mutantrace/skeleton/S = H.mutantrace
+				S.set_head(myHead)
+				S.head_moved(TRUE)
+			return CAST_ATTEMPT_SUCCESS
+
+		else if (isrobot(src.holder.owner)) // one day
+			var/mob/living/silicon/robot/R = src.owner
+			if(R.part_head.robot_movement_modifier)
+				REMOVE_MOVEMENT_MODIFIER(R, R.part_head.robot_movement_modifier, R.part_head.type)
+			R.part_head.set_loc(R.loc)
+			R.part_head.holder = null
+			R.part_head = null
+			R.update_bodypart("head")
+			return CAST_ATTEMPT_SUCCESS
+
+#undef HEAD_PROMPT_ON
+#undef HEAD_PROMPT_OFF
 
 /datum/bioEffect/mutantrace/ithillid
 	name = "Aquatic Genetics"
-	desc = "Re-enables ancient vestigal genes in the subject's body."
+	desc = "Re-enables ancient vestigial genes in the subject's body."
 	id = "ithillid"
 	mutantrace_option = "Squid"
 	mutantrace_path = /datum/mutantrace/ithillid
@@ -79,7 +138,7 @@
 
 /datum/bioEffect/mutantrace/roach
 	name = "Blattodean Genetics"
-	desc = "Re-enables ancient vestigal genes in the subject's body."
+	desc = "Re-enables ancient vestigial genes in the subject's body."
 	id = "roach"
 	mutantrace_option = "Roach"
 	mutantrace_path = /datum/mutantrace/roach
@@ -87,9 +146,20 @@
 	msgLose = "You shed your roachy skin!"
 	icon_state  = "roach"
 
+/datum/bioEffect/mutantrace/human
+	name = "Less Primal Genetics"
+	desc = "Makes one into a boring-old human being."
+	id = "human"
+	mutantrace_option = "Human"
+	mutantrace_path = /datum/mutantrace/human
+	research_level = EFFECT_RESEARCH_ACTIVATED
+	msgGain = "" //BOOOOORING
+	msgLose = ""
+	icon_state  = "blank"
+
 /datum/bioEffect/mutantrace/monkey
 	name = "Primal Genetics"
-	desc = "Enables and exaggerates vestigal ape traits."
+	desc = "Enables and exaggerates vestigial ape traits."
 	id = "monkey"
 	mutantrace_option = "Monkey"
 	mutantrace_path = /datum/mutantrace/monkey
@@ -100,7 +170,7 @@
 
 /datum/bioEffect/mutantrace/seamonkey
 	name = "Aquatic Primal Genetics"
-	desc = "Enables and exaggerates vestigal aquatic ape traits."
+	desc = "Enables and exaggerates vestigial aquatic ape traits."
 	id = "seamonkey"
 	mutantrace_option = "Seamonkey"
 	mutantrace_path = /datum/mutantrace/monkey/seamonkey
@@ -117,6 +187,15 @@
 	curable_by_mutadone = 0
 	reclaim_fail = 100
 	icon_state  = "monkey"
+
+	gorilla //reward if someone gets a gorilla in a scanner somehow
+		id = "seamonkey-loot"
+		scanner_visibility = 1
+		can_research = 1
+		can_make_injector = 1
+		can_copy = 1
+		can_reclaim = 1
+		can_scramble = 1
 
 /datum/bioEffect/mutantrace/cat
 	name = "Feline Genetics"
@@ -139,6 +218,14 @@
 	msgLose = "Your fur falls out."
 	icon_state  = "cat"
 
+/datum/bioEffect/mutantrace/cat/bingus
+	name = "Bingus Genetics"
+	id = "bingus"
+	mutantrace_option = "Bingus"
+	mutantrace_path = /datum/mutantrace/cat/bingus
+	msgGain = "You feel like wearing jeans."
+	msgLose = "Your love of jeans fades."
+	icon_state = null
 
 /datum/bioEffect/mutantrace/cow
 	name = "Bovine Genetics"
@@ -149,6 +236,28 @@
 	msgGain = "You feel like you're ready for some Cow RP."
 	msgLose = "Your udders fall off!"
 	icon_state  = "cow"
+
+/datum/bioEffect/mutantrace/pug
+	name = "Canine Genetics"
+	desc = "The subject takes on the appearance of a fluffy pug."
+	id = "pug"
+	mutantrace_option = "Pug"
+	mutantrace_path = /datum/mutantrace/pug
+	occur_in_genepools = FALSE
+	scanner_visibility = FALSE
+	msgGain = "You feel like barking up the wrong tree."
+	msgLose = "Dog treats no longer look appealing."
+	icon_state  = "pug"
+
+/datum/bioEffect/mutantrace/frog
+	name = "Anuran Genetics"
+	desc = "The subject's genetics are hybridized with an alien Abzunian amphibian."
+	id = "frog"
+	mutantrace_option = "Amphibian"
+	mutantrace_path = /datum/mutantrace/frog/amphibian
+	msgGain = "You feel compelled to start constantly ribbiting."
+	msgLose = "A part of your soul has croaked."
+	icon_state  = "amphibian"
 
 /datum/bioEffect/mutantrace/chicken
 	name = "Experimental Strain Epsilon Gamma Gamma #5"

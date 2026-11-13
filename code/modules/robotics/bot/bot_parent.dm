@@ -1,12 +1,16 @@
 // AI (i.e. game AI, not the AI player) controlled bots
 
+TYPEINFO(/obj/machinery/bot)
+	start_speech_modifiers = list(SPEECH_MODIFIER_BOT)
+	start_speech_outputs = list(SPEECH_OUTPUT_SPOKEN_LOCAL)
+
 /obj/machinery/bot
 	icon = 'icons/obj/bots/aibots.dmi'
 	layer = MOB_LAYER
 	event_handler_flags = USE_FLUID_ENTER
-	flags = FPRINT | FLUID_SUBMERGE | TGUI_INTERACTIVE
 	object_flags = CAN_REPROGRAM_ACCESS
 	machine_registry_idx = MACHINES_BOTS
+	pass_unstable = TRUE
 	var/obj/item/card/id/botcard // ID card that the bot "holds".
 	var/access_lookup = "Assistant" // For the get_access() proc. Defaults to staff assistant.
 	var/locked = null
@@ -15,28 +19,17 @@
 	var/exploding = 0 //So we don't die like five times at once.
 	var/muted = 0 // shut up omg shut up.
 	var/no_camera = 0
-	var/setup_camera_network = "Robots"
+	var/setup_camera_network = CAMERA_NETWORK_ROBOTS
 	var/obj/machinery/camera/cam = null
 	var/emagged = 0
 	var/mob/emagger = null
 	/// The bot's net ID
 	var/botnet_id = null
-	/// What's it talk like?
-	var/list/speakverbs = list("beeps", "boops")
 	var/text2speech = 0 // dectalk!
 	/// Should the bot's speech pop up over them?
 	var/speech2text = 1
 	/// What color is the bot's speech?
 	var/bot_speech_color
-	/// What does our bot's popup speech look like?
-	var/bot_speech_style
-	/// What does our bot's chat text speech look like?
-	var/bot_chat_style
-	/// The noise that happens whenever the bot speaks
-	var/bot_voice = 'sound/misc/talk/bottalk_1.ogg'
-	/// The bot's speech bubble
-	var/static/image/bot_speech_bubble = image('icons/mob/mob.dmi', "speech")
-	var/use_speech_bubble = 1
 	/// Is this bot *dynamic* enough to need a higher processing tier when being watched?
 	/// Set to 0 for bots that don't typically directly interact with people, like ducks and floorbots
 	var/dynamic_processing = 1
@@ -51,23 +44,31 @@
 	/// Middle process rate for bots currently trying to murder someone
 	var/PT_active = PROCESSING_QUARTER
 	var/hash_cooldown = (2 SECONDS)
-	var/next_hash_check = 0
+	var/tmp/next_hash_check = 0
 	/// If we're in the middle of something and don't want our tier to go wonky
 	var/doing_something = 0
 	/// Range that the bot checks for clients
 	var/hash_check_range = 6
 
-	var/frustration = 0
+	var/tmp/frustration = 0
 	/// How slowly the bot moves by default -- higher is slower!
-	var/bot_move_delay = 6
-	var/list/path = null	// list of path turfs
-	var/datum/robot_mover/bot_mover
+	var/bot_move_delay = BOT::SPEED::DEFAULT
+	var/tmp/list/path = null	// list of path turfs
+	var/tmp/datum/robot_mover/bot_mover
+	/// "start goal" refs of the last failed path search, skipped again while the failed_path cooldown runs
+	var/tmp/failed_path_key = null
 	var/moving = 0 // Are we ON THE MOVE??
 	var/stunned = 0 //It can be stunned by tasers. Delicate circuits.
 	var/current_movepath = 0
 	var/scanrate = 10 // How often do we check for stuff while we're ON THE MOVE. in deciseconds
 
 	p_class = 2
+
+	voice_sound_override = 'sound/misc/talk/bottalk_1.ogg'
+	use_speech_bubble = TRUE
+
+	speech_verb_say = list("beeps", "boops")
+	default_speech_output_channel = SAY_CHANNEL_OUTLOUD
 
 	power_change()
 		return
@@ -79,32 +80,45 @@
 
 	New()
 		..()
-		RegisterSignal(src, COMSIG_ATOM_HITBY_PROJ, .proc/hitbyproj)
+		START_TRACKING
+		src.AddElement(/datum/element/ghost_observable)
+		RegisterSignal(src, COMSIG_ATOM_HITBY_PROJ, PROC_REF(hitbyproj))
 		if(!no_camera)
 			src.cam = new /obj/machinery/camera(src)
 			src.cam.c_tag = src.name
 			src.cam.network = setup_camera_network
 		src.processing_tier = src.PT_idle
 		src.SubscribeToProcess()
-		if(!src.chat_text)
-			src.chat_text = new
-		src.vis_contents += src.chat_text
-		SPAWN_DBG(0.5 SECONDS)
+
+		if (!src.bot_speech_color)
+			var/num = hex2num(copytext(md5("[src.name][TIME]"), 1, 7))
+			src.bot_speech_color = hsv2rgb(num % 360, (num / 360) % 10 + 18, num / 360 / 10 % 15 + 85)
+
+		SPAWN(0.5 SECONDS)
 			src.botcard = new /obj/item/card/id(src)
 			src.botcard.access = get_access(src.access_lookup)
 			src.botnet_id = format_net_id("\ref[src]")
 
+		#ifdef ALL_ROBOT_AND_COMPUTERS_MUST_SHUT_THE_HELL_UP
+		START_TRACKING_CAT(TR_CAT_DELETE_ME)
+		#endif
+
+	initialize()
+		. = ..()
+		src.ensure_speech_tree().AddSpeechModifier(SPEECH_MODIFIER_DECTALK_BOT)
+
 	disposing()
+		STOP_TRACKING
 		botcard = null
-		qdel(chat_text)
-		chat_text = null
+		qdel(bot_mover)
+		bot_mover = null
 		if(cam)
 			cam.dispose()
 			cam = null
 		..()
 
-	attackby(obj/item/W as obj, mob/user as mob)
-		user.lastattacked = src
+	attackby(obj/item/W, mob/user)
+		user.lastattacked = get_weakref(src)
 		attack_particle(user,src)
 		hit_twitch(src)
 		if (W.hitsound)
@@ -130,16 +144,12 @@
 		var/turf/T = get_turf(src)
 		if(isnull(T))
 			return FALSE
-		for (var/mob/M in GET_NEARBY(T, src.hash_check_range))
-			if(M.client)
-				return TRUE
-		return FALSE
+		return length(global.client_hashmap.fast_manhattan(T, src.hash_check_range))
 
 	// Generic default. Override for specific bots as needed.
 	bullet_act(var/obj/projectile/P)
 		if (!P || !istype(P))
 			return
-		hit_twitch(src)
 
 		var/damage = 0
 		damage = round(((P.power/4)*P.proj_data.ks_ratio), 1.0)
@@ -158,59 +168,35 @@
 	proc/explode()
 		return
 
-	proc/speak(var/message, var/sing, var/just_float, var/just_chat)
-		if (!src.on || !message || src.muted)
-			return
-		var/image/chat_maptext/chatbot_text = null
-		if (src.speech2text && src.chat_text && !just_chat)
-			if(src.use_speech_bubble)
-				UpdateOverlays(bot_speech_bubble, "bot_speech_bubble")
-				SPAWN_DBG(1.5 SECONDS)
-					UpdateOverlays(null, "bot_speech_bubble")
-			if(!src.bot_speech_color)
-				var/num = hex2num(copytext(md5("[src.name][TIME]"), 1, 7))
-				src.bot_speech_color = hsv2rgb(num % 360, (num / 360) % 10 + 18, num / 360 / 10 % 15 + 85)
-			var/singing_italics = sing ? " font-style: italic;" : ""
-			var/maptext_color
-			if (sing)
-				maptext_color ="#D8BFD8"
-			else
-				maptext_color = src.bot_speech_color
-			chatbot_text = make_chat_maptext(src, message, "color: [maptext_color];" + src.bot_speech_style + singing_italics)
-			if(chatbot_text && src.chat_text && length(src.chat_text.lines))
-				chatbot_text.measure(src)
-				for(var/image/chat_maptext/I in src.chat_text.lines)
-					if(I != chatbot_text)
-						I.bump_up(chatbot_text.measured_height)
-
-		src.audible_message("<span class='game say'><span class='name'>[src]</span> [pick(src.speakverbs)], \"<span style=\"[src.bot_chat_style]\">[message]\"</span>", just_maptext = just_float, assoc_maptext = chatbot_text)
-		playsound(src, src.bot_voice, 40, 1)
-		if (src.text2speech)
-			SPAWN_DBG(0)
-				var/audio = dectalk("\[:nk\][message]")
-				if (audio && audio["audio"])
-					for (var/mob/O in hearers(src, null))
-						if (!O.client)
-							continue
-						if (O.client.ignore_sound_flags & (SOUND_VOX | SOUND_ALL))
-							continue
-						ehjax.send(O.client, "browseroutput", list("dectalk" = audio["audio"]))
-
 /obj/machinery/bot/examine()
 	. = ..()
 	var/healthpct = src.health / initial(src.health)
 	if (healthpct <= 0.8)
 		if (healthpct >= 0.4)
-			. += "<span class='alert'>[src]'s parts look loose.</span>"
+			. += SPAN_ALERT("[src]'s parts look loose.")
 		else
-			. += "<span class='alert'><B>[src]'s parts look very loose!</B></span>"
+			. += SPAN_ALERT("<B>[src]'s parts look very loose!</B>")
 
 /obj/machinery/bot/proc/hitbyproj(source, obj/projectile/P)
-	if((P.proj_data.damage_type & (D_KINETIC | D_ENERGY | D_SLASHING)) && P.proj_data.ks_ratio > 0)
-		P.initial_power -= 10
-		if(P.initial_power <= 0)
-			src.bullet_act(P) // die() prevents the projectile from calling bullet_act normally
-			P.die()
+	hit_twitch(src)
+	if((P.proj_data.damage_type & (D_KINETIC | D_ENERGY | D_SLASHING)))
+		if (!ON_COOLDOWN(src, "projectile_bot_hit", 0.5 SECONDS))
+			var/obj/particle/attack/bot_hit/hit_particle = new
+			hit_particle.set_loc(src.loc)
+			hit_particle.transform.Turn(rand(0, 360))
+			if (P.proj_data.damage > 1)
+				FLICK("block_spark", hit_particle)
+				if (P.proj_data.damage_type & D_KINETIC)
+					playsound(src, "sound/weapons/ricochet/ricochet-[rand(1, 4)].ogg", 40, TRUE) // replace with more unique sound if found later
+			else
+				FLICK("block_spark_armor", hit_particle)
+				if (P.proj_data.damage_type & D_ENERGY)
+					playsound(src, 'sound/effects/sparks6.ogg', 40, TRUE)
+		if (P.proj_data.ks_ratio > 0)
+			P.initial_power -= 10
+			if(P.initial_power <= 0)
+				src.bullet_act(P) // die() prevents the projectile from calling bullet_act normally
+				P.die()
 	if(!src.density)
 		return PROJ_OBJ_HIT_OTHER_OBJS | PROJ_ATOM_PASSTHROUGH
 
@@ -229,13 +215,7 @@
 	if(!T) return
 	if(announce_it)
 		visible_message("<b>[src]</b> points at [target]!")
-	var/obj/decal/point/P = new(T)
-	P.pixel_x = target.pixel_x
-	P.pixel_y = target.pixel_y
-	P.color = src.bot_speech_color
-	SPAWN_DBG(2 SECONDS)
-		P.invisibility = INVIS_ALWAYS
-		qdel(P)
+	make_point(T, pixel_x=target.pixel_x, pixel_y=target.pixel_y, color=src.bot_speech_color, pointer=src)
 
 /obj/machinery/bot/emp_act()
 	src.emag_act()
@@ -263,16 +243,17 @@
 				return T
 
 /obj/machinery/bot/proc/navigate_to(atom/the_target, var/move_delay = 10, var/adjacent = 0, max_dist=60)
-	var/target_turf = get_pathable_turf(the_target)
-	if(IN_RANGE(the_target, src, 1))
+	var/target_turf = adjacent ? get_turf(the_target) : get_pathable_turf(the_target)
+	if((BOUNDS_DIST(the_target, src) < 0))
 		return
-	if(src.bot_mover?.the_target == target_turf)
+	if(src.bot_mover?.the_target == target_turf && frustration == 0)
 		return 0
 	if(!target_turf)
 		return 0
 
 	src.KillPathAndGiveUp(0)
-	src.bot_mover = new /datum/robot_mover(newmaster = src, _move_delay = move_delay, _target_turf = target_turf, _current_movepath = current_movepath, _adjacent = adjacent, _scanrate = scanrate, _max_dist = max_dist)
+	var/datum/robot_mover/mover = new /datum/robot_mover(newmaster = src, _move_delay = move_delay, _target_turf = target_turf, _current_movepath = current_movepath, _adjacent = adjacent, _scanrate = scanrate, _max_dist = max_dist)
+	src.bot_mover = !QDELETED(mover) ? mover : null
 	return 0
 
 /// movement control datum. Why yes, this is copied from secbot.dm. Which was copied from guardbot.dm
@@ -284,8 +265,9 @@
 	var/adjacent = 0
 	var/scanrate = 10
 	var/max_dist = 600
+	var/max_seen = 1000
 
-	New(obj/machinery/bot/newmaster, _move_delay = 3, _target_turf, _current_movepath, _adjacent = 0, _scanrate = 10, _max_dist = 600)
+	New(obj/machinery/bot/newmaster, _move_delay = 3, _target_turf, _current_movepath, _adjacent = 0, _scanrate = 10, _max_dist = 80)
 		..()
 		if(istype(newmaster))
 			src.master = newmaster
@@ -314,6 +296,11 @@
 			master.moving = FALSE
 		src.master = null
 		src.the_target = null
+
+		#ifdef ALL_ROBOT_AND_COMPUTERS_MUST_SHUT_THE_HELL_UP
+		STOP_TRACKING_CAT(TR_CAT_DELETE_ME)
+		#endif
+
 		..()
 
 	proc/master_move()
@@ -326,18 +313,23 @@
 			master.KillPathAndGiveUp(0)
 			return
 		var/compare_movepath = src.current_movepath
-		master.path = get_path_to(src.master, src.the_target, max_distance=src.max_dist, id=master.botcard, skip_first=FALSE, simulated_only=FALSE, cardinal_only=TRUE)
+		var/path_key = "[ref(master.loc)] [ref(src.the_target)]"
+		if(master.failed_path_key == path_key && GET_COOLDOWN(master, "failed_path"))
+			master.path = null
+			qdel(src)
+			return
+		master.path = get_path_to(src.master, src.the_target, mintargetdist = adjacent ? 1 : 0, \
+			max_distance=src.max_dist, max_seen=src.max_seen, id=master.botcard, skip_first=FALSE, simulated_only=FALSE, cardinal_only=TRUE, do_doorcheck=TRUE)
 		if(!length(master.path))
+			master.failed_path_key = path_key
+			OVERRIDE_COOLDOWN(master, "failed_path", 5 SECONDS)
 			qdel(src)
 			return
 
-		SPAWN_DBG(0)
+		SPAWN(0)
 			if (!istype(master) || (master && (!length(master.path) || !src.the_target)))
 				qdel(src)
 				return
-
-			if(src.adjacent && (length(master?.path) > 1)) //Make sure to check it isn't null!!
-				master.path.len-- //Only go UP to the target, not the same tile.
 
 			master?.moving = 1
 
@@ -356,11 +348,11 @@
 						var/obj/effects/ion_trails/I = new /obj/effects/ion_trails
 						I.set_loc(get_turf(master))
 						I.set_dir(master.dir)
-						flick("ion_fade", I)
+						FLICK("ion_fade", I)
 						I.icon_state = "blank"
 						I.pixel_x = master.pixel_x
 						I.pixel_y = master.pixel_y
-						SPAWN_DBG( 20 )
+						SPAWN( 20 )
 							if (I && !I.disposed) qdel(I)
 
 					step_to(master, master?.path[1])
@@ -379,6 +371,6 @@
 			if (istype(master))
 				master.moving = 0
 				master.bot_mover = null
-				master.process() // responsive, robust AI = calling process() a million zillion times
+				master.ProcessMachine() // responsive, robust AI = calling process() a million zillion times
 				master = null
 				qdel(src)

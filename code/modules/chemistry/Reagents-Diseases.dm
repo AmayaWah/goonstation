@@ -23,9 +23,9 @@ datum
 			*/
 
 			on_mob_life(var/mob/M, var/mult = 1)
-				..()
 				if(!M)
 					M = holder.my_atom
+				..()
 				if (!isliving(M) || !ispath(disease))
 					return
 				if (src.volume < minimum_to_infect)
@@ -90,6 +90,28 @@ datum
 			transparency = 235
 			disease = /datum/ailment/disease/cold
 
+
+		disease/lungrot
+			name = "lungrot bloom"
+			id = "lungrot_bloom"
+			description = "highly toxic fungal colonies created in the environment of a weakened lung."
+			reagent_state = SOLID
+			minimum_to_infect = 7.5
+			fluid_r = 43
+			fluid_b = 54
+			fluid_g = 25
+			transparency = 166
+			disease = /datum/ailment/disease/lungrot
+
+			on_mob_life(var/mob/affected_mob, var/mult = 1)
+				if(!affected_mob)
+					affected_mob = holder.my_atom
+				//let's not make the lungrot reaction effectively double the depletion rate of miasma
+				affected_mob.reagents.add_reagent("miasma", src.calculate_depletion_rate(affected_mob, mult))
+				..()
+
+
+
 		disease/stringy_gibbis // Fake GBS
 			name = "stringy gibbis"
 			id = "stringy gibbis"
@@ -104,7 +126,7 @@ datum
 		disease/green_mucus // Flu
 			name = "green Mucus"
 			id = "green mucus"
-			description = "Mucus. Thats green."
+			description = "Mucus. That's green."
 			reagent_state = LIQUID
 			minimum_to_infect = 0
 			fluid_r = 215
@@ -137,15 +159,21 @@ datum
 			disease = /datum/ailment/disease/monkey_madness
 
 		disease/liquid_plasma // Plasmatoid
-			name = "liquid plasma"
-			id = "liquid plasma"
-			description = "Liquid plasma."
+			name = "activated plasma"
+			id = "activated plasma"
+			description = "This liquid plasma seems to be moving on its own."
 			reagent_state = LIQUID
 			fluid_r = 200
 			fluid_g = 0
 			fluid_b = 200
 			transparency = 80
 			disease = /datum/ailment/disease/plasmatoid
+
+			on_mob_life(mob/M, mult = 1)
+				. = ..()
+				var/datum/bioEffect/plasma_metabolism/plasma_bioeffect = M.bioHolder?.GetEffect("plasma_metabolism")
+				if (plasma_bioeffect)
+					plasma_bioeffect.absorb_liquid_plasma(mult * 2)
 
 		disease/hootonium // Owlstone juice
 			name = "Hootonium"
@@ -288,6 +316,11 @@ datum
 			random_chem_blacklisted = 1
 			disease = /datum/ailment/disease/necrotic_degeneration
 
+			infectious
+				name = "concentrated necrovirus"
+				id = "necrovirus_infectious"
+				disease = /datum/ailment/disease/necrotic_degeneration/can_infect_more
+
 		disease/viral_curative // Panacaea
 			name = "viral curative"
 			id = "viral curative"
@@ -312,16 +345,32 @@ datum
 			penetrates_skin = 1
 			disease = /datum/ailment/disease/tissue_necrosis
 
+		disease/rat_plague // Rat Plague
+			name = "rat spit"
+			id = "rat_spit"
+			description = "The spit of a disease rat. Contains a whole bunch of known and unknown disease."
+			reagent_state = LIQUID
+			depletion_rate = 0.4
+			fluid_r = 255
+			fluid_g = 40
+			fluid_b = 40
+			transparency = 50
+			disease = /datum/ailment/disease/rat_plague
+
+			on_mob_life(mob/M, mult)
+				M.take_toxin_damage(1.5 * mult)
+				. = ..()
+
 		disease/plague // Space Plague
 			name = "rat venom"
 			id = "rat_venom"
 			description = "Unbelievably deadly. Not to be mistaken with rat poison."
-			random_chem_blacklisted = 1
 			reagent_state = LIQUID
 			fluid_r = 255
 			fluid_g = 40
 			fluid_b = 40
 			transparency = 50
+			random_chem_blacklisted = TRUE
 			disease = /datum/ailment/disease/space_plague
 
 		disease/loose_screws // Space Madness
@@ -334,6 +383,17 @@ datum
 			fluid_b = 70
 			transparency = 70
 			disease = /datum/ailment/disease/space_madness
+
+		disease/phantom_payroll
+			name = "phantom payroll"
+			id = "phantom_payroll"
+			description = "A muted grey-blue fluid that smells faintly of stale coffee and printer toner."
+			reagent_state = LIQUID
+			fluid_r = 82
+			fluid_g = 96
+			fluid_b = 118
+			transparency = 150
+			disease = /datum/ailment/disease/third_shift_syndrome
 
 		disease/grave_dust // Vampire Plague
 			name = "grave dust"
@@ -350,6 +410,7 @@ datum
 			name = "prions"
 			id = "prions"
 			description = "A disease-causing agent that is neither bacterial nor fungal nor viral and contains no genetic material."
+			taste = "<br>　　∧,,,∧<br>　 （ ・ω・） like prion disease...<br>　　( つ旦O<br>　　と＿)_)<br>"
 			reagent_state = LIQUID
 			minimum_to_infect = 5.1
 			fluid_r = 255
@@ -381,6 +442,17 @@ datum
 			transparency = 40
 			minimum_to_infect = 0.4
 			disease = /datum/ailment/parasite/bee_larva
+
+		disease/cluwnespider
+			name = "painbow eggs"
+			id = "painbow_eggs"
+			description = "the yolk of a monstrosity"
+			reagent_state = LIQUID
+			fluid_r = 255
+			fluid_g = 255
+			fluid_b = 255
+			transparency = 0
+			disease = /datum/ailment/parasite/cluwnespider
 
 		disease/concentrated_initro // please do not give a recipe, just a thing for testing heart-related things atm
 			name = "concentrated initropidril"
@@ -474,77 +546,39 @@ datum
 			fluid_b = 120
 			transparency = 255
 
-		// Marquesas' one stop pathology shop
-		blood/pathogen
-			name = "pathogen"
-			id = "pathogen"
-			description = "A liquid sample of one (or multiple) pathogens."
+		disease/leprosybacteria
+			name = "mycobacterium leprae"
+			id = "mycobacterium leprae"
+			description = "A bacterial strain that is known to cause leprosy in humans."
 			reagent_state = LIQUID
-			fluid_r = 50
-			fluid_b = 50
-			fluid_g = 180
-			transparency = 200
-			depletion_rate = 0.8
-			smoke_spread_mod = 10
+			fluid_r = 255
+			fluid_g = 40
+			fluid_b = 40
+			transparency = 50
+			disease = /datum/ailment/disease/leprosy
 
-			reaction_turf(var/turf/T, var/volume)
-				return
+		disease/explodingheadjuice
+			name = "juice that makes your head explode"
+			id = "explodingheadjuice"
+			description = "A liquid with an incredibly apt name."
+			reagent_state = LIQUID
+			taste = "like berries"
+			fluid_r = 205
+			fluid_g = 0
+			fluid_b = 75
+			transparency = 180
+			disease = /datum/ailment/disease/exploding_head_syndrome
+			minimum_to_infect = 4
 
-			reaction_mob(var/mob/M, var/method=TOUCH, var/volume_passed)
-				. = ..()
-				// sure just fucking splash around in the stuff
-				// this is mainly so puddles from the sweating symptom can infect
-				for (var/uid in src.pathogens)
-					var/datum/pathogen/P = src.pathogens[uid]
-					logTheThing("pathology", M, null, "is splashed with [src] containing pathogen [P].")
-					if(istype(M, /mob/living/carbon/human))
-						var/mob/living/carbon/human/H = M
-						if(prob(100-H.get_disease_protection()))
-							if(H.infected(P))
-								H.show_message("<span class='alert'>Ew, some of that disgusting green stuff touched you!</span>")
-				return
-
-			on_plant_life(var/obj/machinery/plantpot/P)
-				return
-
-		antiviral
-			name = "Viral Serum"
-			id = "antiviral"
-			description = "An agent which can be used to create a specialized cure for a viral pathogen."
-			reagent_state = 2
-
-		// To make matters easier, fungi and parasites are both cured by the same biocides
-		biocide
-			name = "Biocide"
-			id = "biocide"
-			description = "An agent which can be used to create a specialized cure for a fungal or parasitic pathogen."
-			reagent_state = 2
-
-		// A mutation inhibitor that should destroy great mutatis cells.
-		// A derivative of mutadone.
-		inhibitor
-			name = "Mutation Inhibitor"
-			id = "inhibitor"
-			description = "An agent which can be used to create a specialized cure for a cellular mutative pathogen"
-			reagent_state = 2
-
-		bacterialmedium
-			name = "Bacterial Medium"
-			id = "bacterialmedium"
-			description = "A solution useful for the cultivation of bacteria."
-			reagent_state = 2
-			pathogen_nutrition = list("water", "sugar", "sodium", "iron", "nitrogen")
-
-		parasiticmedium
-			name = "Parasitic Medium"
-			id = "parasiticmedium"
-			description = "A solution useful for the cultivation of parasites."
-			reagent_state = 2
-			pathogen_nutrition = list("water", "sugar", "sodium", "iron", "nitrogen")
-
-		fungalmedium
-			name = "Fungal Medium"
-			id = "fungalmedium"
-			description = "A solution encouraging the growth of fungi."
-			reagent_state = 2
-			pathogen_nutrition = list("water", "sugar", "sodium", "iron", "nitrogen")
+		disease/cocktail_quadruplewater
+			name = "Quadruple Water"
+			id = "cocktail_quadruplewater"
+			description = "An even more water dense version of triple water, upon closer analysis its water matrix is highly unstable."
+			reagent_state = LIQUID
+			fluid_r = 10
+			fluid_g = 165
+			fluid_b = 254
+			taste = "like a day worth of hydration in one sip"
+			minimum_to_infect = 25
+			thirst_value = 3.2
+			disease = /datum/ailment/disease/water_poisoning

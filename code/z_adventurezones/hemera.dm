@@ -10,7 +10,7 @@ Obsidian Crown
 	name = "Hemera VII"
 	icon_state = "yellow"
 	sound_environment = 12
-	teleport_blocked = 1
+	teleport_blocked = AREA_TELEPORT_BLOCKED
 	skip_sims = 1
 	sims_score = 30
 
@@ -66,7 +66,7 @@ Obsidian Crown
 		..()
 		var/datum/computer/folder/newfolder = new /datum/computer/folder(  )
 		newfolder.name = "sys"
-		newfolder.metadata["permission"] = COMP_HIDDEN
+		newfolder.metadata["permission"] = DWAINE::PERM::DEFAULT::NONE
 		src.root.add_file( newfolder )
 		newfolder.add_file( new /datum/computer/file/mainframe_program/os/kernel(src) )
 		newfolder.add_file( new /datum/computer/file/mainframe_program/shell(src) )
@@ -89,7 +89,7 @@ Obsidian Crown
 
 		newfolder = new /datum/computer/folder
 		newfolder.name = "bin" //Applications available to all users.
-		newfolder.metadata["permission"] = COMP_ROWNER|COMP_RGROUP|COMP_ROTHER
+		newfolder.metadata["permission"] = DWAINE::PERM::DEFAULT::ALL_READ_ONLY
 		src.root.add_file( newfolder )
 		newfolder.add_file( new /datum/computer/file/mainframe_program/utility/cd(src) )
 		newfolder.add_file( new /datum/computer/file/mainframe_program/utility/ls(src) )
@@ -108,12 +108,12 @@ Obsidian Crown
 
 		newfolder = new /datum/computer/folder
 		newfolder.name = "mnt"
-		newfolder.metadata["permission"] = COMP_ROWNER|COMP_RGROUP|COMP_ROTHER
+		newfolder.metadata["permission"] = DWAINE::PERM::DEFAULT::ALL_READ_ONLY
 		src.root.add_file( newfolder )
 
 		newfolder = new /datum/computer/folder
 		newfolder.name = "conf"
-		newfolder.metadata["permission"] = COMP_ROWNER|COMP_RGROUP|COMP_ROTHER
+		newfolder.metadata["permission"] = DWAINE::PERM::DEFAULT::ALL_READ_ONLY
 		src.root.add_file( newfolder )
 
 		var/datum/computer/file/record/testR = new
@@ -126,7 +126,7 @@ Obsidian Crown
 
 		newfolder = new /datum/computer/folder
 		newfolder.name = "etc"
-		newfolder.metadata["permission"] = COMP_ROWNER|COMP_RGROUP|COMP_ROTHER
+		newfolder.metadata["permission"] = DWAINE::PERM::DEFAULT::ALL_READ_ONLY
 		src.root.add_file( newfolder )
 
 		newfolder.add_file( new /datum/computer/file/guardbot_task/bodyguard(src) )
@@ -316,15 +316,16 @@ Obsidian Crown
 	name = "obsidian crown"
 	desc = "A crown, apparently made of obsidian, and also apparently very bad news."
 	icon_state = "obcrown"
-
+	blocked_from_petasusaphilic = TRUE
 	magical = 1
 	var/processing = 0
 	var/armor_paired = 0
+	var/ring_acquainted = 0
 	var/max_damage = 0
 
 	equipped(var/mob/user, var/slot)
 		..()
-		logTheThing("combat", user, null, "equipped [src].")
+		logTheThing(LOG_COMBAT, user, "equipped [src] at [log_loc(src)].")
 		cant_self_remove = 1
 		cant_other_remove = 1
 		if (!src.processing)
@@ -336,8 +337,12 @@ Obsidian Crown
 
 		hear_voidSpeak("Hello, friend.")
 		hear_voidSpeak("Your world is so dangerous! Let me help you.")
-		if (user)
-			user.speech_void = 1
+
+		user.bioHolder?.AddEffect("accent_void")
+
+	unequipped(mob/user) //courtesy of funni ring
+		user.bioHolder?.RemoveEffect("accent_void")
+		. = ..()
 
 	process()
 		var/mob/living/host = src.loc
@@ -369,6 +374,47 @@ Obsidian Crown
 			armor_paired = 1
 			hear_voidSpeak("My, my, my, who is this?  A new companion on our pilgrimage?")
 
+		var/ring_guarded = FALSE
+		if (ishuman(host) && istype(host:gloves, /obj/item/clothing/gloves/ring/ominous))
+			ring_guarded = TRUE
+			var/obj/item/clothing/gloves/ring/ominous/thering = host:gloves
+			if(!ring_acquainted)
+				ring_acquainted = 1
+				hear_voidSpeak("A fascinating trinket indeed, and quite talkative.  I am quite certain we'll be the best of companions.")
+			else if(ring_acquainted < 60)
+				ring_acquainted++
+				switch (ring_acquainted) //progression to a clash
+					if (8)
+						host.playsound_local_not_inworld('sound/ambience/industrial/Precursor_Choir.ogg', 30, 0)
+					if (9)
+						boutput(host,SPAN_DISARM("« 38 28 58 97 98 23 48 97 87 23 38 37 23 98 48 37 67 56 48 28 97 77 23 38 37 27 48 «"))
+					if (12)
+						hear_voidSpeak("Insolent thing!  You think yourself the judge of our fellowship?  My Friend shall certainly discard you!")
+					if (13)
+						boutput(host,SPAN_ALERT("<b>[thering] vibrates violently!</b>"))
+						host.playsound_local_not_inworld('sound/effects/brrp.ogg', 40, 1, pitch = 0.5)
+					if (21)
+						hear_voidSpeak("Voices, voices, it heckles, it pesters!  Be rid of it!  We have no need of it!")
+					if (27)
+						host.playsound_local_not_inworld('sound/musical_instruments/artifact/Artifact_Precursor_3.ogg', 30, 0)
+					if (28)
+						boutput(host,SPAN_DISARM("RETURN TO MY HOME"))
+					if (31)
+						hear_voidSpeak("Ah, it deigns to speak in our own tongue, at last!  Pay it no heed.  I will deal with it soon.")
+					if (41)
+						host.playsound_local_not_inworld('sound/ambience/industrial/Precursor_Choir.ogg', 30, 0)
+					if (42)
+						boutput(host,SPAN_DISARM("« 96 76 87 96 67 37 38 23 17 87 97 67 23 96 27 48 23 97 48 23 87 28 58 48 96 28 «"))
+					if (44)
+						hear_voidSpeak("You know not of what you speak!  Come, Friend.  Do not trouble yourself with its faded halls.")
+					if (54)
+						hear_voidSpeak("Your end is near, trinket of the long-dead.  I have you now!")
+					if (55 to 57)
+						boutput(host,SPAN_ALERT("<b>[thering] vibrates violently!</b>"))
+						host.playsound_local_not_inworld('sound/effects/brrp.ogg', 40, 1, pitch = 0.5)
+					if (60)
+						src.crown_clash()
+
 		var/obj/item/storage/toolbox/memetic/that_jerk = locate(/obj/item/storage/toolbox/memetic) in host
 		if (istype(that_jerk)) //We do not like His Grace!!
 			hear_voidSpeak("Oh dear, Friend! Why would you associate with such a Beast as that?  Let me help you--that Fiend seeks only your destruction!")
@@ -381,11 +427,11 @@ Obsidian Crown
 					return
 				var/list/randomturfs = new/list()
 				for(var/turf/T in orange(host, 25))
-					if(T.density)
+					if(!T.can_crossed_by(host))
 						continue
 					randomturfs.Add(T)
-				boutput(host, "<span class='combat'>[that_jerk] is warped away!</span>")
-				playsound(host.loc, "sound/effects/mag_warp.ogg", 25, 1, -1)
+				boutput(host, SPAN_COMBAT("[that_jerk] is warped away!"))
+				playsound(host.loc, 'sound/effects/mag_warp.ogg', 25, 1, -1)
 				that_jerk.set_loc(pick(randomturfs))
 
 		if (host.get_damage() < 0)
@@ -397,11 +443,11 @@ Obsidian Crown
 			hear_voidSpeak( pick("Be spry, Friend, be nimble! We shall visit all there is to visit and do all there is to do!","Let no ache delay you, for pain is transient! Luminous beings are not held back by such mortal things!","How fantastic this space is! I had grown so tired of immaterial things.") )
 
 		//The crown takes retribution on attackers -- while slowly killing the host.
-		if (host.lastattacker && (host.lastattackertime + 40) >= world.time)
-			if(host.lastattacker != host)
+		if (host.lastattacker?.deref() && (host.lastattackertime + 40) >= world.time)
+			if(host.lastattacker.deref() != host)
 				hear_voidSpeak( pick("I shall aid, Friend!","No fear, Friend, no fear! I shall assist!","No need to raise your hand, I shall defend!") )
 
-				var/mob/M = host.lastattacker
+				var/mob/M = host.lastattacker.deref()
 				if (!istype(M))
 					return
 
@@ -409,9 +455,9 @@ Obsidian Crown
 				elecflash(M,power = 4)
 				var/list/randomturfs = new/list()
 
-				if(isrestrictedz(host.z))
+				if(isrestrictedz(M.z))
 					for(var/turf/T in view(M, 4))
-						if (T.loc != get_area(M) && T.loc.type != /area/space) //If we're in a telesci area and this is a change in area.
+						if (!istype(get_area(M), /area/solarium)) //If we're in a telesci area and this is a change in area.
 							continue
 						if(T.density)
 							continue
@@ -428,19 +474,23 @@ Obsidian Crown
 								continue
 						randomturfs.Add(T)
 
-				boutput(M, "<span class='notice'>You are caught in a magical warp field!</span>")
-				M.visible_message("<span class='combat'>[M] is warped away!</span>")
-				playsound(M.loc, "sound/effects/mag_warp.ogg", 25, 1, -1)
-				M.set_loc(pick(randomturfs))
+				if(length(randomturfs))
+					boutput(M, SPAN_NOTICE("You are caught in a magical warp field!"))
+					M.visible_message(SPAN_COMBAT("[M] is warped away!"))
+					playsound(M.loc, 'sound/effects/mag_warp.ogg', 25, 1, -1)
+					var/turf/destination = pick(randomturfs)
+					if(ishuman(M))
+						var/mob/living/carbon/human/H = M
+						H.shoes?.magnetic_teleport_check(H, get_turf(H), destination)
+					M.set_loc(pick(randomturfs))
+					logTheThing(LOG_COMBAT, M, "is warped away by [constructTarget(host,"combat")]'s obsidian crown to [log_loc(M)].")
 
-		if (armor_paired != -1 && prob(50) && host.max_health > 10)
+		if (armor_paired != -1 && prob(50) && host.max_health > 10 && !ring_guarded)
 			host.max_health--
 			//Away with ye, all hope of healing.
 			//random_brute_damage(host, 1)
 
-		host.delStatus("stunned")
-		host.delStatus("weakened")
-		host.delStatus("paralysis")
+		host.remove_stuns()
 		host.dizziness = max(0,host.dizziness-10)
 		host.changeStatus("drowsy", -20 SECONDS)
 		host.sleeping = 0
@@ -467,6 +517,7 @@ Obsidian Crown
 		if (armor_paired != 0 && ishuman(host))
 			if (armor_paired != -1)
 				armor_paired = -1
+				host.is_npc = TRUE
 				host.ghostize()
 				if (istype(host.ghost))
 					var/mob/dead/observer/theGhost = host.ghost
@@ -478,10 +529,9 @@ Obsidian Crown
 			humHost.HealDamage("All", 1000, 1000)
 			humHost.take_toxin_damage(-INFINITY)
 			humHost.take_oxygen_deprivation(-INFINITY)
-			humHost.delStatus("paralysis")
-			humHost.delStatus("stunned")
-			humHost.delStatus("weakened")
+			humHost.remove_stuns()
 			humHost.delStatus("radiation")
+			humHost.take_radiation_dose(-INFINITY)
 			humHost.take_eye_damage(-INFINITY)
 			humHost.take_ear_damage(-INFINITY)
 			humHost.take_ear_damage(-INFINITY, 1)
@@ -493,14 +543,12 @@ Obsidian Crown
 
 			humHost.full_heal()
 
-			humHost.decomp_stage = 4
+			humHost.decomp_stage = DECOMP_STAGE_SKELETONIZED
 			humHost.bioHolder.RemoveEffect("eaten")
 			humHost.set_body_icon_dirty()
 			humHost.set_face_icon_dirty()
 
-			if (!humHost.is_npc)
-				humHost.is_npc = 1
-				humHost.ai_init()
+			humHost.ai_init()
 
 			return
 
@@ -510,9 +558,9 @@ Obsidian Crown
 			N.flash(3 SECONDS)
 			if(N.client)
 				shake_camera(N, 6, 32)
-				N.show_message("<span class='combat'><b>A blinding light envelops [host]!</b></span>")
+				N.show_message(SPAN_COMBAT("<b>A blinding light envelops [host]!</b>"))
 
-		playsound(src.loc, "sound/weapons/flashbang.ogg", 50, 1)
+		playsound(src.loc, 'sound/weapons/flashbang.ogg', 50, 1)
 
 		src.set_loc(get_turf(host))
 		processing_items.Remove(src)
@@ -523,3 +571,43 @@ Obsidian Crown
 		host.vaporize()
 
 		return
+
+	proc/crown_clash()
+		var/mob/living/carbon/human/host = src.loc
+		if (!istype(host))
+			return
+
+		var/obj/item/clothing/gloves/ring/ominous/ring = host.gloves
+		if (!istype(ring))
+			return
+
+		var/in_crown_area = FALSE
+		if (istypes(get_area(host),list(/area/unspace,/area/precursor/menhir,/area/station/crown)))
+			in_crown_area = TRUE
+
+		if (in_crown_area) //ring wins
+			host.playsound_local_not_inworld('sound/ambience/industrial/Precursor_Choir.ogg', 30, 0)
+			processing_items.Remove(src)
+			processing = 0
+
+			SPAWN(8)
+				hear_voidSpeak("NO!  NO!  THIS CANNOT BE!  MY FRIEND, LEND ME YOUR-")
+			SPAWN(13)
+				src.cant_self_remove = 0
+				src.cant_other_remove = 0
+				host.u_equip(src)
+				playsound(host.loc, 'sound/weapons/flashbang.ogg', 30, 1, pitch = 0.7)
+				qdel(src)
+				host.max_health = initial(host.max_health)
+				host.reagents.maximum_volume = initial(host.reagents.maximum_volume)
+
+		else //obsidian crown wins
+			hear_voidSpeak("Begone, vile artifice!  Finally, an end to that confounding blabber.")
+			host.u_equip(ring)
+			if (ring)
+				ring.dropped(host)
+				ring.layer = initial(ring.layer)
+				elecflash(host,power = 3)
+				boutput(host, SPAN_COMBAT("[ring] is warped out of existence!"))
+				playsound(host.loc, 'sound/effects/mag_warp.ogg', 25, 1, -1)
+				qdel(ring)

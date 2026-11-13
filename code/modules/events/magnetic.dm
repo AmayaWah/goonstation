@@ -1,7 +1,9 @@
 /datum/random_event/major/magnetic
 	name = "Bio-Magnetic Field"
+	description = "Human mobs on the station Z-level receive a bio-magnetic field that reacts violently to other fields, especially of opposite polarity."
 	centcom_headline = "Bio-Magnetic Field"
 	centcom_message = {"Strong bio-magnetic fields have been detected manifesting on the station. Personnel are advised to avoid anybody charged with the opposite magnetic charge. The fields should dissipate within a few minutes."}
+	centcom_origin = ALERT_ANOMALY
 	var/list/positive_mobs = list()
 	var/list/negative_mobs = list()
 	var/list/eligible_mobs = list()
@@ -16,6 +18,8 @@
 			if (isdead(H))
 				continue
 			if (!H.bioHolder || H.bioHolder.HasEffect("resist_electric") || H.traitHolder.hasTrait("unionized")) // a pun!
+				continue
+			if (!isonstationz(get_z(H)))
 				continue
 			eligible_mobs += H
 
@@ -36,7 +40,7 @@
 			negative_mobs += H
 			eligible_mobs -= H
 
-		SPAWN_DBG(5 SECONDS)
+		SPAWN(5 SECONDS)
 			var/duration = rand(2 MINUTES, 3 MINUTES)
 			for (var/mob/living/carbon/human/H in positive_mobs)
 				H.changeStatus("magnetized", duration, "magnets_pos")

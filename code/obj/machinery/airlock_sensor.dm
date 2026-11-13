@@ -3,7 +3,7 @@ obj/machinery/airlock_sensor
 	icon_state = "airlock_sensor_off"
 	name = "Airlock Sensor"
 
-	anchored = 1
+	anchored = ANCHORED
 
 	var/id_tag
 	var/master_tag
@@ -13,7 +13,7 @@ obj/machinery/airlock_sensor
 	var/on = 1
 	var/alert = 0
 
-	proc/update_icon()
+	update_icon()
 		if(on)
 			if(alert)
 				icon_state = "airlock_sensor_alert"
@@ -29,7 +29,7 @@ obj/machinery/airlock_sensor
 		signal.data["command"] = "cycle"
 
 		SEND_SIGNAL(src, COMSIG_MOVABLE_POST_RADIO_PACKET, signal, AIRLOCK_CONTROL_RANGE)
-		flick("airlock_sensor_cycle", src)
+		FLICK("airlock_sensor_cycle", src)
 
 	process()
 		if(on)
@@ -47,8 +47,8 @@ obj/machinery/airlock_sensor
 
 			SEND_SIGNAL(src, COMSIG_MOVABLE_POST_RADIO_PACKET, signal, AIRLOCK_CONTROL_RANGE)
 
-		update_icon()
+		UpdateIcon()
 
 	New()
 		..()
-		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, frequency)
+		MAKE_SENDER_RADIO_PACKET_COMPONENT(null, null, frequency)

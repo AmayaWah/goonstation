@@ -3,7 +3,7 @@
 	icon = 'icons/obj/writing.dmi'
 	icon_state = "artifact_form"
 	desc = "A standardized form for classifying different alien artifacts, with some extra strong adhesive on the back."
-	appearance_flags = RESET_TRANSFORM | RESET_COLOR | RESET_ALPHA
+	appearance_flags = RESET_TRANSFORM | RESET_COLOR | RESET_ALPHA | PIXEL_SCALE
 	var/artifactName = ""
 	var/artifactOrigin = ""
 	var/artifactType = ""
@@ -11,37 +11,50 @@
 	var/artifactFaults = ""
 	var/artifactDetails = ""
 	var/lastAnalysis = 0
+	var/lastAnalysisErrors = ""
+	var/list/crossed = list()
 
 	proc/checkArtifactVars(obj/O)
 		if(!O.artifact)
 			return FALSE
 		var/datum/artifact/A = O.artifact
+		var/list/analysisErrors = list()
 
 		lastAnalysis = 0
 
 		// check origin
 		if(A.artitype.type_name == src.artifactOrigin)
 			lastAnalysis++
+		else
+			analysisErrors += "origin"
 
 		// check type
 		if(A.type_name == src.artifactType)
 			lastAnalysis++
+		else
+			analysisErrors += "type"
 
 		// if a trigger would be redundant, let's just say it's cool!
 		if(A.automatic_activation || A.no_activation)
 			lastAnalysis++
 		else
 			// check if trigger is one of the correct ones
-			for(var/datum/artifact_trigger/T as anything in A.triggers)
+			var/datum/artifact_trigger/T = null
+			for(T as anything in A.triggers)
 				if(T.type_name == src.artifactTriggers)
 					lastAnalysis++
 					break
+			// BYOND thing: T will be null if the above loop does not break
+			if (!T)
+				analysisErrors += "trigger"
+
+		lastAnalysisErrors = analysisErrors.Join(", ")
 
 		// ok, let's make a name
 		// start with obscured name
 		src.artifactName = O.real_name
 		// get an instance of the artifact origin
-		for(var/datum/artifact_origin/origin as() in artifact_controls.artifact_origins)
+		for(var/datum/artifact_origin/origin as anything in artifact_controls.artifact_origins)
 			if(origin.type_name == src.artifactOrigin)
 				// have we already generated a name for that origin?
 				// the actual name with the actual origin should be in the list by default
@@ -62,11 +75,11 @@
 		var/obj/attachedobj = src.attached
 		if(istype(attachedobj) && attachedobj.artifact) // touch artifact we are attached to
 			src.attached.Attackhand(user)
-			user.lastattacked = user
+			user.lastattacked = get_weakref(user)
 		else // do sticker things
 			..()
 
-	stick_to(atom/A, pox, poy)
+	stick_to(var/atom/A, var/pox, var/poy, user, silent = FALSE)
 		. = ..()
 		if(isobj(A))
 			checkArtifactVars(A)
@@ -75,7 +88,7 @@
 	attackby(obj/item/W, mob/living/user)
 		if(istype(W, /obj/item/pen)) // write on it
 			ui_interact(user)
-		else if((iscuttingtool(W) || issnippingtool(W)) && user.a_intent == INTENT_HELP && src.attached) // remove attached paper from artifact
+		else if((iscuttingtool(W) || issnippingtool(W)) && user.a_intent == INTENT_HELP && src.attached && !ismob(src.attached)) // remove attached paper from artifact
 			boutput(user, "You manage to scrape \the [src] off of \the [src.attached].")
 			src.remove_from_attached()
 			src.add_fingerprint(user)
@@ -84,7 +97,7 @@
 			var/obj/attachedobj = src.attached
 			if(istype(attachedobj) && attachedobj.artifact) // hit artifact we are attached to
 				src.attached.Attackby(W, user)
-				user.lastattacked = user
+				user.lastattacked = get_weakref(user)
 			else // just sticker things
 				..()
 
@@ -115,7 +128,7 @@
 		. = ..()
 		if (.)
 			return
-		if (!params["hasPen"])
+		if (!src.hasWritingItem(usr.equipped()))
 			boutput(usr, "You can't write without a pen!")
 			return FALSE
 
@@ -124,12 +137,28 @@
 			O = src.loc
 		switch(action)
 			if("origin")
-				artifactOrigin = params["newOrigin"]
+				if (artifactOrigin == params["newOrigin"])
+					artifactOrigin = ""
+					crossed += params["newOrigin"]
+				else
+					crossed -= params["newOrigin"]
+					artifactOrigin = params["newOrigin"]
 			if("type")
-				src.updateTypeLabel(params["newType"])
-				artifactType = params["newType"]
+				if (artifactType == params["newType"])
+					removeTypeLabel()
+					artifactType = ""
+					crossed += params["newType"]
+				else
+					crossed -= params["newType"]
+					src.updateTypeLabel(params["newType"])
+					artifactType = params["newType"]
 			if("trigger")
-				artifactTriggers = params["newTriggers"]
+				if (artifactTriggers == params["newTriggers"])
+					artifactTriggers = ""
+					crossed += params["newTriggers"]
+				else
+					crossed -= params["newTriggers"]
+					artifactTriggers = params["newTriggers"]
 			if("fault")
 				artifactFaults = params["newFaults"]
 			if("detail")
@@ -139,7 +168,6 @@
 			src.checkArtifactVars(O)
 
 	ui_data(mob/user)
-		var/obj/item/pen/P = user.find_type_in_hand(/obj/item/pen)
 		. = list(
 			"artifactName" = artifactName,
 			"artifactOrigin" = artifactOrigin,
@@ -147,10 +175,10 @@
 			"artifactTriggers" = artifactTriggers,
 			"artifactFaults" = artifactFaults,
 			"artifactDetails" = artifactDetails,
-			"hasPen" = P
+			"crossed" = crossed
 		)
 
-	remove_from_attached()
+	remove_from_attached(do_loc = TRUE)
 		src.removeTypeLabel()
 		. = ..()
 
@@ -172,11 +200,10 @@
 			O.remove_suffixes("\[[src.artifactType]\]")
 			O.UpdateName()
 
-/obj/artifact_paper_dispenser
-	name = "artifact analysis form tray"
-	icon = 'icons/obj/writing.dmi'
-	icon_state = "artifact_form_tray"
-	desc = "A tray full of forms for classifying alien artifacts."
+	proc/hasWritingItem(obj/item/I)
+		if(istype(I, /obj/item/pen))
+			return TRUE
+		if(istype(I, /obj/item/tool/omnitool))
+			var/obj/item/tool/omnitool/TOOL = I
 
-	attack_hand(mob/user)
-		user.put_in_hand_or_drop(new /obj/item/sticker/postit/artifact_paper())
+			return TOOL.mode?.mode_id ==  OMNITOOL::MODE_PEN

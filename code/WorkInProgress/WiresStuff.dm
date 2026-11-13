@@ -3,11 +3,33 @@
 	SET_ADMIN_CAT(ADMIN_CAT_NONE)
 	set name = "WireTest"
 	set hidden = 1
-	admin_only
+	ADMIN_ONLY
 
-	//mapWorldNew(src)
-	//boop2
+	var/loopTimes = input(src, "How many loops?") as num
 
+	var/counter = 1
+	while (counter <= loopTimes)
+		SPAWN(0)
+			var/response = wireSendTest()
+			var/msg = "\[[counter]\] - "
+			if (response == "This is a test")
+				msg += "Success"
+			else
+				msg += "Failed"
+			boutput(src, msg)
+		counter++
+
+	boutput(src, "Done!")
+
+/proc/wireSendTest()
+	var/datum/apiModel/Message/message
+	try
+		var/datum/apiRoute/test/getTest = new
+		message = apiHandler.queryAPI(getTest)
+	catch (var/exception/e)
+		var/datum/apiModel/Error/error = e.name
+		return error.message
+	return message.message
 
 /proc/mapWorldNew(client/C)
 	// future proofing against varied world icon sizes
@@ -39,14 +61,14 @@
 	var/startY = startT.y
 	var/startZ = startT.z
 
-	out(C, "===========================<br>Starting")
+	boutput(C, "===========================<br>Starting")
 
 	// loop through all tiles in area
 	for (var/thisX = startX, thisX < (startX + areaW), thisX++)
 		var/currentX = (thisX - startX) + 1
 		for (var/thisY = startY, thisY < (startY + areaH), thisY++)
 			var/currentY = (thisY - startY) + 1
-			out(C, "Processing tile: [thisX], [thisY]. CurrentX: [currentX]. CurrentY: [currentY]")
+			boutput(C, "Processing tile: [thisX], [thisY]. CurrentX: [currentX]. CurrentY: [currentY]")
 
 			// get the turf on the loc
 			var/turf/T = locate(thisX, thisY, startZ)
@@ -82,7 +104,7 @@
 			// blend the composite turf icon into the canvas
 			var/offsetX = ((currentX * iconWidth) - iconWidth) + 1
 			var/offsetY = ((currentY * iconHeight) - iconHeight) + 1
-			//out(C, "-- Blending into canvas at [offsetX], [offsetY]")
+			//boutput(C, "-- Blending into canvas at [offsetX], [offsetY]")
 			canvas.Blend(turfIcon, ICON_OVERLAY, offsetX, offsetY)
 
 	// create a new icon and insert the generated canvas, so that BYOND doesn't generate different directions
@@ -93,11 +115,11 @@
 	// save constructed image to local disk
 	var/dest = "data/test.png"
 	if (fcopy(finalCanvas, dest))
-		out(C, "Done. Canvas saved to [dest]")
+		boutput(C, "Done. Canvas saved to [dest]")
 	else
-		out(C, "ERROR saving canvas to [dest]")
+		boutput(C, "ERROR saving canvas to [dest]")
 
-	out(C, "===========================")
+	boutput(C, "===========================")
 
 
 //Silly little thing that the bans panel calls on refresh
@@ -118,22 +140,26 @@ var/global/deathConfettiActive = 1
 var/global/deathConfettiActive = 0
 #endif
 
-/mob/proc/deathConfetti()
+/mob/proc/deathConfetti(muffled = FALSE)
 	particleMaster.SpawnSystem(new /datum/particleSystem/confetti(src.loc))
-	SPAWN_DBG(1 SECOND)
-		playsound(src.loc, "sound/voice/yayyy.ogg", 50, 1)
+	SPAWN(1 SECOND)
+		if (muffled)
+			playsound(src.loc, 'sound/voice/yayyy.ogg', 25, 1, flags = SOUND_DO_LOS)
+		else
+			playsound(src.loc, 'sound/voice/yayyy.ogg', 50, 1)
 
 /client/proc/toggle_death_confetti()
 	set popup_menu = 0
 	SET_ADMIN_CAT(ADMIN_CAT_SERVER_TOGGLES)
 	set name = "Toggle Death Confetti"
 	set desc = "Toggles the fun confetti effect and sound whenever a mob dies"
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	deathConfettiActive = !deathConfettiActive
 
-	logTheThing("admin", src, null, "toggled Death Confetti [deathConfettiActive ? "on" : "off"]")
-	logTheThing("diary", src, null, "toggled Death Confetti [deathConfettiActive ? "on" : "off"]", "admin")
+	logTheThing(LOG_ADMIN, src, "toggled Death Confetti [deathConfettiActive ? "on" : "off"]")
+	logTheThing(LOG_DIARY, src, "toggled Death Confetti [deathConfettiActive ? "on" : "off"]", "admin")
 	message_admins("[key_name(src)] toggled Death Confetti [deathConfettiActive ? "on" : "off"]")
 
 
@@ -151,9 +177,9 @@ var/global/deathConfettiActive = 0
 	can_throw = 1
 	can_grab = 1
 	can_disarm = 1
-	speechverb_say = "booms"
-	speechverb_exclaim = "flares"
-	speechverb_ask = "spots"
+	speech_verb_say = "booms"
+	speech_verb_exclaim = "flares"
+	speech_verb_ask = "spots"
 	blood_id = "phlogiston"
 	metabolizes = 0
 	var/datum/light/glow
@@ -174,7 +200,7 @@ var/global/deathConfettiActive = 0
 		..()
 		var/datum/handHolder/HH = hands[1]
 		HH.limb = new /datum/limb/sun
-		HH.icon = 'icons/mob/critter_ui.dmi'
+		HH.icon = 'icons/mob/critter_hands.dmi'
 		HH.icon_state = "handzap"
 		HH.name = "solar wind"
 		HH.limb_name = "solar wind"
@@ -202,14 +228,14 @@ var/global/deathConfettiActive = 0
 	SET_ADMIN_CAT(ADMIN_CAT_NONE)
 	set popup_menu = 0
 	set hidden = 1
-	admin_only
+	ADMIN_ONLY
 
 	for (var/mob/living/L in mobs)
 		if (L.client && !isghostdrone(L))
 			droneize(L, 0)
 
-	logTheThing("admin", src, null, "made everyone a ghostdrone!")
-	logTheThing("diary", src, null, "made everyone a ghostdrone!", "admin")
+	logTheThing(LOG_ADMIN, src, "made everyone a ghostdrone!")
+	logTheThing(LOG_DIARY, src, "made everyone a ghostdrone!", "admin")
 	message_admins("[key_name(src)] made everyone a ghostdrone!")
 
 
@@ -218,9 +244,9 @@ var/global/deathConfettiActive = 0
 	set name = "Toggle Hard Reboot"
 	set desc = "A hard reboot is when the game instance outright ends, and the backend server reinitialises it"
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
-	var/hardRebootFilePath = "data/hard-reboot"
 	var/hardRebootFileExists = fexists(hardRebootFilePath)
 	var/logMessage = ""
 
@@ -235,11 +261,47 @@ var/global/deathConfettiActive = 0
 	else
 		return
 
-	logTheThing("debug", src, null, logMessage)
-	logTheThing("diary", src, null, logMessage, "admin")
+	logTheThing(LOG_DEBUG, src, logMessage)
+	logTheThing(LOG_DIARY, src, logMessage, "admin")
 	message_admins("[key_name(src)] [logMessage]")
 
 	var/ircmsg[] = new()
 	ircmsg["key"] = src.key
 	ircmsg["msg"] = logMessage
-	ircbot.export("admin", ircmsg)
+	ircbot.export_async("admin", ircmsg)
+
+/client/proc/toggle_server_rebuild()
+	SET_ADMIN_CAT(ADMIN_CAT_SERVER)
+	set name = "Toggle Server Rebuild"
+	set desc = "A server rebuild is when the backend server reinitialises the game container"
+
+	ADMIN_ONLY
+	SHOW_VERB_DESC
+
+	var/logMessage = ""
+
+	if (global.rebuildServerContainer && alert("A server rebuild is already queued, would you like to remove it?",, "Yes", "No") == "Yes")
+		global.rebuildServerContainer = FALSE
+		logMessage = "removed a server rebuild"
+
+	else if (!global.rebuildServerContainer && alert("No server rebuild is queued, would you like to queue one?",, "Yes", "No") == "Yes")
+		global.rebuildServerContainer = TRUE
+		logMessage = "queued a server rebuild"
+
+	else
+		return
+
+	logTheThing(LOG_DEBUG, src, logMessage)
+	logTheThing(LOG_DIARY, src, logMessage, "admin")
+	message_admins("[key_name(src)] [logMessage]")
+
+	var/ircmsg[] = new()
+	ircmsg["key"] = src.key
+	ircmsg["msg"] = logMessage
+	ircbot.export_async("admin", ircmsg)
+
+/proc/goonhub_href(path, in_byond = FALSE)
+	var/url = "[config.goonhub_url][path]"
+	if (in_byond)
+		return "byond://winset?command=.openlink \"[url_encode(url)]\""
+	return url

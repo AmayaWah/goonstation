@@ -1,15 +1,16 @@
 // Powersink - used to drain station power
-#define POWERSINK_OFF 0
-#define POWERSINK_CLAMPED 1
-#define POWERSINK_OPERATING 2
-
+TYPEINFO(/obj/item/device/powersink)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
+	mats = list("metal_dense" = 20,
+				"conductive_high" = 20,
+				"crystal" = 10)
 /obj/item/device/powersink
 	desc = "A nulling power sink which drains energy from electrical systems."
 	name = "power sink"
 	icon_state = "powersink0"
-	item_state = "electronic"
+	item_state = "electronics"
 	w_class = W_CLASS_BULKY
-	flags = FPRINT | TABLEPASS | CONDUCT
+	flags = TABLEPASS | CONDUCT
 	throwforce = 5
 	throw_speed = 1
 	throw_range = 2
@@ -19,10 +20,9 @@
 	var/drain_rate = 400000		// amount of power to drain per tick
 	var/power_drained = 0 		// has drained this much power
 	var/max_power = 2e8		// maximum power that can be drained before exploding
-	var/mode = POWERSINK_OFF		// 0 = off, 1=clamped (off), 2=operating
-	is_syndicate = 1
-	mats = list("MET-2"=20, "CON-2"=20, "CRY-1"=10)
+	var/mode = POWERSINK::OFF		// 0 = off, 1=clamped (off), 2=operating
 	rand_pos = 0
+	HELP_MESSAGE_OVERRIDE({"To anchor the powersink, use a <b>screwdriver</b> on it while it is on exposed wiring. To turn the powersink on/off click it with an empty hand."})
 
 	var/obj/cable/attached		// the attached cable
 	var/datum/light/light
@@ -36,17 +36,23 @@
 
 	attackby(var/obj/item/I, var/mob/user)
 		if (isscrewingtool(I))
-			if(mode == POWERSINK_OFF)
+			src.add_fingerprint(user)
+			if(mode == POWERSINK::OFF)
 				var/turf/T = loc
+				for (var/obj/item/device/powersink/sink in T)
+					if (sink.anchored)
+						boutput(user, SPAN_ALERT("There's already a powersink attached here!"))
+						return
 				if(isturf(T) && !T.intact)
 					attached = locate() in T
 					if(!attached)
-						boutput(user, "No exposed cable here to attach to.")
+						boutput(user, SPAN_ALERT("No exposed cable here to attach to!"))
 						return
 					else
-						anchored = 1
-						mode = POWERSINK_CLAMPED
-						boutput(user, "You attach the device to the cable.")
+						anchored = ANCHORED
+						mode = POWERSINK::CLAMPED
+						boutput(user, SPAN_NOTICE("You attach the device to the cable."))
+						GHOST.MESSAGE.send("[GHOST.MESSAGE.format_atom(src)] has been activated at [GHOST.MESSAGE.format_loc(src)].")
 						for(var/mob/M in AIviewers(user))
 							if(M == user) continue
 							boutput(M, "[user] attaches the power sink to the cable.")
@@ -55,7 +61,7 @@
 					boutput(user, "Device must be placed over an exposed cable to attach to it.")
 					return
 			else
-				if(attached && mode == POWERSINK_OPERATING) //give back some charge when disconnected
+				if(attached && mode == POWERSINK::OPERATING) //give back some charge when disconnected
 					var/datum/powernet/PN = attached.get_powernet()
 					if(PN)
 						for(var/obj/machinery/power/terminal/T in PN.nodes)
@@ -67,16 +73,16 @@
 										power_drained -= charge_amt * 5
 										A.cell.charge += charge_amt
 
-				anchored = 0
-				mode = POWERSINK_OFF
-				boutput(user, "You detach	the device from the cable.")
+				anchored = UNANCHORED
+				mode = POWERSINK::OFF
+				boutput(user, "You detach the device from the cable.")
 				for(var/mob/M in AIviewers(user))
 					if(M == user) continue
 					boutput(M, "[user] detaches the power sink from the cable.")
 				light.disable()
 				icon_state = "powersink0"
 				processing_items.Remove(src)
-				logTheThing("combat", user, src, "deactivated [src] at [log_loc(src)].")
+				logTheThing(LOG_STATION, user, "deactivated [src] at [log_loc(src)].")
 				return
 		else
 			..()
@@ -86,18 +92,18 @@
 
 	attack_hand(var/mob/user)
 		switch(mode)
-			if(POWERSINK_OFF)
+			if(POWERSINK::OFF)
 				..()
 
-			if(POWERSINK_CLAMPED)
+			if(POWERSINK::CLAMPED)
 				boutput(user, "You activate the device!")
 				for(var/mob/M in AIviewers(user))
 					if(M == user) continue
 					boutput(M, "[user] activates the power sink!")
-				mode = POWERSINK_OPERATING
+				mode = POWERSINK::OPERATING
 				icon_state = "powersink1"
 				processing_items |= src
-				logTheThing("combat", user, src, "activated [src] at [log_loc(src)].")
+				logTheThing(LOG_STATION, user, "activated [src] at [log_loc(src)].")
 				message_admins("[key_name(user)] activated [src] at [log_loc(src)].")
 
 	process()
@@ -109,7 +115,7 @@
 
 				// found a powernet, so drain up to max power from it
 
-				var/drained = min ( drain_rate, PN.avail )
+				var/drained = min ( drain_rate, (PN.avail - PN.newload) )
 				PN.newload += drained
 				power_drained += drained
 
@@ -125,12 +131,8 @@
 
 
 			if(power_drained > max_power * 0.95)
-				playsound(src, "sound/effects/screech.ogg", 50, 1, 1)
+				playsound(src, 'sound/effects/screech.ogg', 50, TRUE, 1)
 			if(power_drained >= max_power)
 				processing_items.Remove(src)
 				explosion(src, src.loc, 3,6,9,12)
 				qdel(src)
-
-#undef POWERSINK_OFF
-#undef POWERSINK_CLAMPED
-#undef POWERSINK_OPERATING

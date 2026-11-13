@@ -27,6 +27,8 @@
 
 		last_dir = 0
 
+		shooting = FALSE
+
 	New(owner)
 		..()
 		src.owner = owner
@@ -43,8 +45,11 @@
 		if (istype(src.owner, /obj/machinery/vehicle/escape_pod) || !owner)
 			return
 
+		if(changed & KEY_SHOCK)
+			shooting = keys & KEY_SHOCK
+
 		if (changed & (KEY_FORWARD|KEY_BACKWARD|KEY_RIGHT|KEY_LEFT|KEY_RUN|KEY_BOLT))
-			if (!owner.engine) // fuck it, no better place to put this, only triggers on presses
+			if (!owner.get_part(POD_PART_ENGINE)) // fuck it, no better place to put this, only triggers on presses
 				boutput(user, "[owner.ship_message("WARNING! No engine detected!")]")
 				return
 
@@ -70,12 +75,7 @@
 			owner.set_dir(input_dir)
 			owner.facing = input_dir
 
-			if (input_magnitude)
-				if (input_dir & (input_dir-1))
-					owner.set_dir(NORTH)
-					owner.transform = turn(M,arctan(input_y,input_x))
-				else
-					owner.transform = null
+
 			last_dir = owner.dir
 
 			if (input_x || input_y)
@@ -92,19 +92,26 @@
 		if (istype(src.owner, /obj/machinery/vehicle/escape_pod))
 			return FALSE
 
+		var/can_user_act = user && user == owner.pilot && !is_incapacitated(user) && !isdead(user)
+
+		var/obj/item/shipcomponent/mainweapon/main_weapon = owner?.get_part(POD_PART_MAIN_WEAPON)
+		if(shooting && main_weapon?.active && can_user_act && !GET_COOLDOWN(main_weapon, "fire"))
+			owner.fire_main_weapon(user)
+
 		if (next_move > world.time)
 			return next_move - world.time
 
 		velocity_magnitude = 0
-		if (user && user == owner.pilot && !user.getStatusDuration("stunned") && !user.getStatusDuration("weakened") && !user.getStatusDuration("paralysis") && !isdead(user))
-			if (owner?.engine?.active)
-
-				velocity_x	+= input_x * accel
-				velocity_y  += input_y * accel
-
+		if (can_user_act)
+			var/obj/item/shipcomponent/engine/engine_part = owner?.get_part(POD_PART_ENGINE)
+			if (engine_part?.active)
 				//We're on autopilot before the warp, NO FUCKING IT UP!
-				if (owner.engine.warp_autopilot)
+				if (engine_part.warp_autopilot)
 					return FALSE
+
+				velocity_x += input_x * accel * src.owner.speedmod * src.owner.afterburner_accel_mod
+				velocity_y += input_y * accel * src.owner.speedmod * src.owner.afterburner_accel_mod
+
 
 				if (owner.rcs && input_x == 0 && input_y == 0)
 					braking = 1
@@ -112,9 +119,9 @@
 				//braking
 				if (braking)
 					if(input_x * velocity_x <= 0)
-						velocity_x = velocity_x * brake_decel_mult
+						velocity_x = velocity_x * brake_decel_mult * (1 / src.owner.speedmod)
 					if(input_y * velocity_y <= 0)
-						velocity_y = velocity_y * brake_decel_mult
+						velocity_y = velocity_y * brake_decel_mult * (1 / src.owner.speedmod)
 
 					if (abs(velocity_x) + abs(velocity_y) < 1.3)
 						velocity_x = 0
@@ -126,7 +133,7 @@
 				if (!input_x && !input_y)
 					vel_max = velocity_max_no_input
 
-				vel_max /= (owner.speed ? owner.speed : 1)
+				vel_max *= src.owner.speedmod * src.owner.afterburner_speed_mod
 
 				if (velocity_magnitude > vel_max)
 					velocity_x /= velocity_magnitude
@@ -137,7 +144,6 @@
 
 				velocity_dir = vector_to_dir(velocity_x,velocity_y)
 				owner.flying = velocity_dir
-
 		if (!velocity_magnitude)
 			velocity_magnitude = vector_magnitude(velocity_x, velocity_y)
 
@@ -177,11 +183,6 @@
 
 		next_move = world.time + delay
 		return delay
-
-	hotkey(mob/user, name)
-		switch (name)
-			if ("fire")
-				owner.fire_main_weapon() // just, fuck it.
 
 	modify_keymap(client/C)
 		..()

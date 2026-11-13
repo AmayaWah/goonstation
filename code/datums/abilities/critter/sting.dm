@@ -20,20 +20,21 @@
 		if (isturf(target))
 			target = locate(/mob/living) in target
 			if (!target)
-				boutput(holder.owner, __red("Nothing to sting there."))
+				boutput(holder.owner, SPAN_ALERT("Nothing to sting there."))
 				return 1
 		if (target == holder.owner)
 			return 1
-		if (get_dist(holder.owner, target) > 1)
-			boutput(holder.owner, __red("That is too far away to sting."))
+		if (BOUNDS_DIST(holder.owner, target) > 0)
+			boutput(holder.owner, SPAN_ALERT("That is too far away to sting."))
 			return 1
 		var/mob/MT = target
 		if (!MT.reagents)
-			boutput(holder.owner, __red("That does not hold reagents, apparently."))
+			boutput(holder.owner, SPAN_ALERT("That does not hold reagents, apparently."))
+			return 1
 		if (!stealthy)
-			holder.owner.visible_message(__red("<b>[holder.owner] stings [target]!</b>"))
+			holder.owner.visible_message(SPAN_ALERT("<b>[holder.owner] stings [target]!</b>"))
 		else
-			holder.owner.show_message(__blue("You stealthily sting [target]."))
+			holder.owner.show_message(SPAN_NOTICE("You stealthily sting [target]."))
 		for(var/venom_id in src.venom_ids)
 			MT.reagents.add_reagent(venom_id, inject_amount)
 
@@ -60,9 +61,16 @@
 		venom_ids = list("haloperidol", "atropine")
 		inject_amount = 10
 
-	fermid_polymorph
-		name = "Fermid Sting"
-		desc = "Sting an adjacent target with some nasty toxins."
-		icon_state = "fermid_sting"
-		venom_ids = list("ants", "histamine")
-		inject_amount = 8
+		polymorph
+			venom_ids = list("ants", "histamine")
+			inject_amount = 8
+
+	mimic
+		name = "Mimicotoxin Sting"
+		desc = "Inject your target with a confusing toxin."
+		venom_ids = list("mimicotoxin")
+		inject_amount = 15
+
+		antag_spawn
+			inject_amount = 17 //enough to blind someone for a few seconds
+

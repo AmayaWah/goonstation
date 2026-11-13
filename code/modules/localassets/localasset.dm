@@ -1,8 +1,9 @@
 
 // Contains asset-sending code that I can't rip from TG but I can write my own shitty implementation
-//                         (dear god please make this better (delivery caching/noop, css spritesheets anyone??))
+//             (dear god please make this better (delivery caching/noop, css spritesheets anyone??))
 //
-// Should not be used when cdn is enabled.
+// Static local assets are sent only when the CDN is disabled.
+// Generated JSON assets use local delivery even when static assets use the CDN.
 
 // Basic caching of asset datums, let's not create a bunch of these.
 var/global/list/global_asset_datum_list = list()
@@ -10,6 +11,8 @@ var/global/list/global_asset_datum_list = list()
 /// Base asset type
 ABSTRACT_TYPE(/datum/asset)
 /datum/asset
+	/// Initialize during TGUI setup.
+	var/early = FALSE
 
 /datum/asset/proc/init()
 
@@ -26,8 +29,10 @@ ABSTRACT_TYPE(/datum/asset)
 /// Basic assets
 ABSTRACT_TYPE(/datum/asset/basic)
 /datum/asset/basic
-	var/local_assets = list() // List of entries with form "filename" (gets shit into cache)
-	var/url_map = list() // List of entries with form "browserasset-path" = "url"
+	/// List of entries with form "filename" (gets shit into cache)
+	var/local_assets = list()
+	/// List of entries with form "browserasset-path" = "url"
+	var/url_map = list()
 
 	deliver(client)
 		. = send_assets(client, local_assets)
@@ -52,10 +57,42 @@ ABSTRACT_TYPE(/datum/asset/group)
 	get_associated_urls()
 		. = list()
 		for(var/asset in subassets)
-			var/datum/asset/A = get_assets(type)
+			var/datum/asset/A = get_assets(asset)
 			. += A.get_associated_urls()
 
-/// Returns either the already-created asset or creates a new one and returns it
+/// Generated JSON delivered locally
+ABSTRACT_TYPE(/datum/asset/json)
+/datum/asset/json
+	/// Filename without the .json suffix.
+	var/name
+	var/json_resource
+
+	init()
+		. = ..()
+		if (!src.name)
+			CRASH("Missing name for JSON asset [src.type]")
+		var/cache_path = "data/[src.name].json"
+		var/write_error = rustg_file_write(json_encode(src.generate()), cache_path)
+		if (write_error)
+			fdel(cache_path)
+			CRASH("Unable to write JSON asset [src.type]: [write_error]")
+		src.json_resource = fcopy_rsc(cache_path)
+		fdel(cache_path)
+		if (!src.json_resource)
+			CRASH("Unable to cache JSON asset [src.type]")
+
+	deliver(client/C)
+		C << browse_rsc(src.json_resource, "[src.name].json")
+		return TRUE
+
+	get_associated_urls()
+		return list("[src.name].json" = "[src.name].json")
+
+	/// JSON-serializable asset data.
+	proc/generate()
+		CRASH("Missing generate() implementation for JSON asset [src.type]")
+
+/// Asset singleton for the requested type.
 /proc/get_assets(asset)
 	. = global_asset_datum_list[asset] || new asset()
 

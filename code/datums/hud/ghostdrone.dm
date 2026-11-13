@@ -1,3 +1,4 @@
+// If you're looking for ghostdrone code itself, check mob\living\silicon\ghostdrone.dm. This is hud.
 /datum/hud/ghostdrone
 	var/atom/movable/screen/hud
 		mod1
@@ -31,8 +32,6 @@
 	var/list/last_tools = list()
 	var/mob/living/silicon/ghostdrone/master
 	var/icon/icon_hud = 'icons/mob/hud_drone.dmi'
-
-	var/list/statusUiElements = list() //Assoc. List  STATUS EFFECT INSTANCE : UI ELEMENT add_screen(atom/movable/screen/S). Used to hold the ui elements since they shouldnt be on the status effects themselves.
 
 	var/atom/movable/screen/hud
 
@@ -135,10 +134,10 @@
 				return
 			var/content_id = items_screen + i - 1
 			if (content_id > master.tools.len || content_id < 1)
-				boutput(usr, "<span class='alert'>An error occurred. Please notify Marquesas immediately. (Content ID: [content_id].)</span>")
+				boutput(usr, SPAN_ALERT("An error occurred. Please notify Marquesas immediately. (Content ID: [content_id].)"))
 
 			if (master.active_tool && istype(master.active_tool, /obj/item/magtractor) && master.active_tool:holding)
-				actions.stopId("magpickerhold", master)
+				actions.stopId(/datum/action/magPickerHold, master)
 			var/obj/item/O = master.tools[content_id]
 			master.active_tool = O
 			O.set_loc(master)
@@ -253,11 +252,11 @@
 			if ("face")
 				master.setFaceDialog()
 			if ("charge")
-				out(master, "<span class='notice'>Your charge is: [master.cell.charge]/[master.cell.maxcharge]</span>")
+				boutput(master, SPAN_NOTICE("Your charge is: [master.cell.charge]/[master.cell.maxcharge]"))
 			if ("health")
-				out(master, "<span class='notice'>Your health is: [master.health / master.max_health * 100]%</span>")
+				boutput(master, SPAN_NOTICE("Your health is: [master.health / master.max_health * 100]%"))
 			if ("oxy", "temp")
-				out(master, scan_atmospheric(get_turf(master)))
+				boutput(master, scan_atmospheric(get_turf(master)))
 			else
 				//Handle box BG clicks
 				if (length(id) >= 10)
@@ -346,7 +345,7 @@
 						maptextc = "#9cbcff"
 
 				temp.maptext_y = 19
-				temp.maptext = "<span style='text-align: center; font-family: \"Small Fonts\"; font-size: 7px; font-weight: bold; -dm-text-outline: 1px black; color: [maptextc];'>[environment.temperature >= (1000 + T0C) ? "ERR" : "[round(environment.temperature - T0C)]'"]</span>"
+				temp.maptext = "<span style='text-align: center; font-family: \"Small Fonts\"; font-size: 7px; font-weight: bold; -dm-text-outline: 1px black; color: [maptextc];'>[environment.temperature >= (1000 + T0C) ? "ERR" : "[round(TO_CELSIUS(environment.temperature))]'"]</span>"
 
 		update_ability_hotbar()
 			if (!master.client)
@@ -354,8 +353,6 @@
 			if(isdead(master))
 				return
 
-			for(var/atom/movable/screen/ability/topBar/genetics/G in master.client.screen)
-				master.client.screen -= G
 			for(var/atom/movable/screen/pseudo_overlay/PO in master.client.screen)
 				master.client.screen -= PO
 			for(var/obj/ability_button/B in master.client.screen)
@@ -382,41 +379,7 @@
 						pos_y++
 
 		update_status_effects()
-			for(var/atom/movable/screen/statusEffect/G in src.objects)
-				remove_screen(G)
-
-			for(var/datum/statusEffect/S as anything in src.statusUiElements) //Remove stray effects.
-				if(!master.statusEffects || !(S in master.statusEffects))
-					qdel(statusUiElements[S])
-					src.statusUiElements.Remove(S)
-					qdel(S)
-
-			var/spacing = 0.6
-			var/pos_x = spacing - 0.2 - 1
-
-			if(master.statusEffects)
-				for(var/datum/statusEffect/S as anything in master.statusEffects) //Add new ones, update old ones.
-					if(!S.visible) continue
-					if((S in statusUiElements) && statusUiElements[S])
-						var/atom/movable/screen/statusEffect/U = statusUiElements[S]
-						U.icon = icon_hud
-						U.screen_loc = "EAST[pos_x < 0 ? "":"+"][pos_x],NORTH+0.3"
-						U.update_value()
-						add_screen(U)
-						pos_x -= spacing
-					else
-						if(S.visible)
-							var/atom/movable/screen/statusEffect/U = new /atom/movable/screen/statusEffect
-							U.init(master,S)
-							U.icon = icon_hud
-							statusUiElements.Add(S)
-							statusUiElements[S] = U
-							U.screen_loc = "EAST[pos_x < 0 ? "":"+"][pos_x],NORTH+0.3"
-							U.update_value()
-							add_screen(U)
-							pos_x -= spacing
-							animate_buff_in(U)
-			return
+			src.sync_status_effects(src.master, src.icon_hud, "NORTH+0.3", -0.6)
 
 /mob/living/silicon/ghostdrone
 	updateStatusUi()

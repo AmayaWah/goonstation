@@ -50,59 +50,17 @@
 	switch (src.btype)
 		// radio
 		if (0)
-			var/obj/item/assembly/radio_bomb/R = new /obj/item/assembly/radio_bomb(src.loc)
-			var/obj/item/tank/plasma/p3 = new /obj/item/tank/plasma(R)
-			var/obj/item/device/radio/signaler/p1 = new /obj/item/device/radio/signaler(R)
-			var/obj/item/device/igniter/p2 = new /obj/item/device/igniter(R)
-			R.part1 = p1
-			R.part2 = p2
-			R.part3 = p3
-			p1.master = R
-			p2.master = R
-			p3.master = R
-			R.status = explosive
-			p1.b_stat = 0
-			p2.status = 1
-			p3.air_contents.temperature = btemp + T0C
+			new /obj/item/assembly/radio_bomb(src.loc, btemp)
 
 		// proximity
 		if (1)
-			var/obj/item/assembly/proximity_bomb/R = new /obj/item/assembly/proximity_bomb(src.loc)
-			var/obj/item/tank/plasma/p3 = new /obj/item/tank/plasma(R)
-			var/obj/item/device/prox_sensor/p1 = new /obj/item/device/prox_sensor(R)
-			var/obj/item/device/igniter/p2 = new /obj/item/device/igniter(R)
-			R.part1 = p1
-			R.part2 = p2
-			R.part3 = p3
-			p1.master = R
-			p2.master = R
-			p3.master = R
-			R.status = explosive
-
-			p3.air_contents.temperature = btemp + T0C
-			p2.status = 1
-
+			var/obj/item/assembly/proximity_bomb/R = new /obj/item/assembly/proximity_bomb(src.loc, btemp)
 			if(src.active)
-				R.part1.armed = 1
-				R.part1.icon_state = text("motion[]", 1)
-				R.c_state(1, src)
+				SEND_SIGNAL(R.trigger, COMSIG_ITEM_ASSEMBLY_ACTIVATION, R)
 
 		// timer
 		if (2)
-			var/obj/item/assembly/time_bomb/R = new /obj/item/assembly/time_bomb(src.loc)
-			var/obj/item/tank/plasma/p3 = new /obj/item/tank/plasma(R)
-			var/obj/item/device/timer/p1 = new /obj/item/device/timer(R)
-			var/obj/item/device/igniter/p2 = new /obj/item/device/igniter(R)
-			R.part1 = p1
-			R.part2 = p2
-			R.part3 = p3
-			p1.master = R
-			p2.master = R
-			p3.master = R
-			R.status = explosive
-
-			p3.air_contents.temperature = btemp + T0C
-			p2.status = 1
+			new /obj/item/assembly/time_bomb(src.loc, btemp)
 
 	qdel(src)
 
@@ -132,7 +90,7 @@
 			PT.air_contents.temperature = btemp1 + T0C
 			OT.air_contents.temperature = btemp2 + T0C
 
-			V.update_icon()
+			V.UpdateIcon()
 
 		// proximity
 		if (1)
@@ -155,7 +113,7 @@
 			PT.air_contents.temperature = btemp1 + T0C
 			OT.air_contents.temperature = btemp2 + T0C
 
-			V.update_icon()
+			V.UpdateIcon()
 
 
 		// timer
@@ -178,7 +136,7 @@
 			PT.air_contents.temperature = btemp1 + T0C
 			OT.air_contents.temperature = btemp2 + T0C
 
-			V.update_icon()
+			V.UpdateIcon()
 	qdel(src)
 
 
@@ -218,7 +176,7 @@
 		if(!isturf(src.loc))
 			dispose()
 			return
-		SPAWN_DBG(2 SECONDS)
+		SPAWN(2 SECONDS)
 			explode()
 
 	Bumped(atom/A)
@@ -240,7 +198,7 @@
 			dispose()
 			return
 		src.icon = null
-		src.anchored = 1
+		src.anchored = ANCHORED
 		src.set_density(0)
 		var/list/atom/movable/overlay/boom = list()
 		var/list/atom/movable/overlay/boom_tips = list()
@@ -252,13 +210,13 @@
 		for(var/turf/T in oview(3, src))
 			if((T.x != src.x && T.y != src.y) || T.density)
 				continue
-			var/dist = get_dist(src.loc, T)
+			var/dist = GET_DIST(src.loc, T)
 			var/rel_dir = get_dir(src.loc, T)
 			if(dist <= 3)
 				for(var/atom/A in T)
 					if(isliving(A))
 						affected_mobs.Add(A)
-					if(istype(A, /obj/window) || istype(A, /obj/grille))
+					if(istype(A, /obj/window) || istype(A, /obj/mesh/grille))
 						affected_objs.Add(A)
 					if(istype(A, /obj/blob))
 						affected_objs.Add(A)
@@ -275,20 +233,56 @@
 				else
 					boom.Add(A)
 
-		flick("boom_center", animation)
+		FLICK("boom_center", animation)
 		for(var/atom/movable/overlay/A in boom)
-			flick("boom_segment", A)
+			FLICK("boom_segment", A)
 		for(var/atom/movable/overlay/A in boom_tips)
-			flick("boom_tip", A)
+			FLICK("boom_tip", A)
 		for(var/mob/M in affected_mobs)
 			M.ex_act(3)
 		for(var/obj/O in affected_objs)
 			// drsingh for Cannot execute null.ex act()
 			if (!isnull(O)) O.ex_act(rand(1,2))
 		playsound(src.loc, "explosion", 100, 1)
-		playsound(src.loc, "sound/effects/explosionfar.ogg", 100, 1, 14)
-		SPAWN_DBG(1 SECOND)
+		playsound(src.loc, 'sound/effects/explosionfar.ogg', 100, 1, 14)
+		SPAWN(1 SECOND)
 			animation.dispose()
 			for(var/atom/movable/overlay/A in (boom + boom_tips))
 				A.dispose()
 			src.dispose()
+
+
+
+/obj/spawner/mail
+	name = "mail spawner"
+	icon = 'icons/obj/items/items.dmi'
+	icon_state = "mail-1"
+	var/amount_to_make = 1
+
+	New()
+		..()
+		create_random_mail(src.loc, src.amount_to_make)
+		qdel(src)
+
+	two
+		name = "mail spawner (x2)"
+		amount_to_make = 2
+	five
+		name = "mail spawner (x5)"
+		amount_to_make = 5
+	ten
+		name = "mail spawner (x10)"
+		amount_to_make = 10
+	fifty
+		name = "mail spawner (x50)"
+		amount_to_make = 50
+
+/obj/spawner/little_monster
+	name = "monster spawner"
+	icon = 'icons/misc/mark.dmi'
+	icon_state = "ydn"
+
+	New()
+		..()
+		new /atom/movable/mysterious_beast(src.loc)
+		qdel(src)

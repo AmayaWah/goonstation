@@ -15,12 +15,12 @@
 				return
 			else
 				owner.waiting_for_hotkey = 1
-				src.updateIcon()
-				boutput(usr, "<span class='notice'>Please press a number to bind this ability to...</span>")
+				src.UpdateIcon()
+				boutput(usr, SPAN_NOTICE("Please press a number to bind this ability to..."))
 				return
 
 		if (!isturf(owner.holder.owner.loc))
-			boutput(owner.holder.owner, "<span class='alert'>You can't use this spell here.</span>")
+			boutput(owner.holder.owner, SPAN_ALERT("You can't use this spell here."))
 			return
 		if (spell.targeted && usr.targeting_ability == owner)
 			usr.targeting_ability = null
@@ -32,19 +32,19 @@
 			owner.holder.owner.targeting_ability = owner
 			owner.holder.owner.update_cursor()
 		else
-			SPAWN_DBG(0)
+			SPAWN(0)
 				spell.handleCast()
 		return
 
 
 /* 	/		/		/		/		/		/		Ability Holder		/		/		/		/		/		/		/		/		*/
 
-/datum/abilityHolder/kudzu
+/datum/abilityHolder/mutantrace/kudzu
 	usesPoints = 1
 	regenRate = 0
 	tabName = "kudzu"
-	// notEnoughPointsMessage = "<span class='alert'>You need more blood to use this ability.</span>"
-	points = 0
+	// notEnoughPointsMessage = SPAN_ALERT("You need more blood to use this ability.")
+	points = 50
 	pointName = "nutrients"
 	var/stealthed = 0
 	var/atom/movable/screen/kudzu/meter/nutrients_meter = null
@@ -78,10 +78,10 @@
 			//unstealth
 			if (stealthed)
 				src.stealthed = 0
-				owner.changeStatus("weakened", 6 SECONDS)
+				owner.changeStatus("knockdown", 6 SECONDS)
 				animate(owner, alpha=255, time=3 SECONDS)
 
-				boutput(owner, "You no invisible.")
+				boutput(owner, "<b class='hint'>You reappear.</b>")
 		else if (points > MAX_POINTS)
 			points = MAX_POINTS
 
@@ -94,7 +94,7 @@
 	cooldown = 0
 	last_cast = 0
 	pointCost = 0
-	preferred_holder_type = /datum/abilityHolder/kudzu
+	preferred_holder_type = /datum/abilityHolder/mutantrace/kudzu
 	var/when_stunned = 0 // 0: Never | 1: Ignore mob.stunned and mob.weakened | 2: Ignore all incapacitation vars
 	var/not_when_handcuffed = 0
 	var/unlock_message = null
@@ -113,7 +113,7 @@
 	onAttach(var/datum/abilityHolder/H)
 		..()
 		if (src.unlock_message && src.holder && src.holder.owner)
-			boutput(src.holder.owner, __blue("<h3>[src.unlock_message]</h3>"))
+			boutput(src.holder.owner, SPAN_NOTICE("<h3>[src.unlock_message]</h3>"))
 		return
 
 	updateObject()
@@ -146,17 +146,17 @@
 			return 0
 
 		if (!(iscarbon(M) || ismobcritter(M)))
-			boutput(M, __red("You cannot use any powers in your current form."))
+			boutput(M, SPAN_ALERT("You cannot use any powers in your current form."))
 			return 0
 
 		if (can_cast_anytime && !isdead(M))
 			return 1
 		if (!can_act(M, 0))
-			boutput(M, __red("You can't use this ability while incapacitated!"))
+			boutput(M, SPAN_ALERT("You can't use this ability while incapacitated!"))
 			return 0
 
 		if (src.not_when_handcuffed && M.restrained())
-			boutput(M, __red("You can't use this ability when restrained!"))
+			boutput(M, SPAN_ALERT("You can't use this ability when restrained!"))
 			return 0
 
 		//maybe have to be on kudzu to use power?
@@ -164,8 +164,8 @@
 
 	cast(atom/target)
 		. = ..()
-		if (istype(holder, /datum/abilityHolder/kudzu))
-			var/datum/abilityHolder/kudzu/KAH = holder
+		if (istype(holder, /datum/abilityHolder/mutantrace/kudzu))
+			var/datum/abilityHolder/mutantrace/kudzu/KAH = holder
 			KAH.nutrients_meter.update()
 		actions.interrupt(holder.owner, INTERRUPT_ACT)
 		return
@@ -176,28 +176,29 @@
 	icon_state = "guide"
 	targeted = 1
 	target_anything = 1
-	cooldown = 1 SECOND
+	cooldown = 0
 	pointCost = 2
 	max_range = 2
 
 	cast(atom/tar)
+		. = ..()
 		var/turf/T = get_turf(tar)
 		if (isturf(T))
 			//if there's already a marker here, remove it
 			var/marker_to_del = locate(/obj/kudzu_marker) in T.contents
 			if (marker_to_del in T.contents)
 				qdel(locate(/obj/kudzu_marker) in T.contents)
-				boutput(holder.owner, "<span class='alert'>You remove the guiding maker from [T].</span>")
+				boutput(holder.owner, SPAN_ALERT("You remove the guiding maker from [T]."))
 
 			//make the marker
 			else
 				//remove kudzu from the marked tile.
 				if (T.temp_flags & HAS_KUDZU)
-					T.visible_message("<span class='notice'>The Kudzu shifts off of [T].</span>")
+					T.visible_message(SPAN_NOTICE("The Kudzu shifts off of [T]."))
 					for (var/obj/spacevine/K in T.contents)
 						qdel(K)
 				else
-					boutput(holder.owner, "<span class='notice'>You create a guiding marker on [T].</span>")
+					boutput(holder.owner, SPAN_NOTICE("You create a guiding marker on [T]."))
 				new/obj/kudzu_marker(T)
 
 //technically kudzu, non invasive
@@ -205,7 +206,7 @@
 	name = "benign kudzu"
 	desc = "A flowering subspecies of the kudzu plant that, is a non-invasive plant on space stations."
 	// invisibility = INVIS_ALWAYS
-	anchored = 1
+	anchored = ANCHORED
 	density = 0
 	opacity = 0
 	icon = 'icons/misc/kudzu_plus.dmi'
@@ -237,7 +238,7 @@
 		..()
 
 	//mostly same as kudzu
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (!W) return
 		if (!user) return
 		var/dmg = 1
@@ -250,7 +251,7 @@
 		src.health -= dmg
 		if (src.health < 1)
 			qdel (src)
-		user.lastattacked  = src
+		user.lastattacked = get_weakref(src)
 		..()
 
 
@@ -263,14 +264,15 @@
 	pointCost = 1
 
 	cast(atom/T)
-		var/datum/abilityHolder/kudzu/HK = holder
+		. = ..()
+		var/datum/abilityHolder/mutantrace/kudzu/HK = holder
 		if (!HK.stealthed)
 			HK.stealthed = 1
-			boutput(holder.owner, "You secrete nutriends to refract light.")
+			boutput(holder.owner, SPAN_HINT("You secrete nutrients to refract light."))
 			animate(holder.owner, alpha=80, time=3 SECONDS)
 		else
 			HK.stealthed = 0
-			boutput(holder.owner, "You no invisible.")
+			boutput(holder.owner, SPAN_HINT("You reappear."))
 			animate(holder.owner, alpha=255, time=3 SECONDS)
 		return 0
 
@@ -287,15 +289,18 @@
 	cast(atom/target)
 		if (..())
 			return 1
+		if (!(target.hasStatus("kudzuwalk") || iskudzuman(target)))
+			boutput(holder.owner, SPAN_ALERT("[target] is not attuned to the kudzu!"))
+			return CAST_ATTEMPT_FAIL_NO_COOLDOWN
 
 		if (target == holder.owner)
 			heal_coef = round(heal_coef/2)
-			boutput(holder.owner, "<span class='alert'>Using your own nutrients to heal is slightly less effective!</span>")
+			boutput(holder.owner, SPAN_ALERT("Using your own nutrients to heal is slightly less effective!"))
 
 		var/mob/living/C = target
 		if (istype(C))
-			C.visible_message("<span class='alert'><b>[holder.owner] touches [C], enveloping them soft glowing vines!</b></span>")
-			boutput(C, "<span class='notice'>You feel your pain fading away.</span>")
+			C.visible_message(SPAN_ALERT("<b>[holder.owner] touches [C], enveloping them soft glowing vines!</b>"))
+			boutput(C, SPAN_NOTICE("You feel your pain fading away."))
 			C.HealDamage("All", heal_coef, heal_coef)
 			C.take_toxin_damage(-heal_coef)
 			C.take_oxygen_deprivation(-heal_coef)
@@ -309,43 +314,19 @@
 			if (C.implant)
 				for (var/obj/item/implant/I in C.implant)
 					if (istype(I, /obj/item/implant/projectile))
-						boutput(C, "[I] falls out of you!")
+						boutput(C, SPAN_ALERT("[I] falls out of you!"))
 						I.on_remove(C)
 						C.implant.Remove(I)
-						//del(I)
 						I.set_loc(get_turf(C))
 						continue
 
 			//Transfer nutrients to our brethren.
 			var/mob/living/carbon/human/H = target
-			if (istype(H) && istype(H.mutantrace, /datum/mutantrace/kudzu) && istype(H.abilityHolder, /datum/abilityHolder/kudzu))
-				var/datum/abilityHolder/kudzu/KAH = H.abilityHolder
+			if (istype(H) && istype(H.mutantrace, /datum/mutantrace/kudzu) && istype(H.abilityHolder, /datum/abilityHolder/mutantrace/kudzu))
+				var/datum/abilityHolder/mutantrace/kudzu/KAH = H.abilityHolder
 				H.abilityHolder.points = min(KAH.MAX_POINTS, KAH.points + 20)
-				H.changeStatus("weakened", -3 SECONDS)
+				H.changeStatus("knockdown", -3 SECONDS)
 		return
-
-/datum/targetable/kudzu/kudzusay
-	name = "Speak Kudzu"
-	desc = "Speak to your collective consciousness."
-	icon_state = "kudzu-say"
-	cooldown = 0
-	pointCost = 0
-	targeted = 0
-	target_anything = 0
-	interrupt_action_bars = 0
-	dont_lock_holder = 1
-	can_cast_anytime = 1
-	cast(atom/target)
-		if (..())
-			return 1
-
-		var/message = html_encode(input("Choose something to say:","Enter Message.","") as null|text)
-		if (!message)
-			return
-		logTheThing("say", holder.owner, holder.owner.name, "[message]")
-		.= holder.owner.say_kudzu(message, holder)
-
-		return 0
 
 /datum/targetable/kudzu/seed
 	name = "Manipulate Seed"
@@ -357,6 +338,7 @@
 
 	//This is basically all stolen from the seedplanter item.
 	cast(atom/T)
+		. = ..()
 		var/datum/controller/process/kudzu/K = get_master_kudzu_controller()
 		var/power = 1
 		if (istype(K))
@@ -391,7 +373,7 @@
 
 		if (choice == "Mend Seed")
 			S.seeddamage = max(S.seeddamage - amount*2, 0)
-			boutput(user, "<span class='notice'>You heal the cute little [S] in your hand.</span>")
+			boutput(user, SPAN_NOTICE("You heal the cute little [S] in your hand."))
 			return
 
 		//Can't raise the value past the max_gene_amt which is 25, 50, 75; based on size of the kudzu growth
@@ -409,7 +391,7 @@
 			if ("Endurance")
 				DNA.endurance += min(DNA.endurance + amount, max_gene_amt)
 
-		boutput(user, "<span class='notice'>You try to manipulate [S]'s [choice] gene on a molecular level.</span>")
+		boutput(user, SPAN_NOTICE("You try to manipulate [S]'s [choice] gene on a molecular level."))
 		return 0
 
 	proc/create(var/power as num)
@@ -436,7 +418,7 @@
 				S = new pick.unique_seed(holder.owner.loc)
 			else
 				S = new /obj/item/seed(holder.owner.loc,0)
-			S.generic_seed_setup(pick)
+			S.generic_seed_setup(pick, FALSE)
 			holder.owner.put_in_hand_or_drop(S)
 
 		return 0
@@ -452,24 +434,25 @@
 	max_range = 1
 
 	cast(atom/target)
+		. = ..()
 		//For giving nutrients to plantpots
 		if (istype(target, /obj/machinery/plantpot) && target.reagents)
 			//replace with kudzu_nutrients when I make it. should be a good thing for plants, maybe kinda good for man.
 			target.reagents.add_reagent("poo", 60)
 			target.reagents.add_reagent("water", 60)
-			boutput(holder.owner, "<span class='notice'>You release some nutrients into [target].</span>")
+			boutput(holder.owner, SPAN_NOTICE("You release some nutrients into [target]."))
 			return 0
 
 		//For spreading kudzu growth
 		var/turf/T = get_turf(target)
 		if (isturf(T))
 			if (T.density)
-				boutput(holder.owner, "<span class='alert'>The kudzu can't seem to find purchase on this turf!</span>")
+				boutput(holder.owner, SPAN_ALERT("The kudzu can't seem to find purchase on this turf!"))
 				return 1
 			//all the objects that kudzu can't grow on. Sans other kudzu turfs, cause we have a special interaction for that.
 			for (var/obj/O in T.contents)
 				if (istype(O, /obj/window) || istype(O, /obj/forcefield) || istype(O, /obj/blob)|| istype(O, /obj/kudzu_marker))
-					boutput(holder.owner, "<span class='alert'>The kudzu can't seem to find purchase on this turf!</span>")
+					boutput(holder.owner, SPAN_ALERT("The kudzu can't seem to find purchase on this turf!"))
 					return 1
 
 
@@ -485,11 +468,45 @@
 					other_kudzu.to_spread += 5
 					other_kudzu.update_self()
 
-				boutput(holder.owner, "<span class='notice'>You mentally redirect some nutrients towards [kudzu_tile] to help it and the surrounding kudzu grow.</span>")
+				boutput(holder.owner, SPAN_NOTICE("You mentally redirect some nutrients towards [kudzu_tile] to help it and the surrounding kudzu grow."))
 			else
 				new/obj/spacevine/living(loc=T, to_spread=5)
-				boutput(holder.owner, "<span class='notice'>Some of the kudzu soaked in nutrients attached to your body detaches and finds a new home on [T].</span>")
+				boutput(holder.owner, SPAN_NOTICE("Some of the kudzu soaked in nutrients attached to your body detaches and finds a new home on [T]."))
 
+/datum/targetable/kudzu/thorn_shot
+	name = "Thorn shot"
+	desc = "Fire a thorn loaded with harmful irritants."
+	icon_state = "thorn"
+	targeted = 1
+	target_anything = 1
+	cooldown = 10 SECONDS
+	pointCost = 20
+	var/current_projectile
+
+	New()
+		. = ..()
+		src.current_projectile = new/datum/projectile/syringe/kudzu_thorn
+
+	cast(atom/target)
+		. = ..()
+		var/obj/projectile/P = shoot_projectile_ST_pixel_spread(src.holder.owner, src.current_projectile, target)
+		if (!P)
+			return
+		src.holder.owner.visible_message(SPAN_ALERT("<b>[src.holder.owner] fires [P] at [target]!</b>"))
+
+/datum/projectile/syringe/kudzu_thorn
+	name = "sharp thorn"
+	icon = 'icons/obj/hydroponics/items_hydroponics.dmi'
+	icon_state = "seedproj"
+	implanted = /obj/item/implant/projectile/body_visible/syringe/kudzu_thorn
+	reagent_payload = "itching"
+
+/obj/item/implant/projectile/body_visible/syringe/kudzu_thorn
+	name = "sharp thorn"
+	pull_out_name = "thorn"
+	desc = "A sharp thorn. It was likely loaded with some bad stuff..."
+	icon = 'icons/obj/hydroponics/items_hydroponics.dmi'
+	icon_state = "seedproj"
 
 /datum/targetable/kudzu/vine_appendage
 	name = "Use-Vine"
@@ -503,22 +520,23 @@
 	var/obj/item/kudzu/kudzumen_vine/vine = null
 	var/active = 0
 
-	New(var/datum/abilityHolder/kudzu/holder)
+	New(var/datum/abilityHolder/mutantrace/kudzu/holder)
 		..(holder)
 
 		vine = new/obj/item/kudzu/kudzumen_vine(holder?.owner)		//make the vine item in
 
 	cast()
+		. = ..()
 		var/mob/owner = holder?.owner
 		if (!istype(owner))
-			logTheThing("debug", null, null, "no owner for this kudzu ability. [src]")
+			logTheThing(LOG_DEBUG, null, "no owner for this kudzu ability. [src]")
 			return 1
 		//turn on
 		if (!active)
 			//if you can't drop the item in the active hand, just gotta show em an error.
 			var/obj/item/I = owner.equipped()
 			if (I?.cant_drop)
-				boutput(owner, "<span class='alert'>You're holding [I] in your hand, but you can't drop it, it's preventing you from controlling your vine.</span>")
+				boutput(owner, SPAN_ALERT("You're holding [I] in your hand, but you can't drop it, it's preventing you from controlling your vine."))
 				return 1
 
 			//Try to put the vine in their hand. If it fails, try to drop the item and put it in their hand after. If that fails, you're fucked.
@@ -535,7 +553,7 @@
 					icon_state = "vine-1"
 					return 0	//we're done successfully
 				else
-					boutput(owner, "Something weird happened, you tried to pick up [vine], but no. Call 1-800-CODER.")
+					boutput(owner, "<h3 class='alert'>Something weird happened, you tried to pick up [vine], but no. Call 1-800-CODER.</span>")
 					return 1
 
 		//turn off
@@ -545,12 +563,8 @@
 			else
 				//if it's not in their hands, where it should be, check if it's in their contents, if not fail.
 				var/obj/item/kudzu/kudzumen_vine/V = locate(/obj/item/kudzu/kudzumen_vine) in holder?.owner.contents
-				if (istype(V))
+				if (V)
 					return attempt_vine_drop(V, owner)
-
-				else
-					boutput(owner, "Can't find your vine to put away. Call 1-800-CODER.")
-					return 1
 
 
 	//I know. success = 0 and failure = 1. Ask whoever wrote ability casts.
@@ -567,9 +581,9 @@
 			return 1
 
 /atom/movable/screen/kudzu
-	var/datum/abilityHolder/kudzu/holder
+	var/datum/abilityHolder/mutantrace/kudzu/holder
 
-	New(var/datum/abilityHolder/kudzu/holder)
+	New(var/datum/abilityHolder/mutantrace/kudzu/holder)
 		..()
 		src.holder = holder
 
@@ -582,21 +596,21 @@
 	var/cur_meter_location = 0
 	var/last_meter_location = 0			//the amount of points at the last update. Used for deciding when to redraw the sprite to have less progress
 
+
 	//WIRE TOOLTIPS
 	MouseEntered(location, control, params)
-		if (usr.client.tooltipHolder && control == "mapwindow.map")
-			var/theme = src.theme
-
-			usr.client.tooltipHolder.showHover(src, list(
-				"params" = params,
-				"title" = "Nutrients Meter",//src.name,
-				"content" = "[holder.points] Points",//(src.desc ? src.desc : null),
-				"theme" = theme
-			))
+		if (usr.client.tooltips && control == "mapwindow.map")
+			usr.client.tooltips.show(
+				TOOLTIP_HOVER, src,
+				mouse = params,
+				title = "Nutrients Meter",
+				content = "[holder.points] Points",
+				theme = src.theme
+			)
 
 	MouseExited()
-		if (usr.client.tooltipHolder)
-			usr.client.tooltipHolder.hideHover()
+		if (usr.client.tooltips)
+			usr.client.tooltips.hide(TOOLTIP_HOVER)
 
 	proc/update()		//getting weird numbers in here
 		cur_meter_location = clamp(round((max(holder?.points,0)/holder?.MAX_POINTS)*11), 0, 11)	//length of meter
@@ -614,14 +628,14 @@
 	var/datum/controller/process/kudzu/kudzu_controller
 	var/amount = 0
 
-	New(var/datum/abilityHolder/kudzu/holder, var/datum/controller/process/kudzu/K)
+	New(var/datum/abilityHolder/mutantrace/kudzu/holder, var/datum/controller/process/kudzu/K)
 		..(holder)
 		if (istype(K))
 			kudzu_controller = K
 			amount = length(K.kudzu)
 		else
-			boutput(usr, "messed up kudzu controller call 1-800-CODER")
-			logTheThing("debug", null, null, "Messed up kudzu controller for kudzuman")
+			boutput(usr, "<h3 class='alert'>Messed up kudzu controller call 1-800-CODER</h3>")
+			logTheThing(LOG_DEBUG, null, "Messed up kudzu controller for kudzuman")
 
 	disposing()
 		kudzu_controller = null
@@ -629,19 +643,18 @@
 
 	//WIRE TOOLTIPS
 	MouseEntered(location, control, params)
-		if (usr.client.tooltipHolder && control == "mapwindow.map")
-			var/theme = src.theme
-
-			usr.client.tooltipHolder.showHover(src, list(
-				"params" = params,
-				"title" = "Size of Kudzu Growth",
-				"content" = "[amount] tiles",
-				"theme" = theme
-			))
+		if (usr.client.tooltips && control == "mapwindow.map")
+			usr.client.tooltips.show(
+				TOOLTIP_HOVER, src,
+				mouse = params,
+				title = "Size of Kudzu Growth",
+				content = "[amount] tiles",
+				theme = src.theme
+			)
 
 	MouseExited()
-		if (usr.client.tooltipHolder)
-			usr.client.tooltipHolder.hideHover()
+		if (usr.client.tooltips)
+			usr.client.tooltips.hide(TOOLTIP_HOVER)
 
 	proc/update()
 		amount = length(kudzu_controller.kudzu)
@@ -676,11 +689,11 @@
 	icon_state = "vine-item"
 	// inhand_image_icon = 'icons/mob/inhand/hand_food.dmi'
 	// item_state = "knife"
-	force = 5.0
-	throwforce = 5.0
+	force = 5
+	throwforce = 5
 	throw_range = 5
 	hit_type = DAMAGE_BLUNT
-	burn_type = 1
+	burn_remains = BURN_REMAINS_MELT
 	stamina_damage = 30
 	stamina_cost = 15
 	stamina_crit_chance = 50
@@ -697,25 +710,25 @@
 		..()
 		if (iskudzuman(user))
 			src.set_loc(user)
-			boutput(user, "<span class='notice'>[src] wraps back around your body, giving you a snuggly hug.</span>")
+			boutput(user, SPAN_NOTICE("[src] wraps back around your body, giving you a snuggly hug."))
 
 			//This isn't supposed to be dropped. We'll try to cast the ability to sync it if it does though.
 			// //find abilityholder and cast ability to put it back in the guy.
-			// var/datum/abilityHolder/kudzu/KH = user.get_ability_holder(/datum/abilityHolder/kudzu)
+			// var/datum/abilityHolder/mutantrace/kudzu/KH = user.get_ability_holder(/datum/abilityHolder/mutantrace/kudzu)
 			// if (istype(KH))
 			// 	var/datum/targetable/kudzu/vine_appendage/VA = KH.getAbility(/datum/targetable/kudzu/vine_appendage)
 			// 	VA.cast()
 		else
-			boutput(user, "<span class='alert'>[src] breaks apart in your hands.</span>")
+			boutput(user, SPAN_ALERT("[src] breaks apart in your hands."))
 			qdel(src)
 
-	attack(mob/M as mob, mob/user as mob, def_zone, is_special = 0)
+	attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
 		..()
 
 		if (prob(20))
-			var/turf/target = get_edge_target_turf(user, get_dir(user, M))
-			user.visible_message("<span class='alert'>[user] sends [M] flying with mighty oak-like strength!</span>")
-			M.throw_at(target, 5, 1)
+			var/turf/target_turf = get_edge_target_turf(user, get_dir(user, target))
+			user.visible_message(SPAN_ALERT("[user] sends [target] flying with mighty oak-like strength!"))
+			target.throw_at(target_turf, 5, 1)
 
 /obj/item/kudzu/kudzumen_vine/proc/build_buttons()
 	if (src.contextActions != null)	//dont need rebuild
@@ -729,7 +742,6 @@
 /datum/action/bar/icon/kudzu_shaping
 	duration = 5 SECONDS
 	interrupt_flags = INTERRUPT_MOVE | INTERRUPT_ACT | INTERRUPT_STUNNED | INTERRUPT_ACTION
-	id = "kudzu_shaping"
 	icon = 'icons/ui/actions.dmi'
 	icon_state = "kudzu_shaping"
 	var/obj/item/kudzu/kudzumen_vine/vine_arm
@@ -741,7 +753,7 @@
 		src.vine_arm = vine_arm
 		src.creation_path = creation_path
 		if (!ispath(creation_path))
-			boutput(owner, "Invalid creation object path. Call 1-800-CODER")
+			boutput(owner, "<h3 class='alert'>Invalid creation object path. Call 1-800-CODER</span>")
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		duration += extra_time
@@ -750,23 +762,23 @@
 
 	onUpdate()
 		..()
-		if(get_dist(owner, kudzu) > 1 || kudzu == null || kudzu.growth < 20 || owner == null)	//20 growth is currently the lowest for dense kudzu. Should be a constant.
+		if(BOUNDS_DIST(owner, kudzu) > 0 || kudzu == null || kudzu.growth < 20 || owner == null)	//20 growth is currently the lowest for dense kudzu. Should be a constant.
 			interrupt(INTERRUPT_ALWAYS)
 			return
 
 	onStart()
 		..()
-		if(get_dist(owner, kudzu) > 1 ||  kudzu == null || kudzu.growth < 20 || owner == null)
+		if(BOUNDS_DIST(owner, kudzu) > 0 ||  kudzu == null || kudzu.growth < 20 || owner == null)
 			interrupt(INTERRUPT_ALWAYS)
 			return
 
 	onEnd()
 		..()
-		if(get_dist(owner, kudzu) > 1 || kudzu == null || kudzu.growth < 20 || owner == null)
+		if(BOUNDS_DIST(owner, kudzu) > 0 || kudzu == null || kudzu.growth < 20 || owner == null)
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		if (!iskudzuman(owner))
-			boutput(owner, "You're not a kudzuman, you can't bend the kudzu to your will!")
+			boutput(owner, SPAN_ALERT("You're not a kudzuman, you can't bend the kudzu to your will!"))
 			interrupt(INTERRUPT_ALWAYS)
 			return
 
@@ -777,21 +789,11 @@
 
 	onInterrupt()
 		if (kudzu && owner)
-			boutput(owner, "<span class='alert'>Your kudzu shaping was interrupted!</span>")
+			boutput(owner, SPAN_ALERT("Your kudzu shaping was interrupted!"))
 		..()
 
 
 //O is obj to be destroyed, W is obj used to destroy.
 //This is total shit too, but I'm in a hurry again. I'll be back, -Kyle
 /proc/destroys_kudzu_object(var/obj/O, var/obj/item/W as obj, var/mob/user)
-		var/destroyed = 0
-		if (istool(W, TOOL_CUTTING | TOOL_SAWING | TOOL_SCREWING | TOOL_SNIPPING | TOOL_WELDING)) destroyed = 1
-		else if (istype(W, /obj/item/axe)) destroyed = 1
-		else if (istype(W, /obj/item/circular_saw)) destroyed = 1
-		else if (istype(W, /obj/item/kitchen/utensil/knife)) destroyed = 1
-		else if (istype(W, /obj/item/scalpel)) destroyed = 1
-		else if (istype(W, /obj/item/sword)) destroyed = 1
-		else if (istype(W, /obj/item/saw)) destroyed = 1
-
-		return destroyed
-
+	return istool(W, TOOL_CUTTING | TOOL_SAWING | TOOL_SCREWING | TOOL_SNIPPING | TOOL_WELDING)

@@ -9,6 +9,8 @@
 		..()
 
 	initialize()
+		if (..())
+			return TRUE
 		src.print_text("Cruiser Control Assistant<br>Type \"help\" for commands.")
 
 	input_text(text)
@@ -23,11 +25,11 @@
 
 		switch(lowertext(command))
 			if ("help")
-				src.print_text("Command List:<br> read_power - Gets power usage<br>power_ratios - Displays sub-system power ratios.<br>damage - Lists damaged systems<br>set_power (thrusters/weapons/shields) (percentage) - Adjusts how much power subsystems recieve.<br>reboot (turret_l/turret_r/engine/life_support/pod_weapons/pod_navigation/pod_defense) - Restores basic functions of the given system while degrading the ship.")
+				src.print_text("Command List:<br> read_power - Gets power usage<br>power_ratios - Displays sub-system power ratios.<br>damage - Lists damaged systems<br>set_power (thrusters/weapons/shields) (percentage) - Adjusts how much power subsystems receive.<br>reboot (turret_l/turret_r/engine/life_support/pod_weapons/pod_navigation/pod_defense) - Restores basic functions of the given system while degrading the ship.")
 				return
 
 			if ("reboot")
-				if(command_list.len >= 1)
+				if(length(command_list) >= 1)
 					//for(var/t in command_list)
 					//	command_list -= t
 					var/t = command_list[1]
@@ -40,7 +42,7 @@
 						print_text("Unknown system: [lowertext(t)]")
 
 			if ("set_power","spwr")
-				if(command_list.len == 2)
+				if(length(command_list) == 2)
 					var/system = command_list[1]
 					var/percentage = command_list[2]
 
@@ -80,10 +82,10 @@
 		if ((..()) || (!signal))
 			return
 		if (command == "read_power")
-			var/list/recieved = params2list(signal.data["usage_breakdown"])
+			var/list/received = params2list(signal.data["usage_breakdown"])
 			src.print_text("Power: [signal.data["used_last"]]Pu / [signal.data["prod_last"]]Pu")
-			for(var/X in recieved)
-				src.print_text("--[X]: [recieved[X]]")
+			for(var/X in received)
+				src.print_text("--[X]: [received[X]]")
 			src.print_text("<br>")
 			return
 
@@ -111,12 +113,14 @@
 	name = "cruiser console"
 	icon_state = "cruiser"
 	base_icon_state = "cruiser"
-	setup_drive_size = 64
+	setup_drive_type = /obj/item/disk/data/fixed_disk/hd64
 	setup_frame_type = /obj/computer3frame/terminal
 	setup_starting_os = /datum/computer/file/terminal_program/os/main_os/no_login
-	setup_starting_peripheral1 = /obj/item/peripheral/cruiser
+	setup_starting_peripherals = list(
+			/obj/item/peripheral/card_scanner,
+			/obj/item/peripheral/drive,
+			/obj/item/peripheral/cruiser)
 	setup_starting_program = /datum/computer/file/terminal_program/cruiser
-	setup_idscan_path = null
 
 	power_change()
 		if(status & BROKEN)
@@ -174,7 +178,7 @@
 				if (usage_count_builder)
 					newsignal.data["usage_breakdown"] = usage_count_builder
 
-				SPAWN_DBG(0.4 SECONDS)
+				SPAWN(0.4 SECONDS)
 					send_command("read_power", newsignal)
 
 				return newsignal
@@ -199,7 +203,7 @@
 				newsignal.data["damage_num"] = dmg_count
 				newsignal.data["degradation"] = cruiser.degradation
 
-				SPAWN_DBG(0.4 SECONDS)
+				SPAWN(0.4 SECONDS)
 					send_command("get_damage", newsignal)
 
 			if ("power_ratios")
@@ -209,7 +213,7 @@
 				newsignal.data["ratio_defense"] = cruiser.power_defense
 				newsignal.data["ratio_offense"] = cruiser.power_offense
 
-				SPAWN_DBG(0.4 SECONDS)
+				SPAWN(0.4 SECONDS)
 					send_command("power_ratios", newsignal)
 
 				return newsignal
@@ -262,7 +266,7 @@
 								cruiser.degradation = min(cruiser.degradation + 5, 100)
 					else
 						newsignal.data["info"] = "INTERNAL ERROR. UNKNOWN SYSTEM"
-				SPAWN_DBG(0.4 SECONDS)
+				SPAWN(0.4 SECONDS)
 					send_command("reboot", newsignal)
 				return
 
@@ -272,7 +276,7 @@
 					return
 				var/datum/signal/newsignal = get_free_signal()
 
-				percentage = min(max(percentage, 1), 500)
+				percentage = clamp(percentage, 1, 500)
 
 				switch(lowertext(signal.data["system"]))
 					if("thrusters")
@@ -283,7 +287,7 @@
 						cruiser.power_defense = percentage
 
 				newsignal.data["info"] = "Set [signal.data["system"]] to [percentage]%"
-				SPAWN_DBG(0.4 SECONDS)
+				SPAWN(0.4 SECONDS)
 					send_command("set_power", newsignal)
 
 			else

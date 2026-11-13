@@ -1,5 +1,4 @@
 // by request
-#define DUCKBOT_MOVE_SPEED 8
 #define DUCKBOT_QUACK_COOLDOWN "duckbotquackdelay"
 #define DUCKBOT_AMUSEMENT_COOLDOWN "duckbotlovesongdelay"
 #define DUCKBOT_ANNOY_TIMEOUT "duckbotnerdobsessionlength"
@@ -15,10 +14,10 @@
 	icon_state = "duckbot"
 	layer = 5.0 //TODO LAYER
 	density = 0
-	anchored = 0
+	anchored = UNANCHORED
 	on = 1 // ACTION
 	health = 5
-	bot_move_delay = DUCKBOT_MOVE_SPEED
+	bot_move_delay = BOT::SPEED::DUCKBOT
 	var/eggs = 0
 	/// When it gets to 100, free egg!
 	var/egg_process = 0
@@ -44,7 +43,7 @@
 
 /obj/machinery/bot/duckbot/New()
 	. = ..()
-	MAKE_SENDER_RADIO_PACKET_COMPONENT("pda", FREQ_PDA)
+	MAKE_DEFAULT_RADIO_PACKET_COMPONENT(null, "pda", FREQ_PDA)
 
 /// Makes the duckbot mill around aimlessly, or chase people if emagged
 /obj/machinery/bot/duckbot/proc/wakka_wakka()
@@ -54,17 +53,21 @@
 			if(!GET_COOLDOWN(src, DUCKBOT_ANNOY_TIMEOUT))
 				src.KillPathAndGiveUp(1)
 			else if(!ON_COOLDOWN(src, DUCKBOT_ANNOY_PATHING_COOLDOWN, src.annoy_path_cooldown))
-				var/turf/randwander = get_step_rand(get_turf(src.annoy_target))
-				src.navigate_to(randwander, DUCKBOT_MOVE_SPEED, 0, 30)
+				var/turf/randwander = get_step_truly_rand(get_turf(src.annoy_target))
+				src.navigate_to(randwander, src.bot_move_delay, 0, 30)
 		else
 			for_by_tcl(M, /mob)
 				if(IN_RANGE(src, M, 7))
 					if(!ON_COOLDOWN(src, "[DUCKBOT_ANNOY_LOCKOUT_TIMEOUT]-[M.name]", src.forget_annoyed_timeout))
 						src.annoy_target = M
-						src.navigate_to(get_turf(M), src.bot_move_delay, 0, 100)
+						src.navigate_to(get_turf(M), src.bot_move_delay, 0, 20)
 						break
+	else if(prob(95))
+		// this is not true random, instead it's a mostly non-direction-changing wall-hugging behaviour
+		src.navigate_to(get_step_rand(get_turf(src)), src.bot_move_delay)
 	else
-		src.navigate_to(get_step_rand(src))
+		// true random step
+		src.navigate_to(get_step_truly_rand(get_turf(src)), src.bot_move_delay)
 
 /// Sends the duckbot to a random spot on the station
 /obj/machinery/bot/duckbot/proc/mystical_journey()
@@ -76,7 +79,7 @@
 	if(length(T) >= 1)
 		T = (pick(T))
 		src.mystical_access()
-		src.navigate_to(T, src.bot_move_delay, 0, 300)
+		src.navigate_to(T, src.bot_move_delay, 0, 100)
 		if(length(src.path) >= 1)
 			return TRUE
 
@@ -92,14 +95,14 @@
 	if(src.on == 1)
 		if(src.emagged == TRUE)
 			var/message = pick("QUacK", "WHaCKA", "quURK", "bzzACK", "quock", "queck", "WOcka", "wacKY","GOggEL","gugel","goEGL","GeGGal")
-			src.speak(message, 1, 1)
+			src.say(message, flags = SAYFLAG_SINGING, message_params = list("group" = "amusing_duck"))
 			wakka_wakka(TRUE) // Seek loser is TRUE
 			if(prob(70))
-				playsound(src.loc, "sound/misc/amusingduck.ogg", 50, 1) // MUSIC
+				playsound(src.loc, 'sound/misc/amusingduck.ogg', 50, 1) // MUSIC
 		else
 			if(!ON_COOLDOWN(src, DUCKBOT_QUACK_COOLDOWN, src.quack_cooldown) && prob(60))
 				var/message = pick("wacka", "quack","quacky","gaggle")
-				src.speak(message, 1, 0)
+				src.say(message, flags = SAYFLAG_SINGING, message_params = list("group" = "amusing_duck"))
 			if(!src.moving)
 				if(prob(1))/* This is a clusterfuck no thanks
 					if(!ON_COOLDOWN(global, DUCKBOT_NATURAL_MIGRATION_COOLDOWN, 15 MINUTES)) // Time to fly south(ern solar array) for the winter
@@ -109,12 +112,12 @@
 				else
 					wakka_wakka()
 			if(!ON_COOLDOWN(src, DUCKBOT_AMUSEMENT_COOLDOWN, src.amusement_cooldown) && prob(20))
-				playsound(src.loc, "sound/misc/amusingduck.ogg", 50, 0) // MUSIC
+				playsound(src.loc, 'sound/misc/amusingduck.ogg', 50, 0) // MUSIC
 		if(prob (7) && src.eggs >= 1)
 			var/obj/item/a_gift/easter/E = new /obj/item/a_gift/easter(src.loc)
 			E.name = "duck egg"
 			src.eggs--
-			playsound(src.loc, "sound/misc/eggdrop.ogg", 50, 0)
+			playsound(src.loc, 'sound/misc/eggdrop.ogg', 50, 0)
 		if(prob(80))
 			src.egg_process++
 		if(src.egg_process >= 100 && prob(20))
@@ -134,7 +137,7 @@
 
 		if(quack_now)
 			var/message = pick("wacka", "quack", "quacky", "gaggle")
-			src.speak(message, 1, 0)
+			src.say(message, flags = SAYFLAG_SINGING, message_params = list("group" = "amusing_duck"))
 			src.cooldowns[DUCKBOT_QUACK_COOLDOWN] = TIME + src.quack_cooldown
 	..()
 
@@ -143,13 +146,13 @@
 		return
 	if (href_list["on"])
 		on = !on
-	attack_hand(usr)
+	src.Attackhand(usr)
 
-/obj/machinery/bot/duckbot/attack_hand(mob/user as mob)
+/obj/machinery/bot/duckbot/attack_hand(mob/user)
 	var/dat
 	dat += "<TT><B>AMUSING DUCK</B></TT><BR>"
 	dat += "<B>toy series with strong sense for playing</B><BR><BR>"
-	dat += "LAY EGG IS: <A href='?src=\ref[src];on=1'>[src.on ? "TRUE!!!" : "NOT TRUE!!!"]</A><BR><BR>"
+	dat += "LAY EGG IS: <A href='byond://?src=\ref[src];on=1'>[src.on ? "TRUE!!!" : "NOT TRUE!!!"]</A><BR><BR>"
 	dat += "AS THE DUCK ADVANCING,FLICKING THE PLUMAGE AND YAWNING THE MOUTH GO WITH MUSIC & LIGHT.<BR>"
 	dat += "THE DUCK STOP,IT SWAYING TAIL THEN THE DUCK LAY AN EGG AS OPEN IT'S BUTTOCKS,<BR>GO WITH THE DUCK'S CALL"
 
@@ -160,9 +163,9 @@
 /obj/machinery/bot/duckbot/emag_act(var/mob/user, var/obj/item/card/emag/E)
 	if (!src.emagged)
 		if(user)
-			boutput(user, "<span class='alert'>You short out the horn on [src].</span>")
-		src.audible_message("<span class='alert'><B>[src] quacks loudly!</B></span>", 1)
-		playsound(src.loc, "sound/misc/amusingduck.ogg", 50, 1)
+			boutput(user, SPAN_ALERT("You short out the horn on [src]."))
+		src.audible_message(SPAN_ALERT("<B>[src] quacks loudly!</B>"))
+		playsound(src.loc, 'sound/misc/amusingduck.ogg', 50, 1)
 		src.eggs += rand(3,9)
 		src.emagged = 1
 		src.processing_tier = src.PT_active
@@ -189,10 +192,10 @@
 	var/list/T = get_area_turfs(src.duck_migration_target, 1)
 	if(length(T) >= 1)
 		. = TRUE
-		SPAWN_DBG(rand(0,10 SECONDS)) // give em some time to spread out a bit
+		SPAWN(rand(0,10 SECONDS)) // give em some time to spread out a bit
 			T = (pick(T))
 			//src.mystical_access() AB SO FUC KING LUTE LEY NOT THANK YOU VERRY MOUCHE - warc
-			src.navigate_to(T, src.bot_move_delay, 0, 300)
+			src.navigate_to(T, src.bot_move_delay, 0, 80)
 			if(length(src.path) < 1)
 				src.KillPathAndGiveUp(1)
 
@@ -264,11 +267,11 @@
 			src.access_lookup = initial(src.access_lookup)
 			src.botcard.access = get_access(src.access_lookup)
 
-/obj/machinery/bot/duckbot/attackby(obj/item/W as obj, mob/user as mob)
+/obj/machinery/bot/duckbot/attackby(obj/item/W, mob/user)
 	if (istype(W, /obj/item/card/emag))
 		emag_act(user, W)
 	else
-		src.visible_message("<span class='alert'>[user] hits [src] with [W]!</span>")
+		src.visible_message(SPAN_ALERT("[user] hits [src] with [W]!"))
 		src.health -= W.force * 0.5
 		if (src.health <= 0)
 			src.explode()
@@ -280,8 +283,9 @@
 	if(src.exploding) return
 	src.exploding = 1
 	src.on = 0
-	src.visible_message("<span class='alert'><B>[src] blows apart!</B></span>", 1)
-	playsound(src.loc, "sound/impact_sounds/Machinery_Break_1.ogg", 40, 1)
+	src.visible_message(SPAN_ALERT("<B>[src] blows apart!</B>"))
+	playsound(src.loc, 'sound/impact_sounds/Machinery_Break_1.ogg', 40, 1)
 	elecflash(src, radius=1, power=3, exclude_center = 0)
+	new /obj/item/instrument/bikehorn(src.loc)
 	qdel(src)
 	return

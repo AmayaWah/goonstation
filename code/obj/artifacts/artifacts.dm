@@ -6,7 +6,7 @@
 	icon_state = "wizard-1" // it's technically pointless to set this but it makes it easier to find in the dreammaker tree
 	opacity = 0
 	density = 1
-	anchored = 0
+	anchored = UNANCHORED
 	artifact = 1
 	mat_changename = 0
 	mat_changedesc = 0
@@ -18,50 +18,51 @@
 		if (forceartiorigin) AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
 
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 
 	disposing()
+		if (istype(src.artifact, /datum/artifact))
+			src.ArtifactDeactivated()
 		artifact_controls.artifacts -= src
 		..()
 
 	UpdateName()
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
 
-	attack_hand(mob/user as mob)
-		user.lastattacked = src
+	attack_hand(mob/user)
+		user.lastattacked = get_weakref(src)
 		src.ArtifactTouched(user)
 		return
 
 	attack_ai(mob/user as mob)
 		return attack_hand(user)
 
-	attackby(obj/item/W as obj, mob/user as mob)
-		user.lastattacked = src
+	attackby(obj/item/W, mob/user)
+		user.lastattacked = get_weakref(src)
 		if (src.Artifact_attackby(W,user))
 			..()
 
 	meteorhit(obj/O as obj)
 		src.ArtifactStimulus("force", 60)
-		..()
 
 	examine()
 		. = list("You have no idea what this thing is!")
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/A = src.artifact
-		if (istext(A.examine_hint))
-			. += A.examine_hint
+		if (istext(A.examine_hint) && (usr && (usr.traitHolder?.hasTrait("training_scientist")) || isobserver(usr)))
+			. += SPAN_ARTHINT(A.examine_hint)
 
 	ex_act(severity)
 		switch(severity)
-			if(1.0)
+			if(1)
 				src.ArtifactStimulus("force", 200)
 				src.ArtifactStimulus("heat", 500)
-			if(2.0)
+			if(2)
 				src.ArtifactStimulus("force", 75)
 				src.ArtifactStimulus("heat", 450)
-			if(3.0)
+			if(3)
 				src.ArtifactStimulus("force", 25)
 				src.ArtifactStimulus("heat", 380)
 		return
@@ -79,7 +80,7 @@
 		src.Artifact_blob_act(power)
 
 	bullet_act(var/obj/projectile/P)
-		if(src.material) src.material.triggerOnBullet(src, src, P)
+		src.material_trigger_on_bullet(src, P)
 
 		switch (P.proj_data.damage_type)
 			if(D_KINETIC,D_PIERCING,D_SLASHING)
@@ -104,7 +105,7 @@
 	mob_flip_inside(mob/user)
 		. = ..()
 		src.ArtifactTakeDamage(rand(5,20))
-		boutput(user, "<span class='alert'>It seems to be a bit more damaged!</span>")
+		boutput(user, SPAN_ALERT("It seems to be a bit more damaged!"))
 
 /obj/machinery/artifact
 	name = "artifact large art piece"
@@ -112,7 +113,7 @@
 	icon_state = "wizard-1" // it's technically pointless to set this but it makes it easier to find in the dreammaker tree
 	opacity = 0
 	density = 1
-	anchored = 0
+	anchored = UNANCHORED
 	artifact = 1
 	mat_changename = 0
 	mat_changedesc = 0
@@ -125,7 +126,7 @@
 			AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
 
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 
 	disposing()
@@ -137,8 +138,8 @@
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/A = src.artifact
-		if (istext(A.examine_hint))
-			. += A.examine_hint
+		if (istext(A.examine_hint) && (usr && (usr.traitHolder?.hasTrait("training_scientist")) || isobserver(usr)))
+			. += SPAN_ARTHINT(A.examine_hint)
 
 	UpdateName()
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
@@ -152,30 +153,29 @@
 		if (A.activated)
 			A.effect_process(src)
 
-	attack_hand(mob/user as mob)
+	attack_hand(mob/user)
 		src.ArtifactTouched(user)
 		return
 
 	attack_ai(mob/user as mob)
 		return attack_hand(user)
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
 
 	meteorhit(obj/O as obj)
 		src.ArtifactStimulus("force", 60)
-		..()
 
 	ex_act(severity)
 		switch(severity)
-			if(1.0)
+			if(1)
 				src.ArtifactStimulus("force", 200)
 				src.ArtifactStimulus("heat", 500)
-			if(2.0)
+			if(2)
 				src.ArtifactStimulus("force", 75)
 				src.ArtifactStimulus("heat", 450)
-			if(3.0)
+			if(3)
 				src.ArtifactStimulus("force", 25)
 				src.ArtifactStimulus("heat", 380)
 		return
@@ -230,7 +230,7 @@
 			AS.validtypes = list("[forceartiorigin]")
 		src.artifact = AS
 
-		SPAWN_DBG(0)
+		SPAWN(0)
 			src.ArtifactSetup()
 
 	disposing()
@@ -242,13 +242,13 @@
 		if (!src.ArtifactSanityCheck())
 			return
 		var/datum/artifact/A = src.artifact
-		if (istext(A.examine_hint))
-			. += A.examine_hint
+		if (istext(A.examine_hint) && (usr && (usr.traitHolder?.hasTrait("training_scientist")) || isobserver(usr)))
+			. += SPAN_ARTHINT(A.examine_hint)
 
 	UpdateName()
 		src.name = "[name_prefix(null, 1)][src.real_name][name_suffix(null, 1)]"
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if (src.Artifact_attackby(W,user))
 			..()
 
@@ -276,11 +276,11 @@
 		..()
 		var/turf/T = get_turf(src)
 		if (cinematic)
-			T.visible_message("<span class='alert'><b>An artifact suddenly warps into existence!</b></span>")
-			playsound(T,"sound/effects/teleport.ogg",50,1)
+			T.visible_message(SPAN_ALERT("<b>An artifact suddenly warps into existence!</b>"))
+			playsound(T, 'sound/effects/teleport.ogg', 50,TRUE)
 			var/obj/decal/teleport_swirl/swirl = new /obj/decal/teleport_swirl
 			swirl.set_loc(T)
-			SPAWN_DBG(1.5 SECONDS)
+			SPAWN(1.5 SECONDS)
 				qdel(swirl)
 		Artifact_Spawn(T,forceartiorigin)
 		qdel(src)

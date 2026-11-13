@@ -3,15 +3,14 @@
 	icon = 'icons/obj/projectiles.dmi'
 	icon_state = "cbbolt" // changed from radbolt - cogwerks
 //How much of a punch this has, tends to be seconds/damage before any resist
-	power = 100
+	damage = 80
+	stun = 20
 //How much ammo this costs
-	cost = 40
+	cost = 60
 //How fast the power goes away
 	dissipation_rate = 1
 //How many tiles till it starts to lose power
 	dissipation_delay = 10
-//Kill/Stun ratio
-	ks_ratio = 0.8
 //name of the projectile setting, used when you change a guns setting
 	sname = "rad-poison bolt"
 //file location for the sound you want it to play
@@ -35,6 +34,6 @@ toxic - poisons
 	//Can we pass windows
 	window_pass = 1
 	//no visible message upon bullet_act and no armor block message
-	silentshot = 1
+	no_hit_message = 1
 	//Prevent impact effect
 	ie_type = null

@@ -58,18 +58,6 @@
 
 			return 0
 
-		build_grid(mob/user as mob, theGrid)
-			if (!istype(src.holder) || !istype(src.master))
-				return 1
-
-			if (!user || !theGrid)
-				return 1
-
-			if (!(holder in src.master.contents))
-				return 1
-
-			return 0
-
 		process()
 			if((!src.holder) || (!src.master))
 				return 1
@@ -167,13 +155,16 @@
 			return 1
 		if((!istype(holder)) || (!istype(master)))
 			return 1
+		if (src.master.active_program != src && href_list["input"] && href_list["input"] == "ack")
+			src.master.host_program.CrisisAck(href_list["alert_group"], href_list["caller"], href_list["noreply"])
+			return 1
 		if((src.master.active_program != src) && !(href_list["input"] && href_list["input"] == "message")) // Disgusting but works
 			return 1
 		if ((!usr.contents.Find(src.master) && (!in_interact_range(src.master, usr) || !istype(src.master.loc, /turf) || !isAI(usr))) && (!issilicon(usr) && !isAI(usr)))
 			return 1
 		if(isghostdrone(usr))
 			return 1
-		if(usr.stat || usr.restrained())
+		if(!can_act(usr))
 			return 1
 		if(!(holder in src.master.contents))
 			if(master.active_program == src)

@@ -9,9 +9,9 @@
 	icon_state = "mulebot0"
 	layer = MOB_LAYER
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
 	animate_movement=1
-	soundproofing = 0
+	soundproofing = SOUNDPROOFING_ON
 	on = 1
 	locked = 1
 	access_lookup = "Captain"
@@ -86,8 +86,8 @@
 			cell.maxcharge = 2000
 		setup_wires()
 
-		MAKE_DEFAULT_RADIO_PACKET_COMPONENT("control", control_freq)
-		MAKE_DEFAULT_RADIO_PACKET_COMPONENT("beacon", beacon_freq)
+		MAKE_DEFAULT_RADIO_PACKET_COMPONENT(null, "control", control_freq)
+		MAKE_DEFAULT_RADIO_PACKET_COMPONENT(null, "beacon", beacon_freq)
 
 	// set up the wire colours in random order
 	// and the random wire display order
@@ -97,7 +97,7 @@
 		var/list/orders = list("0","1","2","3","4","5","6","7","8","9")
 		wire_text = list()
 		wire_order = list()
-		while(colours.len > 0)
+		while(length(colours) > 0)
 			var/colour = colours[ rand(1,colours.len) ]
 			wire_text += colour
 			colours -= colour
@@ -115,10 +115,10 @@
 	emag_act(var/mob/user, var/obj/item/card/emag/E)
 		locked = !locked
 		if(user)
-			boutput(user, "<span class='notice'>You [locked ? "lock" : "unlock"] the mulebot's controls!</span>")
+			boutput(user, SPAN_NOTICE("You [locked ? "lock" : "unlock"] the mulebot's controls!"))
 
-		flick("mulebot-emagged", src)
-		playsound(src.loc, "sound/effects/sparks1.ogg", 100, 0)
+		FLICK("mulebot-emagged", src)
+		playsound(src.loc, 'sound/effects/sparks1.ogg', 100, 0)
 		return 1
 
 	attackby(var/obj/item/I, var/mob/user)
@@ -130,23 +130,23 @@
 			updateDialog()
 		else if (isscrewingtool(I))
 			if (locked)
-				boutput(user, "<span class='notice'>The maintenance hatch cannot be opened or closed while the controls are locked.</span>")
+				boutput(user, SPAN_NOTICE("The maintenance hatch cannot be opened or closed while the controls are locked."))
 				return
 
 			open = !open
 			if(open)
-				src.visible_message("[user] opens the maintenance hatch of [src]", "<span class='notice'>You open [src]'s maintenance hatch.</span>")
+				src.visible_message("[user] opens the maintenance hatch of [src]", SPAN_NOTICE("You open [src]'s maintenance hatch."))
 				on = 0
 				icon_state="mulebot-hatch"
 			else
-				src.visible_message("[user] closes the maintenance hatch of [src]", "<span class='notice'>You close [src]'s maintenance hatch.</span>")
+				src.visible_message("[user] closes the maintenance hatch of [src]", SPAN_NOTICE("You close [src]'s maintenance hatch."))
 				icon_state = "mulebot0"
 
 			updateDialog()
 		else if(load && ismob(load))  // chance to knock off rider
 			if(prob(1+I.force * 2))
 				unload(0)
-				user.visible_message("<span class='alert'>[user] knocks [load] off [src] with \the [I]!</span>", "<span class='alert'>You knock [load] off [src] with \the [I]!</span>")
+				user.visible_message(SPAN_ALERT("[user] knocks [load] off [src] with \the [I]!"), SPAN_ALERT("You knock [load] off [src] with \the [I]!"))
 			else
 				boutput(user, "You hit [src] with \the [I] but to no effect.")
 		else
@@ -226,7 +226,7 @@
 				dat += "<A href='byond://?src=\ref[src];op=stop'>Stop</A><BR>"
 				dat += "<A href='byond://?src=\ref[src];op=go'>Proceed</A><BR>"
 				dat += "<A href='byond://?src=\ref[src];op=home'>Return to Home</A><BR>"
-				dat += "<A href='byond://?src=\ref[src];op=destination'>Set Destination</A><BR>"
+				dat += "<A href='byond://?src=\ref[src];op=setdest'>Set Destination</A><BR>"
 				dat += "<A href='byond://?src=\ref[src];op=setid'>Set Bot ID</A><BR>"
 				dat += "<A href='byond://?src=\ref[src];op=sethome'>Set Home</A><BR>"
 				dat += "<A href='byond://?src=\ref[src];op=autoret'>Toggle Auto Return Home</A> ([auto_return ? "On":"Off"])<BR>"
@@ -249,12 +249,13 @@
 			else
 				dat += "The bot is in maintenance mode and cannot be controlled.<BR>"
 
-		if (user.client.tooltipHolder)
-			user.client.tooltipHolder.showClickTip(src, list(
-				"params" = params,
-				"title" = "Mulebot [suffix ? "([suffix])" : ""] controls",
-				"content" = dat,
-			))
+		if (user.client?.tooltips)
+			user.client.tooltips.show(
+				TOOLTIP_PINNED, src,
+				mouse = params,
+				title = "Mulebot [suffix ? "([suffix])" : ""] controls",
+				content = dat,
+			)
 
 		return
 
@@ -284,7 +285,7 @@
 					if(src.allowed(usr))
 						locked = !locked
 					else
-						boutput(usr, "<span class='alert'>Access denied.</span>")
+						boutput(usr, SPAN_ALERT("Access denied."))
 						return
 
 				if("power")
@@ -299,13 +300,13 @@
 
 				if("cellremove")
 					if(open && cell && !usr.equipped())
-						usr.put_in_hand_or_drop(cell)
 
 						cell.add_fingerprint(usr)
-						cell.updateicon()
+						cell.UpdateIcon()
+						usr.put_in_hand_or_drop(cell)
 						cell = null
 
-						usr.visible_message("<span class='notice'>[usr] removes the power cell from [src].</span>", "<span class='notice'>You remove the power cell from [src].</span>")
+						usr.visible_message(SPAN_NOTICE("[usr] removes the power cell from [src]."), SPAN_NOTICE("You remove the power cell from [src]."))
 
 				if("cellinsert")
 					if(open && !cell)
@@ -316,7 +317,7 @@
 							C.set_loc(src)
 							C.add_fingerprint(usr)
 
-							usr.visible_message("<span class='notice'>[usr] inserts a power cell into [src].</span>", "<span class='notice'>You insert the power cell into [src].</span>")
+							usr.visible_message(SPAN_NOTICE("[usr] inserts a power cell into [src]."), SPAN_NOTICE("You insert the power cell into [src]."))
 
 				if("stop")
 					if(mode >=2)
@@ -370,36 +371,36 @@
 					if (usr.find_tool_in_hand(TOOL_SNIPPING))
 						var/wirebit = text2num_safe(href_list["wire"])
 						if (wirebit == wire_mobavoid)
-							logTheThing("vehicle", usr, null, "disables the safety of a MULE ([src.name]) at [log_loc(usr)].")
+							logTheThing(LOG_VEHICLE, usr, "disables the safety of a MULE ([src.name]) at [log_loc(usr)].")
 							src.emagger = usr
 						wires &= ~wirebit
 					else
-						boutput(usr, "<span class='notice'>You need wirecutters!</span>")
+						boutput(usr, SPAN_NOTICE("You need wirecutters!"))
 				if("wiremend")
 					if (usr.find_tool_in_hand(TOOL_SNIPPING))
 						var/wirebit = text2num_safe(href_list["wire"])
 						if (wirebit == wire_mobavoid)
-							logTheThing("vehicle", usr, null, "reactivates the safety of a MULE ([src.name]) at [log_loc(usr)].")
+							logTheThing(LOG_VEHICLE, usr, "reactivates the safety of a MULE ([src.name]) at [log_loc(usr)].")
 							src.emagger = null
 						wires |= wirebit
 					else
-						boutput(usr, "<span class='notice'>You need wirecutters!</span>")
+						boutput(usr, SPAN_NOTICE("You need wirecutters!"))
 
 				if("wirepulse")
 					if (usr.find_tool_in_hand(TOOL_PULSING))
 						switch(href_list["wire"])
 							if("1","2")
-								boutput(usr, "<span class='notice'>[bicon(src)] The charge light flickers.</span>")
+								boutput(usr, SPAN_NOTICE("[bicon(src)] The charge light flickers."))
 							if("4")
-								boutput(usr, "<span class='notice'>[bicon(src)] The external warning lights flash briefly.</span>")
+								boutput(usr, SPAN_NOTICE("[bicon(src)] The external warning lights flash briefly."))
 							if("8")
-								boutput(usr, "<span class='notice'>[bicon(src)] The load platform clunks.</span>")
+								boutput(usr, SPAN_NOTICE("[bicon(src)] The load platform clunks."))
 							if("16", "32")
-								boutput(usr, "<span class='notice'>[bicon(src)] The drive motor whines briefly.</span>")
+								boutput(usr, SPAN_NOTICE("[bicon(src)] The drive motor whines briefly."))
 							else
-								boutput(usr, "<span class='notice'>[bicon(src)] You hear a radio crackle.</span>")
+								boutput(usr, SPAN_NOTICE("[bicon(src)] You hear a radio crackle."))
 					else
-						boutput(usr, "<span class='notice'>You need a multitool or similar!</span>")
+						boutput(usr, SPAN_NOTICE("You need a multitool or similar!"))
 
 			updateDialog()
 		else
@@ -417,7 +418,7 @@
 		if(user.stat)
 			return
 
-		if (!on || !istype(C)|| C.anchored || get_dist(user, src) > 1 || get_dist(src,C) > 1 )
+		if (!on || !istype(C)|| C.anchored || BOUNDS_DIST(user, src) > 0 || BOUNDS_DIST(src, C) > 0 )
 			return
 
 		if(load)
@@ -430,7 +431,7 @@
 		if (istype(C, /atom/movable/screen) || C.anchored)
 			return
 
-		if(get_dist(C, src) > 1 || load || !on)
+		if(BOUNDS_DIST(C, src) > 0 || load || !on)
 			return
 		mode = 1
 
@@ -438,7 +439,7 @@
 		var/obj/storage/crate/crate = C
 		if(istype(crate))
 			crate.close()
-		C.anchored = 1
+		C.anchored = ANCHORED
 		C.set_loc(src.loc)
 		sleep(0.2 SECONDS)
 		C.set_loc(src)
@@ -508,7 +509,7 @@
 			on = 0
 			return
 		if(on)
-			SPAWN_DBG(0)
+			SPAWN(0)
 				// speed varies between 1-4 depending on how many wires are cut (and which of the two)
 				var/speed = ((wires & wire_motor1) ? 1:0) + ((wires & wire_motor2) ? 2:0) + 1
 				// both wires results in no speed at all :(
@@ -552,9 +553,9 @@
 							else
 								newdir = newdir | dir
 								if(newdir == 3)
-									newdir = 1
+									newdir = NORTH
 								else if(newdir == 12)
-									newdir = 4
+									newdir = EAST
 								B.set_dir(newdir)
 							bloodiness--
 
@@ -567,7 +568,7 @@
 							path -= loc
 
 							if(mode==4)
-								SPAWN_DBG(1 DECI SECOND)
+								SPAWN(1 DECI SECOND)
 									send_status()
 
 							if(destination == home_destination)
@@ -576,32 +577,35 @@
 								mode = 2
 
 						else		// failed to move
-
-							//boutput(world, "Unable to move.")
+							// we did not move, so let us see if we are being blocked by a door
+							var/obj/machinery/door/block_door = locate(/obj/machinery/door/) in next
+							if (block_door)
+								// we patiently wait for the door - they only need half their operation time until they are non-dense
+								sleep(block_door.operation_time/2)
 
 							blockcount++
 							mode = 4
 							if(blockcount == 3)
 								src.visible_message("[src] makes an annoyed buzzing sound", "You hear an electronic buzzing sound.")
-								playsound(src.loc, "sound/machines/buzz-two.ogg", 50, 0)
+								playsound(src.loc, 'sound/machines/buzz-two.ogg', 50, 0)
 
 							if(blockcount > 5)	// attempt 5 times before recomputing
 								// find new path excluding blocked turf
 								src.visible_message("[src] makes a sighing buzz.", "You hear an electronic buzzing sound.")
-								playsound(src.loc, "sound/machines/buzz-sigh.ogg", 50, 0)
+								playsound(src.loc, 'sound/machines/buzz-sigh.ogg', 50, 0)
 
-								SPAWN_DBG(0.2 SECONDS)
+								SPAWN(0.2 SECONDS)
 									calc_path(next)
 									if(path)
 										src.visible_message("[src] makes a delighted ping!", "You hear a ping.")
-										playsound(src.loc, "sound/machines/ping.ogg", 50, 0)
+										playsound(src.loc, 'sound/machines/ping.ogg', 50, 0)
 									mode = 4
 								mode = 6
 								return
 							return
 					else
 						src.visible_message("[src] makes an annoyed buzzing sound", "You hear an electronic buzzing sound.")
-						playsound(src.loc, "sound/machines/buzz-two.ogg", 50, 0)
+						playsound(src.loc, 'sound/machines/buzz-two.ogg', 50, 0)
 						//boutput(world, "Bad turf.")
 						mode = 5
 						return
@@ -613,7 +617,7 @@
 			if(5)		// calculate new path
 				//boutput(world, "Calc new path.")
 				mode = 6
-				SPAWN_DBG(0)
+				SPAWN(0)
 
 					calc_path()
 
@@ -621,11 +625,11 @@
 						blockcount = 0
 						mode = 4
 						src.visible_message("[src] makes a delighted ping!", "You hear a ping.")
-						playsound(src.loc, "sound/machines/ping.ogg", 50, 0)
+						playsound(src.loc, 'sound/machines/ping.ogg', 50, 0)
 
 					else
 						src.visible_message("[src] makes a sighing buzz.", "You hear an electronic buzzing sound.")
-						playsound(src.loc, "sound/machines/buzz-sigh.ogg", 50, 0)
+						playsound(src.loc, 'sound/machines/buzz-sigh.ogg', 50, 0)
 
 						mode = 7
 			//if(6)
@@ -637,13 +641,13 @@
 	// calculates a path to the current destination
 	// given an optional turf to avoid
 	proc/calc_path(var/turf/avoid = null)
-		src.path = get_path_to(src, src.target, max_distance=200, id=src.botcard, skip_first=FALSE, exclude=avoid, cardinal_only=TRUE)
+		src.path = get_path_to(src, src.target, max_distance=200, id=src.botcard, skip_first=FALSE, exclude=avoid, cardinal_only=TRUE, do_doorcheck=TRUE)
 
 	// sets the current destination
 	// signals all beacons matching the delivery code
 	// beacons will return a signal giving their locations
 	proc/set_destination(var/new_dest)
-		SPAWN_DBG(0)
+		SPAWN(0)
 			new_destination = new_dest
 			post_signal_multiple("beacon", list("findbeacon" = "delivery", "address_tag" = "delivery"))
 			updateDialog()
@@ -659,7 +663,7 @@
 	// starts bot moving to home
 	// sends a beacon query to find
 	proc/start_home()
-		SPAWN_DBG(0)
+		SPAWN(0)
 			set_destination(home_destination)
 			mode = 4
 		icon_state = "mulebot[(wires & wire_mobavoid) == wire_mobavoid]"
@@ -668,7 +672,7 @@
 	proc/at_target()
 		if(!reached_target)
 			src.visible_message("[src] makes a chiming sound!", "You hear a chime.")
-			playsound(src.loc, "sound/machines/chime.ogg", 50, 0)
+			playsound(src.loc, 'sound/machines/chime.ogg', 50, 0)
 			reached_target = 1
 
 			if(load)		// if loaded, unload at target
@@ -701,19 +705,24 @@
 
 	// called when bot bumps into anything
 	bump(var/atom/obs)
-		if(!(wires & wire_mobavoid))		//usually just bumps, but if avoidance disabled knock over mobs
+		if(ismob(obs))
 			var/mob/M = obs
-			if(ismob(M))
-				if(isrobot(M))
-					src.visible_message("<span class='alert'>[src] bumps into [M]!</span>")
-				else
-					src.visible_message("<span class='alert'>[src] knocks over [M]!</span>")
-					M.remove_pulling()
-					M.changeStatus("stunned", 8 SECONDS)
-					M.changeStatus("weakened", 5 SECONDS)
-					M.lying = 1
-					M.set_clothing_icon_dirty()
+			if(M.traitHolder?.hasTrait("wasitsomethingisaid")) //tee hee
+				knock_over_mob(M)
+			if(!(wires & wire_mobavoid))		//usually just bumps, but if avoidance disabled knock over mobs
+				knock_over_mob(M)
 		..()
+
+	proc/knock_over_mob(var/mob/M)
+		if(isrobot(M))
+			src.visible_message(SPAN_ALERT("[src] bumps into [M]!"))
+		else
+			src.visible_message(SPAN_ALERT("[src] knocks over [M]!"))
+			M.remove_pulling()
+			M.changeStatus("stunned", 8 SECONDS)
+			M.changeStatus("knockdown", 5 SECONDS)
+			M.lying = 1
+			M.set_clothing_icon_dirty()
 
 	alter_health()
 		return get_turf(src)
@@ -721,10 +730,10 @@
 	// called from mob/living/carbon/human/Crossed(atom/movable/)
 	// when mulebot is in the same loc
 	proc/RunOver(var/mob/living/carbon/human/H)
-		src.visible_message("<span class='alert'>[src] drives over [H]!</span>")
-		playsound(src.loc, "sound/impact_sounds/Slimy_Splat_1.ogg", 50, 1)
+		src.visible_message(SPAN_ALERT("[src] drives over [H]!"))
+		playsound(src.loc, 'sound/impact_sounds/Slimy_Splat_1.ogg', 50, 1)
 
-		logTheThing("vehicle", H, src.emagger, "is run over by a MULE ([src.name]) at [log_loc(src)].[src.emagger && ismob(src.emagger) ? " Safety disabled by [constructTarget(src.emagger,"vehicle")]." : ""]")
+		logTheThing(LOG_VEHICLE, H, "is run over by a MULE ([src.name]) at [log_loc(src)].[src.emagger && ismob(src.emagger) ? " Safety disabled by [constructTarget(src.emagger,"vehicle")]." : ""]")
 
 		if(ismob(load))
 			var/mob/M = load
@@ -858,6 +867,11 @@
 		kv["retn"] = auto_return
 		kv["pick"] = auto_pickup
 		post_signal_multiple(control_freq, kv)
+
+	Exited(Obj, newloc)
+		. = ..()
+		if(Obj == src.cell)
+			src.cell = null
 
 /obj/machinery/bot/mulebot/QM1
 	home_destination = "QM #1"

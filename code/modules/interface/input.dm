@@ -5,6 +5,7 @@ var/list/dirty_keystates = list()
 	var/last_keys = 0
 	var/keys_dirty = 0
 	var/keys_modifier = 0
+	var/skip_next_left_click = FALSE
 
 	var/keys_remove_next_process = 0
 
@@ -126,35 +127,56 @@ var/list/dirty_keystates = list()
 	MouseUp(object,location,control,params)
 		var/mob/user = usr
 		user.onMouseUp(object,location,control,params)
-		SEND_SIGNAL(user, COMSIG_MOUSEUP, object,location,control,params)
+		SEND_SIGNAL(user, COMSIG_MOB_MOUSEUP, object,location,control,params)
 
 
-		//If we click a tile we cannot see (object is null), pass along a Click. Ordinarily, Click() does not recieve mouse events from unseen tiles.
+		//If we click a tile we cannot see (object is null), pass along a Click. Ordinarily, Click() does not receive mouse events from unseen tiles.
 		//Handle the null object by finding the turf that lies in the screenloc of the null click.
 		//How should we distinguish whether the original click was 'null' later on if we need to? location will == "map", that might be fine to identify with?
 		//(this fixes the behavior of guns not firing if you clicked a hidden tile. now you can actually shoot in the dark or in a small tunnel!)
 		if (!object && src.mob)
-			var/list/l2 = splittext(params2list(params)["screen-loc"],",")
-			if (l2.len >= 2)
-				var/list/lx = splittext(l2[1],":")
-				var/list/ly = splittext(l2[2],":")
+			var/regex/locparser = new(@"(\d+):(\d*),(\d+):(\d*)$")
+			if(!locparser.Find(params2list(params)["screen-loc"]))
+				return //FUCK
+			var/x = text2num(locparser.group[1])
+			var/pox = text2num(locparser.group[2])
+			var/y = text2num(locparser.group[3])
+			var/poy = text2num(locparser.group[4])
 
-				object = locate(src.mob.x + (text2num(lx[2]) + -1 - ((istext(src.view) ? WIDE_TILE_WIDTH : SQUARE_TILE_WIDTH) - 1) / 2),\
-								src.mob.y + (text2num(ly[1]) + -1 - 7),\
-								src.mob.z)
-				if (object)
-					src.Click(object,location,control,params)
+
+			object = locate(src.mob.x + (x + -1 - ((istext(src.view) ? WIDE_TILE_WIDTH : SQUARE_TILE_WIDTH) - 1) / 2),\
+							src.mob.y + (y + -1 - 7),\
+							src.mob.z)
+			params += "&icon-x=[pox]&icon-y=[poy]"
+			if (object)
+				src.Click(object,location,control,params)
 
 		return
 
+	MouseDrop(src_object, over_object, turf/src_location, turf/over_location, src_control, over_control, params)
+		if (src.mob && SEND_SIGNAL(src.mob, COMSIG_MOB_MOUSEDROP, src_object, over_object, src_location, over_location, src_control, over_control, params))
+			return
+		return ..()
+
+	DblClick(atom/target, location, control, params)
+		var/list/paramslist = params2list(params)
+		if (paramslist["button"] == "left")
+			var/result = src.mob.double_click(target, location, control, paramslist)
+			if(result)
+				src.skip_next_left_click = TRUE
+			else
+				..()
+		else
+			..()
+
 	Click(atom/object, location, control, params)
-		if(hellbanned && prob(click_drops)) //Drop some of their clicks
-			if(prob(2)) fake_lagspike()
+		var/list/parameters = params2list(params)
+
+		if(skip_next_left_click && parameters["button"] == "left")
+			skip_next_left_click = FALSE
 			return
 
 		object.RawClick(location, control, params) //Required since atom/Click is effectively broken for some reason, and sometimes you just need it. If you have a better idea let me know.
-
-		var/list/parameters = params2list(params)
 
 		if (admin_intent)
 			src.mob.admin_interact(object,parameters)
@@ -163,7 +185,7 @@ var/list/dirty_keystates = list()
 		if (src.mob.mob_flags & SEE_THRU_CAMERAS)
 			if(isturf(object))
 				var/turf/T = object
-				if (!length(T.cameras))
+				if (!seen_by_camera(T))
 					return
 				else
 					if (parameters["right"])
@@ -175,7 +197,7 @@ var/list/dirty_keystates = list()
 
 		if(findtext( control, "viewport" ))
 			var/datum/viewport/vp = getViewportById(control)
-			if(vp && vp.clickToMove && object && isturf(object) && (mob.type == /mob/living/intangible/blob_overmind || mob.type == /mob/dead/aieye))//NYI: Replace the typechecks with something Better.
+			if(vp && vp.clickToMove && object && isturf(object) && isintangible(mob))//NYI: Replace the typechecks with something Better.
 				mob.set_loc(object)
 				return
 		//In case we receive a dollop of modifier keys with the Click() we should force a keydown immediately.
@@ -192,7 +214,7 @@ var/list/dirty_keystates = list()
 				buildmode.build_click(object, location, control, parameters)
 				return
 
-		if (parameters["left"])	//Had to move this up into here as the clickbuffer was causing issues.
+		if (parameters["left"] && !mob.targeting_ability)	//Had to move this up into here as the clickbuffer was causing issues.
 			var/list/contexts = mob.checkContextActions(object)
 
 			if(length(contexts))
@@ -223,22 +245,25 @@ var/list/dirty_keystates = list()
 				stathover = null
 			else
 				var/turf/t = get_turf(object)
-				if( get_dist(t, get_turf(mob)) < 5 )
+				if( GET_DIST(t, get_turf(mob)) < 5 )
 					src.stathover = t
 					src.stathover_start = get_turf(mob)
 
 		if(prob(10) && user.traitHolder && iscarbon(user) && isturf(object.loc) && user.traitHolder.hasTrait("clutz"))
 			var/list/filtered = list()
 			for(var/atom/movable/A in view(1, src.mob))
-				if(A == object || !isturf(A.loc) || !isobj(A) && !ismob(A)) continue
+				if(A == object || !isturf(A.loc) || !ismovable(A) || !A.mouse_opacity) continue
 				filtered.Add(A)
 			if(filtered.len) object = pick(filtered)
+
+		if(control == "infowindow.info" && text2num(parameters["icon-x"]) > 32)
+			parameters["icon-x"] = "16"
 
 		var/next = user.click(object, parameters, location, control)
 
 		if (isnum(next) && src.preferences.use_click_buffer && src.queued_click != object && next <= max(user.click_delay, user.combat_click_delay))
 			src.queued_click = object
-			SPAWN_DBG(next+1)
+			SPAWN(next+1)
 				if (src.queued_click == object)
 					user.click(object, parameters, location, control)
 					src.queued_click = 0
@@ -278,7 +303,7 @@ var/list/dirty_keystates = list()
 			var/wasd = src.preferences.use_wasd
 			src.preferences.use_wasd = !wasd
 			//set_macro(src.preferences.use_wasd ? "macro_wasd" : "macro_arrow")
-			boutput(src, "<span class='notice'>WASD mode toggled [!wasd ? "on" : "off"]. Note that this setting will not save unless you manually do so in Character Preferences.</style>")
+			boutput(src, SPAN_NOTICE(">WASD mode toggled [!wasd ? "on" : "off"]. Note that this setting will not save unless you manually do so in Character Preferences."))
 			src.mob.reset_keymap()
 			return 1
 
@@ -286,14 +311,8 @@ var/list/dirty_keystates = list()
 
 /mob
 
-	proc/keys_changed(keys, changed)
-		set waitfor = 0
-		//SHOULD_NOT_SLEEP(TRUE) // prevent shitty code from locking up the main input loop - commenting out for now because out of scope
-		// stub
-
 	proc/recheck_keys()
-		if (src.client)
-			keys_changed(src.client.key_state, 0xFFFF) //ZeWaka: Fix for null.key_state
+		keys_changed(src.client?.key_state, 0xFFFF) //ZeWaka: Fix for null.key_state
 
 	// returns TRUE if it schedules a move
 	proc/internal_process_move(keys)
@@ -308,10 +327,6 @@ var/list/dirty_keystates = list()
 /proc/process_keystates()
 	for (var/client/C in dirty_keystates)
 		var/new_state = C.key_state
-		if(C.hellbanned && prob(C.move_drops))
-			if(prob(1) && prob(25)) C.fake_lagspike()
-			new_state = C.last_keys // lol
-
 		if (new_state != C.last_keys) // !?
 			var/mob/M = C.mob
 			usr = M
@@ -330,14 +345,21 @@ var/list/dirty_keystates = list()
 	dirty_keystates.len = 0
 
 /proc/start_input_loop()
-	SPAWN_DBG(0)
+	SPAWN(0)
 		while (1)
+			last_input_loop_time = TIME
 			process_keystates()
 
-			for(var/client/C as anything in clients) // as() is ok here since we nullcheck
-				C?.mob?.internal_process_move(C.key_state)
+			for(var/client/C as anything in clients) // as anything is ok here since we nullcheck
+				var/mob/M = C?.mob
+				if (!M)
+					continue
+				var/keys = C.key_state
+				// do nothing if we're idle
+				if (keys || M.move_dir || length(M.movement_controller_list) || length(M.grabbed_by))
+					M.internal_process_move(keys)
 
-			for(var/datum/aiHolder/ai as anything in ai_move_scheduled) // as() is ok here since we nullcheck
+			for(var/datum/aiHolder/ai as anything in ai_move_scheduled) // as anything is ok here since we nullcheck
 				if (ai?.move_target)
 					ai.move_step()
 

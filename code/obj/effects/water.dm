@@ -2,7 +2,7 @@
 	name = "water"
 	icon = 'icons/effects/effects.dmi'
 	icon_state = "extinguish"
-	var/life = 15.0
+	var/life = 15
 	var/mob/owner
 	flags = TABLEPASS
 	mouse_opacity = 0
@@ -29,11 +29,14 @@
 	if (!target || !R)
 		qdel(src)
 		return
-	SPAWN_DBG(0)
+	SPAWN(0)
 		var/turf/T
 		for(var/b=0, b<5, b++)
-			step_towards(src,target)
+			var/turf/next_turf = get_step_towards(src, target)
 			T = get_turf(src)
+			if (T.gas_cross(next_turf))
+				src.set_loc(next_turf)
+				T = next_turf
 			if(!R || !R.total_volume)
 				break
 			R.reaction(T,TOUCH,1)
@@ -41,8 +44,8 @@
 				break
 			for(var/atom/atm in T)
 				if(isliving(atm) && src.owner && (R.total_temperature != T20C || R.get_reagent_amount("ff-foam") != R.total_volume))
-					logTheThing("combat", atm, null, "is hit by water spray [log_reagents(R)] from [owner] at [log_loc(atm)].")
-					logTheThing("combat", owner, atm, "hits [constructTarget(atm,"combat")], with extinguisher spray [log_reagents(R)] at [log_loc(atm)]")
+					logTheThing(LOG_COMBAT, atm, "is hit by water spray [log_reagents(R)] from [owner] at [log_loc(atm)].")
+					logTheThing(LOG_COMBAT, owner, "hits [constructTarget(atm,"combat")], with extinguisher spray [log_reagents(R)] at [log_loc(atm)]")
 
 				R.reaction(atm,TOUCH,1)
 			R.remove_any(1)

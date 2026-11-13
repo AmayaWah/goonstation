@@ -1,5 +1,6 @@
 #define TEAM_NANOTRASEN 1
 #define TEAM_SYNDICATE 2
+#define TEAM_NEUTRAL 3
 
 #define FORTUNA "FORTUNA"
 #define RELIANT "RELIANT"
@@ -25,27 +26,29 @@ var/list/pw_rewards_tier2 = null
 var/list/pw_rewards_tier3 = null
 
 /datum/game_mode/pod_wars
-	name = "pod wars"
+	name = "Pod Wars (Beta)(only works if current map is pod_wars.dmm)"
 	config_tag = "pod_wars"
+	regular = FALSE
 	votable = 1
 	probability = 0 // Overridden by the server config. If you don't have access to that repo, keep it 0.
 	crew_shortage_enabled = 0
 
-	shuttle_available = 0 // 0: Won't dock. | 1: Normal. | 2: Won't dock if called too early.
+	shuttle_available = SHUTTLE_AVAILABLE_DISABLED
 	list/latejoin_antag_roles = list() // Unrecognized roles default to traitor in mob/new_player/proc/makebad().
 	do_antag_random_spawns = 0
 	do_random_events = 0
 	escape_possible = 0
 	var/list/frequencies_used = list()
 	var/list/control_points = list()		//list of /datum/control_point
+	var/list/dominatetracker = list()
 	var/datum/pw_stats_manager/stats_manager
 
 	var/datum/pod_wars_team/team_NT
 	var/datum/pod_wars_team/team_SY
 
 	var/atom/movable/screen/hud/score_board/board
-	var/round_limit = 70 MINUTES
-	var/activate_control_points_time = 15 MINUTES
+	var/round_limit = 45 MINUTES
+	var/activate_control_points_time = 5 MINUTES
 	var/round_start_time					//value of TIME macro at post_setup proc call. IDK if this value is stored somewhere already.
 	var/did_ion_storm_happen = FALSE 		//set to true when the ion storm comes.
 
@@ -60,6 +63,11 @@ var/list/pw_rewards_tier3 = null
 
 //setup teams and commanders
 /datum/game_mode/pod_wars/pre_setup()
+	if (global.map_setting != "POD_WARS")
+		message_admins("Pod wars gamemode attempted to start with a non pod wars map, aborting!")
+		logTheThing(LOG_DEBUG, "Pod wars gamemode attempted to start with a non pod wars map, aborting!")
+		return 0
+
 	board = new()
 	stats_manager = new()
 	if (!setup_teams())
@@ -81,7 +89,7 @@ var/list/pw_rewards_tier3 = null
 	for(var/client/C)
 		var/mob/new_player/player = C.mob
 		if (!istype(player)) continue
-		if (player.ready && player.mind)
+		if (player.ready_play && player.mind)
 			readied_minds += player.mind
 
 	if (islist(readied_minds))
@@ -99,6 +107,28 @@ var/list/pw_rewards_tier3 = null
 			team_SY.accept_initial_players(readied_minds.Copy(half+1, 0))
 
 	return 1
+
+// Refactor this when pod wars roles are refactored into special role datums.
+/datum/game_mode/pod_wars/proc/setup_team_overlay(datum/mind/mind, overlay_icon_state)
+	var/datum/client_image_group/antagonist_image_group = get_image_group(CLIENT_IMAGE_GROUP_ALL_ANTAGONISTS)
+	var/datum/client_image_group/pod_wars_image_group = get_image_group(CLIENT_IMAGE_GROUP_POD_WARS)
+
+	// Add the player's team overlay to the general antagonist overlay image group, for Admin purposes.
+	if (antagonist_image_group.minds_with_associated_mob_image[mind])
+		antagonist_image_group.remove_mind_mob_overlay(mind)
+	var/image/antag_icon = image('icons/mob/antag_overlays.dmi', icon_state = overlay_icon_state)
+	antag_icon.appearance_flags = PIXEL_SCALE | RESET_ALPHA | RESET_COLOR | RESET_TRANSFORM | KEEP_APART
+	antagonist_image_group.add_mind_mob_overlay(mind, antag_icon)
+
+	// Add the player's mind and their team overlay to the Pod Wars image group.
+	if (!pod_wars_image_group.subscribed_minds_with_subcount[mind])
+		pod_wars_image_group.add_mind(mind)
+
+	if (pod_wars_image_group.minds_with_associated_mob_image[mind])
+		pod_wars_image_group.remove_mind_mob_overlay(mind)
+	var/image/pod_wars_icon = image('icons/mob/antag_overlays.dmi', icon_state = overlay_icon_state)
+	pod_wars_icon.appearance_flags = PIXEL_SCALE | RESET_ALPHA | RESET_COLOR | RESET_TRANSFORM | KEEP_APART
+	pod_wars_image_group.add_mind_mob_overlay(mind, pod_wars_icon)
 
 /datum/game_mode/pod_wars/proc/add_latejoin_to_team(var/datum/mind/mind, var/datum/job/JOB)
 	if (istype(JOB, /datum/job/special/pod_wars/nanotrasen))
@@ -134,7 +164,7 @@ var/list/pw_rewards_tier3 = null
 
 /datum/game_mode/pod_wars/post_setup()
 	//Setup Capture Points. We do it based on the Capture point computers. idk why. I don't have much time, and I'm tired.
-	SPAWN_DBG(-1)
+	SPAWN(-1)
 		//search each of these areas for the computer, then make the control_point datum from em.
 		// add_control_point(/area/pod_wars/spacejunk/reliant, RELIANT)
 		// add_control_point(/area/pod_wars/spacejunk/fstation, FORTUNA)
@@ -144,7 +174,7 @@ var/list/pw_rewards_tier3 = null
 		setup_critical_systems()
 		setup_manufacturer_resources()
 
-	SPAWN_DBG(-1)
+	SPAWN(-1)
 		setup_asteroid_ores()
 
 	round_start_time = TIME
@@ -154,12 +184,12 @@ var/list/pw_rewards_tier3 = null
 
 
 	if(round_limit > 0)
-		SPAWN_DBG (round_limit) // this has got to end soon
-			command_alert("Something something radiation.","Emergency Update")
+		SPAWN(round_limit) // this has got to end soon
+			command_alert("The Ion Storm will dissipate in 15 minutes... Whichever team has the least points will be forced to withdraw.", "Weather Update")
 			sleep(10 MINUTES)
-			command_alert("More radiation, too much...", "Emergency Update")
+			command_alert("Ion storm dissipating in 5 minutes... Whichever team has the least points will be forced to withdraw.", "Weather Update")
 			sleep(5 MINUTES)
-			command_alert("You may feel a slight burning sensation.", "Emergency Update")
+			command_alert("Ion storm dissipating... Executing emergency procedures. ", "Weather Update")
 			sleep(10 SECONDS)
 			for(var/mob/living/carbon/M in mobs)
 				M.emote("fart")
@@ -192,12 +222,15 @@ var/list/pw_rewards_tier3 = null
 		if (istype(A, /area/pod_wars/spacejunk/reliant))
 			name = "The NSV Reliant"
 			true_name = RELIANT
+			CPC.update_name_overlay("reliant")
 		else if (istype(A, /area/pod_wars/spacejunk/fstation))
 			name = "Fortuna Station"
 			true_name = FORTUNA
+			CPC.update_name_overlay("fortuna")
 		else if (istype(A, /area/pod_wars/spacejunk/uvb67))
 			name = "UVB-67"
 			true_name = UVB67
+			CPC.update_name_overlay("uvb")
 		var/datum/control_point/P = new/datum/control_point(CPC, A, name, true_name, src)
 
 		CPC.ctrl_pt = P 		//computer's reference to datum
@@ -212,7 +245,7 @@ var/list/pw_rewards_tier3 = null
 	var/datum/ore_cluster/minor/minor_ores = new /datum/ore_cluster/minor
 	for(var/area/pod_wars/asteroid/minor/A in world)
 		if(!istype(A, /area/pod_wars/asteroid/minor/nospawn))
-			for(var/turf/simulated/wall/asteroid/pod_wars/AST in A)
+			for(var/turf/simulated/wall/auto/asteroid/pod_wars/AST in A)
 				//Do the ore_picking
 				AST.randomize_ore(minor_ores)
 
@@ -225,7 +258,7 @@ var/list/pw_rewards_tier3 = null
 		OC.quantity -= 1
 		if(OC.quantity <= 0) oreClusts -= OC
 		//oreClusts -= OC
-		for(var/turf/simulated/wall/asteroid/pod_wars/AST in A)
+		for(var/turf/simulated/wall/auto/asteroid/pod_wars/AST in A)
 			if(prob(OC.fillerprob))
 				AST.randomize_ore(minor_ores)
 			else
@@ -235,8 +268,7 @@ var/list/pw_rewards_tier3 = null
 
 //////////////////
 ///////////////pod_wars asteroids
-/turf/simulated/wall/asteroid/pod_wars
-	fullbright = 1
+/turf/simulated/wall/auto/asteroid/pod_wars
 	name = "asteroid"
 	desc = "It's asteroid material."
 	hardness = 1
@@ -259,11 +291,11 @@ var/list/pw_rewards_tier3 = null
 		src.ore = O
 		src.hardness += O.hardness_mod
 		src.amount = rand(O.amount_per_tile_min,O.amount_per_tile_max)
-		var/image/ore_overlay = image('icons/turf/asteroid.dmi',O.name)
-		ore_overlay.transform = turn(ore_overlay.transform, pick(0,90,180,-90))
-		ore_overlay.pixel_x += rand(-6,6)
-		ore_overlay.pixel_y += rand(-6,6)
-		src.overlays += ore_overlay
+		var/image/ore_overlay = image('icons/turf/walls/asteroid.dmi',"[O.name][src.orenumber]")
+		ore_overlay.filters += filter(type="alpha", icon=icon('icons/turf/walls/asteroid.dmi',"mask-side_[src.icon_state]"))
+		ore_overlay.layer = ASTEROID_ORE_OVERLAY_LAYER  // so meson goggle nerds can still nerd away
+
+		src.UpdateOverlays(ore_overlay, "ast_ore")
 
 		if(prob(OC.gem_prob))
 			add_event(/datum/ore/event/gem, O)
@@ -357,7 +389,7 @@ ABSTRACT_TYPE(/datum/ore_cluster)
 
 /datum/game_mode/pod_wars/proc/handle_point_change(var/datum/pod_wars_team/team)
 	var/fraction = round (team.points/team.max_points, 0.01)
-	fraction = clamp(fraction, 0.00, 0.99)
+	fraction = clamp(fraction, 0, 0.99)
 
 
 	var/matrix/M1 = matrix()
@@ -371,6 +403,8 @@ ABSTRACT_TYPE(/datum/ore_cluster)
 	else
 		board?.bar_SY.points = team.points
 		animate(board.bar_SY, transform = M1, pixel_x = offset, time = 10)
+
+	board.desc = "NT Points: [board?.bar_NT.points]\n SY Points: [board?.bar_SY.points]"
 
 //check which team they are on and iff they are a commander for said team. Deduct/award points
 //Oh man, this is fucking bad. Before I had my "system" set up where I just check for the mind.special_role,
@@ -386,8 +420,8 @@ ABSTRACT_TYPE(/datum/ore_cluster)
 
 	..()
 
-datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars_team/our_team, var/datum/pod_wars_team/enemy_team)
-	our_team.change_points(-1)
+/datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars_team/our_team, var/datum/pod_wars_team/enemy_team)
+	our_team.change_points(-0.5)
 	var/nt_death = world.load_intra_round_value("nt_death")
 	var/sy_death = world.load_intra_round_value("sy_death")
 	if(isnull(nt_death))
@@ -409,6 +443,49 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 			src.playsound_to_team(our_team, "sound/voice/pod_wars_voices/{PWTN}Commander_Dies{ALTS}.ogg", sound_type=PW_COMMANDER_DIES)
 	enemy_team.change_points(1)
 
+	var/ourname = "<span class='[(get_pod_wars_team_num(M) == TEAM_NANOTRASEN) ? "rcommand" : "rsyndicate"]'>[M.real_name]</span>"
+	if (world.time - M.lastattackertime > 25 SECONDS)
+		if (M.suiciding)
+			boutput(world, "<div class='command_alert ageneral'>[ourname] <b>bid farewell, cruel world!</b></div>")
+			return
+		boutput(world, "<div class='command_alert ageneral'>[ourname] <b>perished!</b></div>")
+	else
+		var/mob/attacker = M.lastattacker?.deref()
+		if (!attacker || attacker == M)
+			if (M.suiciding || attacker == M)
+				boutput(world, "<div class='command_alert ageneral'>[ourname] <b>bid farewell, cruel world!</b></div>")
+				return
+			boutput(world, "<div class='command_alert ageneral'>[ourname] <b>perished!</b></div>")
+			return
+		var/attackername = "<span class='[(get_pod_wars_team_num(attacker) == TEAM_NANOTRASEN) ? "rcommand" : "rsyndicate"]'>[attacker.real_name]</span>"
+		if (M.suiciding)
+			boutput(world, "<div class='command_alert ageneral'>[attackername] <b>finished off</b> [ourname]</div>")
+		else
+			boutput(world, "<div class='command_alert ageneral'>[attackername] <b>killed</b> [ourname]</div>")
+
+		if (src.dominatetracker[M.mind])
+			if (src.dominatetracker[M.mind][attacker.mind] >= 4)
+				boutput(world, "<div class='command_alert ageneral'>[attackername] <b>got REVENGE on</b> [ourname]</div>")
+				playsound_global(list(attacker.mind.get_player().client), 'sound/misc/podwars/revenge.ogg', 100)
+				get_image_group("nemesis[ref(M.mind)]").remove_mind(attacker.mind)
+			src.dominatetracker[M.mind][attacker.mind] = 0
+			return
+
+		if (isnull(src.dominatetracker[attacker.mind]))
+			src.dominatetracker[attacker.mind] = list()
+		src.dominatetracker[attacker.mind][M.mind] += 1
+		if (src.dominatetracker[attacker.mind][M.mind] == 4)
+			boutput(world, "<div class='command_alert ageneral'>[attackername] <b>is DOMINATING</b> [ourname]</div>")
+			playsound_global(list(M.mind.get_player().client), 'sound/misc/podwars/nemesis.ogg', 100)
+			playsound_global(list(attacker.mind.get_player().client), 'sound/misc/podwars/dominating.ogg', 100)
+
+			var/datum/client_image_group/nemesis = get_image_group("nemesis[ref(attacker.mind)]")
+			if (!nemesis.minds_with_associated_mob_image[attacker.mind])
+				var/image/antag_icon = image('icons/mob/antag_overlays.dmi', icon_state = "nemesis")
+				antag_icon.appearance_flags = PIXEL_SCALE | RESET_ALPHA | RESET_COLOR | RESET_TRANSFORM | KEEP_APART
+				nemesis.add_mind_mob_overlay(attacker.mind, antag_icon)
+			nemesis.add_mind(M.mind)
+
 /datum/game_mode/pod_wars/proc/announce_critical_system_destruction(var/team_num, var/obj/pod_base_critical_system/CS)
 	var/datum/pod_wars_team/team
 	switch(team_num)
@@ -424,13 +501,13 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 		team.first_system_destroyed = 1
 		src.playsound_to_team(team, "sound/voice/pod_wars_voices/{PWTN}Crit_System_Destroyed{ALTS}.ogg", sound_type=PW_CRIT_SYSTEM_DESTORYED)
 	else
-		src.playsound_to_team(team, "sound/effects/ship_alert_major.ogg", 60)
+		src.playsound_to_team(team, 'sound/effects/ship_alert_major.ogg', 60)
 
 	//Gah, why? Gotta say "The" I guess.
 	var/team_name_string = team?.name
 	if (team.team_num == TEAM_SYNDICATE)
 		team_name_string = "The Syndicate"
-	boutput(world, "<h3><span class='alert'>[team_name_string]'s [CS] has been destroyed!!</span></h3>")
+	boutput(world, SPAN_ALERT("<h3>[team_name_string]'s [CS] has been destroyed!!</h3>"))
 
 	//if all of this team's crit systems have been destroyed, atomatically end the round...
 	if (!length(team.mcguffins))
@@ -444,11 +521,11 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 		if (TEAM_SYNDICATE)
 			team = team_SY
 
-	src.playsound_to_team(team, "sound/effects/ship_alert_minor.ogg")
+	src.playsound_to_team(team, 'sound/effects/ship_alert_minor.ogg')
 	var/team_name_string = team?.name
 	if (team.team_num == TEAM_SYNDICATE)
 		team_name_string = "The Syndicate"
-	boutput(world, "<h3><span class='alert'>[team_name_string]'s [CS] is under attack!!</span></h3>")
+	boutput(world, SPAN_ALERT("<h3>[team_name_string]'s [CS] is under attack!!</h3>"))
 
 
 /datum/game_mode/pod_wars/check_finished()
@@ -507,11 +584,15 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 		loser = team_NT
 
 	if(winner == team_NT) //putting this in a seperate code block for cleanliness
+		for(var/datum/mind/mind in team_NT.members)
+			mind.current.unlock_medal("Fame and Fartuna", TRUE)
 		var/value = world.load_intra_round_value("nt_win")
 		if(isnull(value))
 			value = 0
 		world.save_intra_round_value("nt_win", value + 1)
 	else if(winner == team_SY)
+		for(var/datum/mind/mind in team_SY.members)
+			mind.current.unlock_medal("Fame and Fartuna", TRUE)
 		var/value = world.load_intra_round_value("sy_win")
 		if(isnull(value))
 			value = 0
@@ -527,6 +608,48 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 
 	src.playsound_to_team(winner, "sound/voice/pod_wars_voices/{PWTN}Win{ALTS}.ogg", sound_type=PW_WIN)
 	src.playsound_to_team(loser, "sound/voice/pod_wars_voices/{PWTN}Lose{ALTS}.ogg", sound_type=PW_LOSE)
+	for (var/datum/mind/mind as anything in loser.members)
+		var/mob/living/carbon/human/H = mind.current
+		if (!ishuman(H))
+			continue
+		H.setStatusMin("humiliated", INFINITY)
+		H.drop_from_slot(H.l_hand, force_drop = TRUE)
+		H.drop_from_slot(H.r_hand, force_drop = TRUE)
+		qdel(H.limbs.l_arm)
+		qdel(H.limbs.r_arm)
+		H.limbs.l_arm = new /obj/item/parts/human_parts/arm/left/item(H)
+		H.limbs.l_arm.holder = H
+		H.limbs.l_arm:set_item(new /obj/item/instrument/bikehorn())
+		H.limbs.r_arm = new /obj/item/parts/human_parts/arm/right/item(H)
+		H.limbs.r_arm.holder = H
+		H.limbs.r_arm:set_item(new /obj/item/instrument/bikehorn())
+		H.update_body()
+
+	for (var/datum/mind/mind as anything in winner.members)
+		var/mob/living/carbon/human/H = mind.current
+		if (!ishuman(H))
+			continue
+		H.setStatusMin("victorious", INFINITY)
+		var/obj/item/card/id/idcard = H.get_id()
+		if (!idcard)
+			var/obj/item/implant/access/implant = locate(/obj/item/implant/access) in H
+			if (!implant) continue
+			idcard = implant.access
+
+		idcard.access |= list(access_syndicate_shuttle, access_heads)
+
+
+
+	if(winner == team_NT) //putting this in a seperate code block for cleanliness
+		for (var/obj/deployable_turret/pod_wars/sy/turret in world)
+			new/obj/effects/explosion/tiny_baby(get_turf(turret))
+			robogibs(get_turf(turret))
+			qdel(turret)
+	else if(winner == team_SY)
+		for (var/obj/deployable_turret/pod_wars/nt/turret in world)
+			new/obj/effects/explosion/tiny_baby(get_turf(turret))
+			robogibs(get_turf(turret))
+			qdel(turret)
 
 	// output the player stats on its own popup.
 	stats_manager.display_HTML_to_clients()
@@ -551,7 +674,7 @@ datum/game_mode/pod_wars/proc/do_team_member_death(var/mob/M, var/datum/pod_wars
 		team = pw_team
 	//error handling...
 	else
-		logTheThing("debug", null, null, "Something went wrong trying to play a sound for a team=[team]|[pw_team].!!!")
+		logTheThing(LOG_DEBUG, null, "Something went wrong trying to play a sound for a team=[team]|[pw_team].!!!")
 		message_admins("Something went wrong trying to play a sound for a team")
 		return 0
 
@@ -609,8 +732,7 @@ datum/game_mode/pod_wars/proc/get_voice_line_alts_for_team_sound(var/datum/pod_w
 		if (m == pw_team.commander)
 			continue 		//count em for active players, but don't display em here, they already got their name up there!
 		string += "<b>[m.current]</b> ([m.ckey])</b><br>"
-	boutput(world, "[active_players] active players/[length(pw_team.members)] total players")
-	boutput(world, "")	//L.something
+	boutput(world, "<h3 class='admin'>[active_players] active players/[length(pw_team.members)] total players.</h3>")
 
 
 
@@ -622,13 +744,13 @@ datum/game_mode/pod_wars/proc/get_voice_line_alts_for_team_sound(var/datum/pod_w
 	icon = 'icons/misc/128x32.dmi'
 	icon_state = "pw_backboard"
 	screen_loc = "NORTH, CENTER"
+	show_tooltip = TRUE
 	var/atom/movable/screen/border = null
 	var/atom/movable/screen/pw_score_bar/bar_NT = null
 	var/atom/movable/screen/pw_score_bar/bar_SY = null
 
 	var/list/control_points
 
-	var/theme = null
 	alpha = 150
 
 	//builds all the pieces and adds em to the score_board whose sprite is the backboard
@@ -668,22 +790,6 @@ datum/game_mode/pod_wars/proc/get_voice_line_alts_for_team_sound(var/datum/pod_w
 			if (true_name == C.true_name)
 				C.change_color(team_num)
 				break;	//Only ever gonna be one of em.
-
-
-	MouseEntered(location, control, params)
-		if (usr.client.tooltipHolder && control == "mapwindow.map")
-			var/theme = src.theme
-
-			usr.client.tooltipHolder.showHover(src, list(
-				"params" = params,
-				"title" = src.name,
-				"content" = "NT Points: [bar_NT.points]\n SY Points: [bar_SY.points]",
-				"theme" = theme
-			))
-
-	MouseExited()
-		if (usr.client.tooltipHolder)
-			usr.client.tooltipHolder.hideHover()
 
 /atom/movable/screen/pw_score_bar
 	icon = 'icons/misc/128x32.dmi'
@@ -762,9 +868,9 @@ ABSTRACT_TYPE(/obj/machinery/macrofab/pod_wars)
 	var/team_num = 0
 
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if (get_pod_wars_team_num(user) != team_num)
-			boutput(user, "<span class='alert'>This machine's design makes no sense to you, you can't figure out how to use it!</span>")
+			boutput(user, SPAN_ALERT("This machine's design makes no sense to you, you can't figure out how to use it!"))
 			return
 
 		..()
@@ -794,22 +900,15 @@ ABSTRACT_TYPE(/obj/machinery/vehicle/pod_wars_dingy)
 	capacity = 1
 	health = 100
 	maxhealth = 100
-	anchored = 0
+	anchored = UNANCHORED
 	var/weapon_type = /obj/item/shipcomponent/mainweapon/phaser/short
-	speed = 1.7
+	speedmod = 0.59
 
 	New()
 		..()
 		/obj/item/shipcomponent/mainweapon/phaser/short
-
-		src.m_w_system = new weapon_type( src )
-		src.m_w_system.ship = src
-		src.components += src.m_w_system
-
-		src.lock = new /obj/item/shipcomponent/secondary_system/lock/pw_id( src )
-		src.lock.ship = src
-		src.components += src.lock
-
+		src.install_part(null, new weapon_type(src), POD_PART_MAIN_WEAPON)
+		src.install_part(null, new /obj/item/shipcomponent/secondary_system/lock/pw_id(src), POD_PART_LOCK)
 		myhud.update_systems()
 		myhud.update_states()
 		return
@@ -820,10 +919,7 @@ ABSTRACT_TYPE(/obj/machinery/vehicle/pod_wars_dingy)
 		// src.sensors = new /obj/item/shipcomponent/sensor/mining( src )
 		// src.sensors.ship = src
 		// src.components += src.sensors
-
-		src.sec_system = new /obj/item/shipcomponent/secondary_system/orescoop( src )
-		src.sec_system.ship = src
-		src.components += src.sec_system
+		src.install_part(null, new /obj/item/shipcomponent/secondary_system/orescoop(src), POD_PART_SECONDARY)
 
 
 	nanotrasen
@@ -875,12 +971,12 @@ ABSTRACT_TYPE(/obj/machinery/vehicle/pod_wars_dingy)
 				return
 			else
 				owner.waiting_for_hotkey = 1
-				src.updateIcon()
-				boutput(usr, "<span class='notice'>Please press a number to bind this ability to...</span>")
+				src.UpdateIcon()
+				boutput(usr, SPAN_NOTICE("Please press a number to bind this ability to..."))
 				return
 
 		if (!isturf(owner.holder.owner.loc))
-			boutput(owner.holder.owner, "<span class='alert'>You can't use this spell here.</span>")
+			boutput(owner.holder.owner, SPAN_ALERT("You can't use this spell here."))
 			return
 		if (spell.targeted && usr.targeting_ability == owner)
 			usr.targeting_ability = null
@@ -892,7 +988,7 @@ ABSTRACT_TYPE(/obj/machinery/vehicle/pod_wars_dingy)
 			owner.holder.owner.targeting_ability = owner
 			owner.holder.owner.update_cursor()
 		else
-			SPAWN_DBG(0)
+			SPAWN(0)
 				spell.handleCast()
 		return
 
@@ -918,8 +1014,8 @@ proc/setup_pw_crate_lists()
 		/obj/item/shipcomponent/mainweapon/taser = 3, /obj/item/shipcomponent/mainweapon/laser/short = 3,/obj/item/ammo/power_cell/high_power = 5,
 		/obj/item/material_piece/steel{amount=10} = 1, /obj/item/material_piece/copper{amount=10} = 1, /obj/item/material_piece/glass{amount=10} = 1)
 
-	pw_rewards_tier2 = list(/obj/item/tank/jetpack = 1, /obj/item/old_grenade/smoke = 2,/obj/item/chem_grenade/flashbang = 2, /obj/item/barrier = 1,
-		/obj/item/old_grenade/emp = 3, /obj/item/sword/discount = 4, /obj/item/storage/firstaid/crit = 1, /obj/item/fireaxe = 1, /obj/item/dagger/syndicate/specialist = 2,
+	pw_rewards_tier2 = list(/obj/item/tank/jetpack = 1, /obj/item/old_grenade/smoke = 2,/obj/item/chem_grenade/flashbang = 2, /obj/item/barrier/collapsible/security = 1,
+		/obj/item/old_grenade/emp = 3, /obj/item/sword/discount = 4, /obj/item/storage/firstaid/crit = 1, /obj/item/fireaxe = 1, /obj/item/dagger/specialist = 2,
 		/obj/item/shipcomponent/mainweapon/mining = 2, /obj/item/shipcomponent/mainweapon/laser = 4, /obj/item/shipcomponent/mainweapon/disruptor_light = 4,/obj/item/ammo/power_cell/higher_power = 3, /obj/item/ammo/power_cell/self_charging/pod_wars_standard = 3,
 		/obj/item/material_piece/cerenkite{amount=5} = 1, /obj/item/material_piece/claretine{amount=5} = 1, /obj/item/material_piece/bohrum{amount=10} = 1, /obj/item/material_piece/plasmastone{amount=10} = 1, /obj/item/material_piece/uqill{amount=10} = 1, /obj/item/material_piece/telecrystal{amount=10})
 
@@ -931,21 +1027,21 @@ proc/setup_pw_crate_lists()
 
 /proc/make_fake_explosion(var/atom/I)
 	var/obj/overlay/O = new/obj/overlay(get_turf(I))
-	O.anchored = 1
+	O.anchored = ANCHORED
 	O.name = "Explosion"
 	O.layer = NOLIGHT_EFFECTS_LAYER_BASE
 	O.pixel_x = -92
 	O.pixel_y = -96
 	O.icon = 'icons/effects/214x246.dmi'
 	O.icon_state = "explosion"
-	SPAWN_DBG(3.5 SECONDS)
+	SPAWN(3.5 SECONDS)
 		qdel(O)
 
-/obj/decoration/memorial/
+/obj/decoration/memorial
 	name = "Generic Memorial"
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "memorial_mid"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 1
 
@@ -953,7 +1049,7 @@ proc/setup_pw_crate_lists()
 	name = "Nanotrasen Mission Log"
 	icon = 'icons/obj/large/32x64.dmi'
 	icon_state = "memorial_mid"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 1
 
@@ -974,20 +1070,11 @@ proc/setup_pw_crate_lists()
 			last_reset_text = "<h4>(mission log reset [days_passed] days ago)</h4>"
 		src.desc = "<center><h2><b>Pod Wars Mission Log</b></h2><br> <h3>Nanotrasen Victories: [nt_wins]<br>\nNanotrasen Deaths: [nt_deaths]</h3><br>[last_reset_text]</center>"
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if (..(user))
 			return
 
-		var/nt_wins = world.load_intra_round_value("nt_win")
-		var/nt_deaths = world.load_intra_round_value("nt_death")
-		if(isnull(nt_wins))
-			nt_wins = 0
-		if(isnull(nt_deaths))
-			nt_deaths = 0
-
-		src.add_dialog(user)
-		user.Browse(src.desc, "title=Mission Log;window=pod_war_stats_[src];size=300x300")
-		onclose(user, "pod_war_stats_[src]")
+		tgui_message(user, src.desc, "Mission Log", theme = "ntos")
 
 /obj/decoration/memorial/pod_war_stats_sy/
 	name = "Syndicate Mission Log"
@@ -1009,20 +1096,11 @@ proc/setup_pw_crate_lists()
 			last_reset_text = "<h4>(mission log reset [days_passed] days ago)</h4>"
 		src.desc = "<center><h2><b>Pod Wars Mission Log</b></h2><br> <h3>Syndicate Victories: [sy_wins]<br>\nSyndicate Deaths: [sy_deaths]</h3><br>[last_reset_text]</center>"
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if (..(user))
 			return
 
-		var/sy_wins = world.load_intra_round_value("sy_win")
-		var/sy_deaths = world.load_intra_round_value("sy_death")
-		if(isnull(sy_wins))
-			sy_wins = 0
-		if(isnull(sy_deaths))
-			sy_deaths = 0
-
-		src.add_dialog(user)
-		user.Browse(src.desc, "title=Mission Log;window=pod_war_stats_[src];size=300x300")
-		onclose(user, "pod_war_stats_[src]")
+		tgui_message(user, src.desc, "Mission Log", theme = "syndicate")
 
 /obj/decoration/memorial/memorial_left
 	name = "Memorial Inscription"

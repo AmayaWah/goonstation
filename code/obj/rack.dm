@@ -1,14 +1,19 @@
+TYPEINFO(/obj/rack)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SKIP_IF_FAIL
 /obj/rack
 	name = "rack"
 	icon = 'icons/obj/objects.dmi'
 	icon_state = "rack_base"
 	density = 1
-	flags = FPRINT | NOSPLASH
-	anchored = 1.0
+	layer = STORAGE_LAYER
+	flags = NOSPLASH
+	anchored = ANCHORED
 	desc = "A metal frame used to hold objects. Can be wrenched and made portable."
-	event_handler_flags = USE_FLUID_ENTER 
+	event_handler_flags = USE_FLUID_ENTER
+	material_amt = MATERIAL::AMOUNT::SHEET
+
 	proc/rackbreak()
-		icon_state += "-broken"
+		src.icon_state = initial(src.icon_state) + "-broken"
 		src.set_density(0)
 
 /obj/rack/New()
@@ -27,19 +32,17 @@
 
 /obj/rack/ex_act(severity)
 	switch(severity)
-		if(1.0)
+		if(1)
 			//src.deconstruct()
 			qdel(src)
 			return
-		if(2.0)
+		if(2)
 			if (prob(50))
 				src.deconstruct()
 				return
-		if(3.0)
+		if(3)
 			if (prob(25))
 				rackbreak()
-		else
-	return
 
 /obj/rack/blob_act(var/power)
 	if(prob(power * 2.5))
@@ -56,19 +59,19 @@
 		return 0
 
 /obj/rack/MouseDrop_T(obj/O as obj, mob/user as mob)
-	if (!isitem(O) || !in_interact_range(user, src) || !in_interact_range(user, O) || user.restrained() || user.getStatusDuration("paralysis") || user.sleeping || user.stat || user.lying)
+	if (!isitem(O) || !in_interact_range(user, src) || !in_interact_range(user, O) || user.restrained() || user.getStatusDuration("unconscious") || user.sleeping || user.stat || user.lying)
 		return
 	var/obj/item/I = O
 	if (istype(I,/obj/item/satchel))
 		var/obj/item/satchel/S = I
-		if (S.contents.len < 1)
-			boutput(user, "<span class='alert'>There's nothing in [S]!</span>")
+		if (length(S.contents) < 1)
+			boutput(user, SPAN_ALERT("There's nothing in [S]!"))
 		else
-			user.visible_message("<span class='notice'>[user] dumps out [S]'s contents onto [src]!</span>")
+			user.visible_message(SPAN_NOTICE("[user] dumps out [S]'s contents onto [src]!"))
 			for (var/obj/item/thing in S.contents)
 				thing.set_loc(src.loc)
-			S.desc = "A leather bag. It holds 0/[S.maxitems] [S.itemstring]."
-			S.satchel_updateicon()
+			S.tooltip_rebuild = TRUE
+			S.UpdateIcon()
 			return
 	if (isrobot(user) || user.equipped() != I || (I.cant_drop || I.cant_self_remove))
 		return
@@ -88,7 +91,7 @@
 		Ar.sims_score = max(Ar.sims_score, 0)
 	..()
 
-/obj/rack/attackby(obj/item/W as obj, mob/user as mob)
+/obj/rack/attackby(obj/item/W, mob/user)
 	if (iswrenchingtool(W))
 		actions.start(new /datum/action/bar/icon/rack_tool_interact(src, W), user)
 	else
@@ -110,7 +113,6 @@
 	return
 
 /datum/action/bar/icon/rack_tool_interact
-	id = "rack_tool_interact"
 	interrupt_flags = INTERRUPT_MOVE | INTERRUPT_ACT | INTERRUPT_STUNNED | INTERRUPT_ACTION
 	duration = 50
 	icon = 'icons/ui/actions.dmi'
@@ -129,14 +131,10 @@
 			icon_state = the_tool.icon_state
 		if (duration_i)
 			duration = duration_i
-		if (ishuman(owner))
-			var/mob/living/carbon/human/H = owner
-			if (H.traitHolder.hasTrait("carpenter") || H.traitHolder.hasTrait("training_engineer"))
-				duration = round(duration / 2)
 
 	onUpdate()
 		..()
-		if (the_rack == null || the_tool == null || owner == null || get_dist(owner, the_rack) > 1)
+		if (the_rack == null || the_tool == null || owner == null || BOUNDS_DIST(owner, the_rack) > 0)
 			interrupt(INTERRUPT_ALWAYS)
 			return
 		var/mob/source = owner
@@ -145,11 +143,118 @@
 
 	onStart()
 		..()
-		playsound(the_rack, "sound/items/Ratchet.ogg", 50, 1)
-		owner.visible_message("<span class='notice'>[owner] begins disassembling [the_rack].</span>")
+		playsound(the_rack, 'sound/items/Ratchet.ogg', 50, TRUE)
+		owner.visible_message(SPAN_NOTICE("[owner] begins disassembling [the_rack]."))
+		if (src.owner && HAS_ATOM_PROPERTY(src.owner, PROP_MOB_FAST_BUILD))
+			src.duration = round(src.duration / 2)
 
 	onEnd()
 		..()
-		playsound(the_rack, "sound/items/Deconstruct.ogg", 50, 1)
-		owner.visible_message("<span class='notice'>[owner] disassembles [the_rack].</span>")
+		playsound(the_rack, 'sound/items/Deconstruct.ogg', 50, TRUE)
+		owner.visible_message(SPAN_NOTICE("[owner] disassembles [the_rack]."))
 		the_rack.deconstruct()
+
+#define RACK_SPAWN_DIAGONAL_PROBABILITY 10
+
+/// Map-spawn helper for regularly stacked rack items
+/obj/rack/organized
+	var/initialized = FALSE //! Have we spawned our items yet
+	var/list/obj/item/items_to_spawn = list() //! What items are we going to spawn
+	var/order_override = "" //! Force a specific organization layout
+	var/shuffle_chance = 1 //! Probability of the card order being shuffled
+#ifdef IN_MAP_EDITOR
+	icon = 'icons/obj/item_spawn.dmi'
+	icon_state = "rack_filled"
+#endif
+
+/obj/rack/organized/New()
+	if (!src.initialized)
+		if (prob(shuffle_chance))
+			shuffle_list(src.items_to_spawn)
+		switch(src.order_override)
+			if("zigzag")
+				src.zigzag()
+			if("diagonal")
+				src.diagonal()
+			else
+				if (prob(RACK_SPAWN_DIAGONAL_PROBABILITY))
+					src.diagonal()
+				else
+					src.zigzag()
+		src.initialized = TRUE
+	. = ..() // spawn items before calculating sims_score
+
+#undef RACK_SPAWN_DIAGONAL_PROBABILITY
+
+#define RACK_ZIGZAG_TOP 7
+#define RACK_ZIGZAG_CENTER_OFFSET 5
+#define RACK_ZIGZAG_VERTICAL_OFFSET 2
+
+/// Lay out items in a zig-zag pattern
+/obj/rack/organized/proc/zigzag()
+	var/move_y = RACK_ZIGZAG_TOP
+	var/left_side = FALSE // start on upper right
+	for(var/item in src.items_to_spawn)
+		var/obj/item/I = new item(get_turf(src))
+		I.pixel_y = move_y
+		I.pixel_x = left_side ? -RACK_ZIGZAG_CENTER_OFFSET : RACK_ZIGZAG_CENTER_OFFSET
+		move_y = move_y - RACK_ZIGZAG_VERTICAL_OFFSET // zig
+		left_side = !left_side // zag
+
+#undef RACK_ZIGZAG_TOP
+#undef RACK_ZIGZAG_CENTER_OFFSET
+#undef RACK_ZIGZAG_VERTICAL_OFFSET
+
+#define RACK_DIAGONAL_TOP 9
+#define RACK_DIAGONAL_OFFSET 3
+
+/// Lay out items from top left to bottom right
+/obj/rack/organized/proc/diagonal()
+	var/move_xy = RACK_DIAGONAL_TOP
+	for(var/item in src.items_to_spawn)
+		var/obj/item/I = new item(get_turf(src))
+		I.pixel_y = move_xy
+		I.pixel_x = -move_xy
+		move_xy = move_xy - RACK_DIAGONAL_OFFSET
+
+#undef RACK_DIAGONAL_TOP
+#undef RACK_DIAGONAL_OFFSET
+
+/// Technical Storage circuit board rack for engineering/supply
+/obj/rack/organized/techstorage_eng
+	items_to_spawn = list(
+		/obj/item/circuitboard/arcade,
+		/obj/item/circuitboard/qmorder,
+		/obj/item/circuitboard/qmsupply,
+		/obj/item/circuitboard/barcode,
+		/obj/item/circuitboard/barcode_qm,
+		/obj/item/circuitboard/telescope,
+		/obj/item/circuitboard/powermonitor,
+		/obj/item/circuitboard/powermonitor_smes,
+	)
+
+/// Includes the transception array & control board, for maps with transception cargo fulfillment
+/obj/rack/organized/techstorage_eng/transception
+	New()
+		src.items_to_spawn += /obj/item/circuitboard/transception
+		src.items_to_spawn += /obj/item/circuitboard/transception_control
+		. = ..()
+
+/// Technical Storage circuit board rack for medical/science/misc
+/obj/rack/organized/techstorage_med
+	items_to_spawn = list(
+		/obj/item/circuitboard/card,
+		/obj/item/circuitboard/teleporter,
+		/obj/item/circuitboard/operating,
+		/obj/item/circuitboard/cloning,
+		/obj/item/circuitboard/genetics,
+		/obj/item/circuitboard/robot_module_rewriter,
+		/obj/item/circuitboard/robotics_lab,
+		/obj/item/circuitboard/chem_request,
+		/obj/item/circuitboard/chem_request_receiver,
+	)
+
+/obj/rack/organized/techstorage_med/sea
+	New()
+		src.items_to_spawn += /obj/item/circuitboard/sea_elevator
+		. = ..()

@@ -1,23 +1,3 @@
-var/list/ban_from_fluid = list(
-	"paper",\
-	"fungus",\
-	"martian_flesh",\
-	"blackpowder",\
-	"thermite",\
-	"luminol",\
-)
-//todo : make thermite work
-var/list/ban_stacking_into_fluid = list( //ban these from producing fluid from a 'cleanable'
-	"water",\
-	"sodium",\
-	"magnesium",\
-	"carbon",\
-	"ash",\
-	"blackpowder",\
-	"leaves",\
-	"poo",\
-)
-
 ///////////////////
 ////Fluid Object///
 ///////////////////
@@ -28,16 +8,19 @@ var/list/depth_levels = list(2,50,100,200)
 
 var/mutable_appearance/fluid_ma
 
+ADMIN_INTERACT_PROCS(/obj/fluid, proc/admin_clear_fluid)
+
 /obj/fluid
 	name = "fluid"
 	desc = "It's a free-flowing liquid state of matter!"
 	icon = 'icons/obj/fluid.dmi'
 	icon_state = "15"
-	anchored = 1
-	mouse_opacity = 1
+	anchored = ANCHORED_ALWAYS
+	mouse_opacity = FALSE
 	layer = FLUID_LAYER
+	flags = UNCRUSHABLE | OPENCONTAINER
 
-	event_handler_flags = IMMUNE_MANTA_PUSH
+	event_handler_flags = IMMUNE_OCEAN_PUSH
 
 	var/finalcolor = "#ffffff"
 	color = "#ffffff"
@@ -74,7 +57,7 @@ var/mutable_appearance/fluid_ma
 	var/last_depth_level = 0
 	var/touched_channel = 0
 
-	var/list/wall_overlay_images = 0 //overlay bits onto a wall to make the water look deep. This is a cache of those overlays.
+	var/list/wall_overlay_images = null //overlay bits onto a wall to make the water look deep. This is a cache of those overlays.
 	//var/list/floated_atoms = 0 //list of atoms we triggered a float anim on (cleanup later on qdel())
 
 	var/is_setup = 0
@@ -98,16 +81,13 @@ var/mutable_appearance/fluid_ma
 				src.removed()
 				return
 
-		flags |= OPENCONTAINER | UNCRUSHABLE
-
-		//src.floated_atoms = list()
-
 		for (var/dir in cardinal)
 			blocked_perspective_objects["[dir]"] = 0
 
 		if (!fluid_ma)
 			fluid_ma = new(src)
 
+		SubscribeGravity()
 
 	proc/set_up(var/newloc, var/do_enters = 1)
 		if (is_setup) return
@@ -138,6 +118,13 @@ var/mutable_appearance/fluid_ma
 				src.HasEntered(O,O.loc)
 		*/
 
+	proc/trigger_fluid_enter()
+		for(var/atom/A in src.loc)
+			if (src.group && !src.group.disposed && A.event_handler_flags & USE_FLUID_ENTER)
+				A.EnteredFluid(src, src.loc)
+		if(src.group && !src.group.disposed)
+			src.loc?.EnteredFluid(src, src.loc)
+
 	proc/turf_remove_cleanup(turf/the_turf)
 		the_turf.active_liquid = null
 
@@ -156,7 +143,6 @@ var/mutable_appearance/fluid_ma
 		if (isturf(src.loc))
 			src.turf_remove_cleanup(src.loc)
 
-		name = "fluid"
 		fluid_ma.icon_state = "15"
 		fluid_ma.alpha = 255
 		fluid_ma.color = "#ffffff"
@@ -187,25 +173,17 @@ var/mutable_appearance/fluid_ma
 			return
 		if (!src.group || !src.group.reagents)
 			return
-		. = "<br><span class='notice'>[src.group.reagents.get_description(user,(RC_VISIBLE | RC_SPECTRO))]</span>"
-		return
+		. += "<br><b class='notice'>[capitalize(src.name)] analysis:</b>"
+		. += "<br>[SPAN_NOTICE("[src.group.reagents.get_description(user,(RC_VISIBLE | RC_SPECTRO))]")]"
 
-	attackby(obj/item/W, mob/user)
-		if (istype(W,/obj/item/mop))
-			return
-
-		//floor overrides some construction clicks
-		if (istype(W,/obj/item/rcd) || istype(W,/obj/item/tile) || istype(W,/obj/item/sheet) || ispryingtool(W) || istype(W,/obj/item/pen))
-			var/turf/T = get_turf(src)
-			T.Attackby(W,user)
-			W.afterattack(T,user)
-			return
-
-		.= ..()
+	admin_visible_name()
+		return "[src.name] \[[src.group.reagents.get_master_reagent_name()]\]"
 
 	attack_hand(mob/user)
-		var/turf/T = src.loc
-		T.Attackhand(user)
+		CRASH("[identify_object(user)] hit a fluid with their hand somehow. They shouldn't be able to do that.")
+
+	attackby(obj/item/W, mob/user)
+		CRASH("[identify_object(user)] hit a fluid with [identify_object(W)] somehow. They shouldn't be able to do that.")
 
 	proc/add_reagents(var/datum/reagents/R, var/volume) //should be called right after new() on inital group creation
 		if (!src.group) return
@@ -218,7 +196,7 @@ var/mutable_appearance/fluid_ma
 	//incorporate touch_modifier?
 	Crossed(atom/movable/A)
 		..()
-		if (!src.group || !src.group.reagents || src.disposed || istype(A,/obj/fluid) || istype(src, /obj/fluid/airborne))
+		if (!src.group || !src.group.reagents || src.disposed || istype(A,/obj/fluid)  || src.group.disposed || istype(src, /obj/fluid/airborne))
 			return
 
 		my_depth_level = last_depth_level
@@ -233,7 +211,7 @@ var/mutable_appearance/fluid_ma
 		if (A.event_handler_flags & USE_FLUID_ENTER)
 			A.EnteredFluid(src, A.last_turf)
 
-	proc/force_mob_to_ingest(var/mob/M, var/mult = 1)//called when mob is drowning
+	proc/force_mob_to_ingest(var/mob/M, var/mult = 1, var/exception = null)//called when mob is drowning
 		if (!M) return
 		if (!src.group || !src.group.reagents || !src.group.reagents.reagent_list) return
 
@@ -242,7 +220,7 @@ var/mutable_appearance/fluid_ma
 		if (M.reagents)
 			react_volume = min(react_volume, abs(M.reagents.maximum_volume - M.reagents.total_volume)) //don't push out other reagents if we are full
 		src.group.reagents.reaction(M, INGEST, react_volume,1,src.group.members.len)
-		src.group.reagents.trans_to(M, react_volume)
+		src.group.reagents.trans_to(M, react_volume, exception = exception)
 
 	Uncrossed(atom/movable/AM)
 
@@ -271,13 +249,12 @@ var/mutable_appearance/fluid_ma
 
 
 	proc/add_tracked_blood(atom/movable/AM as mob|obj)
-		AM.tracked_blood = list("bDNA" = src.blood_DNA, "btype" = src.blood_type, "color" = src.color, "count" = rand(2,6))
+		AM.tracked_blood = list("bDNA" = src.blood_DNA, "btype" = src.blood_type, "color" = src.color, "count" = rand(2,6), "sample_reagent" = src.group?.master_reagent_id)
 		if (ismob(AM))
 			var/mob/M = AM
 			M.set_clothing_icon_dirty()
 
-
-	temperature_expose(datum/gas_mixture/air, exposed_temperature, exposed_volume)
+	temperature_expose(datum/gas_mixture/air, exposed_temperature, exposed_volume, cannot_be_cooled = FALSE)
 		..()
 		if (!src.group || !src.group.reagents || !length(src.group.members)) return
 		src.group.last_temp_change = world.time
@@ -291,7 +268,7 @@ var/mutable_appearance/fluid_ma
 		if (src.disposed) return
 
 		if (sfx)
-			playsound(src.loc, "sound/impact_sounds/Liquid_Slosh_1.ogg", 25, 1)
+			playsound(src.loc, 'sound/impact_sounds/Liquid_Slosh_1.ogg', 25, 1)
 
 		if (src.group)
 			if (!src.group.remove(src))
@@ -314,7 +291,9 @@ var/mutable_appearance/fluid_ma
 
 	var/spawned_any = 0
 	proc/update() //returns list of created fluid tiles
-		if (!src.group) return
+		if (!src.group || src.group.disposed) //uh oh
+			src.removed()
+			return
 		.= list()
 		last_spread_was_blocked = 1
 		src.touched_channel = 0
@@ -324,10 +303,6 @@ var/mutable_appearance/fluid_ma
 		var/turf/t
 		if(!waterflow_enabled) return
 		for( var/dir in cardinal )
-			LAGCHECK(LAG_MED)
-			if (!src.group)
-				src.removed()
-				return
 			blocked_perspective_objects["[dir]"] = 0
 			t = get_step( src, dir )
 			if (!t) //the fuck? how
@@ -348,7 +323,6 @@ var/mutable_appearance/fluid_ma
 				var/suc = 1
 				var/push_thing = 0
 				for(var/obj/thing in t.contents)
-					LAGCHECK(LAG_HIGH)
 					var/found = 0
 					if (IS_SOLID_TO_FLUID(thing))
 						found = 1
@@ -356,7 +330,7 @@ var/mutable_appearance/fluid_ma
 						push_thing = thing
 
 					if (found)
-						if( thing.density || (thing.flags & FLUID_DENSE) )
+						if( thing.density || (thing.flags & FLUID_DENSE_ALWAYS) )
 							suc=0
 							blocked_dirs++
 							if (IS_PERSPECTIVE_BLOCK(thing))
@@ -368,16 +342,14 @@ var/mutable_appearance/fluid_ma
 							suc=0
 							break
 
-				if(suc && src.group) //group went missing? ok im doin a check here lol
-					LAGCHECK(LAG_HIGH)
+				if(suc && src.group && !src.group.disposed) //group went missing? ok im doin a check here lol
 					spawned_any = 1
 					src.icon_state = "15"
 					var/obj/fluid/F = new /obj/fluid
 					F.set_up(t,0)
-					if (!F || !src.group) continue //set_up may decide to remove F
+					if (!F || !src.group || src.group.disposed) continue //set_up may decide to remove F
 
 					F.amt = src.group.amt_per_tile
-					F.name = src.name
 					F.color = src.finalcolor
 					F.finalcolor = src.finalcolor
 					F.alpha = src.finalalpha
@@ -389,12 +361,13 @@ var/mutable_appearance/fluid_ma
 					F.movement_speed_mod = src.movement_speed_mod
 
 					if (src.group)
+						src.group.add(F, src.group.amt_per_tile)
 						F.group = src.group
-						. += F
 					else
 						var/datum/fluid_group/FG = new
 						FG.add(F, src.group.amt_per_tile)
 						F.group = FG
+					. += F
 
 					F.done_init()
 
@@ -409,10 +382,7 @@ var/mutable_appearance/fluid_ma
 						else
 							step_away(push_thing,src)
 
-					for(var/atom/A in F.loc)
-						if (A.event_handler_flags & USE_FLUID_ENTER)
-							A.EnteredFluid(F, F.loc)
-					F.loc.EnteredFluid(F, F.loc)
+					F.trigger_fluid_enter()
 
 		if (spawned_any && prob(40))
 			playsound( src.loc, 'sound/misc/waterflow.ogg', 30,0.7,7)
@@ -552,10 +522,11 @@ var/mutable_appearance/fluid_ma
 						step_towards(M,F.loc)
 						break
 	*/
-	proc/update_icon(var/neighbor_was_removed = 0)  //BE WARNED THIS PROC HAS A REPLICA UP ABOVE IN FLUID GROUP UPDATE_LOOP. DO NOT CHANGE THIS ONE WITHOUT MAKING THE SAME CHANGES UP THERE OH GOD I HATE THIS
+	update_icon(var/neighbor_was_removed = 0)  //BE WARNED THIS PROC HAS A REPLICA UP ABOVE IN FLUID GROUP UPDATE_LOOP. DO NOT CHANGE THIS ONE WITHOUT MAKING THE SAME CHANGES UP THERE OH GOD I HATE THIS
+
 		if (!src.group || !src.group.reagents) return
 
-		src.name = src.group.master_reagent_name ? src.group.master_reagent_name : src.group.reagents.get_master_reagent_name() //maybe obscure later?
+
 
 		var/color_changed = 0
 		var/datum/color/average = src.group.average_color ? src.group.average_color : src.group.reagents.get_average_color()
@@ -579,7 +550,9 @@ var/mutable_appearance/fluid_ma
 				var/turf/simulated/T = get_step(src, dir)
 				if (T && T.active_liquid && T.active_liquid.group == src.group)
 					dirs |= dir
-			icon_state = num2text(dirs)
+
+			var/turf/simulated/my_turf = get_turf(src)
+			icon_state = "[num2text(dirs)][my_turf?.get_gforce_current() < GFORCE_TRACTION_PARTIAL ? "ng" : ""]"
 
 			if (src.overlay_refs && length(src.overlay_refs))
 				src.clear_overlay()
@@ -587,8 +560,11 @@ var/mutable_appearance/fluid_ma
 		if ((color_changed || last_icon != icon_state) && last_spread_was_blocked)
 			src.update_perspective_overlays()
 
+		if (src.icon_state == "15" && src.last_depth_level >= 2)
+			src.icon_state = "15-lines"
+
 	proc/update_perspective_overlays() // fancy perspective overlaying
-		if (icon_state != "15") return
+		if (icon_state != "15" && icon_state != "15-lines") return
 		var/blocked = 0
 		for( var/dir in cardinal )
 			if (dir == SOUTH) //No south perspective
@@ -634,13 +610,17 @@ var/mutable_appearance/fluid_ma
 		overlay.pixel_y = poy
 		wall_overlay_images[overlay_key] = overlay
 
-		src.UpdateOverlays(overlay, overlay_key)
+		src.AddOverlays(overlay, overlay_key)
 
 	proc/clear_overlay(var/key = 0)
 		if (!key)
 			src.ClearAllOverlays()
 		else if(key && wall_overlay_images && wall_overlay_images[key])
 			src.ClearSpecificOverlays(key)
+
+		if (!src.last_depth_level < 2)
+			if (src.icon_state == "15-lines")
+				src.icon_state = "15"
 
 	proc/debug_search()
 		var/list/C = src.get_connected_fluids()
@@ -653,6 +633,12 @@ var/mutable_appearance/fluid_ma
 			animate( F, color = F.finalcolor, alpha = finalalpha, time = 5 )
 			sleep(0.1 SECONDS)
 
+	proc/admin_clear_fluid()
+		set name = "Clear Fluid"
+		if(src.group)
+			src.group.evaporate()
+		else
+			qdel(src)
 
 
 
@@ -700,7 +686,27 @@ var/mutable_appearance/fluid_ma
 			I.color = F.finalcolor
 			I.alpha = F.finalalpha
 		src.show_submerged_image(F.my_depth_level)
+
+	if (F.my_depth_level == 1 && !HAS_ATOM_PROPERTY(src, PROP_ATOM_FLOATING) && !src.throwing && src.traction != TRACTION_NONE)
+		new /obj/decal/puddle_ripple(null, F)
+
 	..()
+
+/obj/decal/puddle_ripple
+	icon = 'icons/obj/fluid.dmi'
+	icon_state = "ripple"
+	plane = PLANE_DEFAULT
+	blend_mode = BLEND_INSET_OVERLAY
+
+	New(newLoc, obj/fluid/fluid)
+		..()
+		src.pixel_x += rand(-10, 10)
+		src.pixel_y += rand(-10, 10)
+		src.loc = fluid
+		fluid.vis_contents += src
+		SPAWN(1 SECOND)
+			fluid.vis_contents -= src
+			qdel(src)
 
 /mob/living/ExitedFluid(obj/fluid/F as obj)
 	if (src.is_submerged == 0) return
@@ -739,20 +745,20 @@ var/mutable_appearance/fluid_ma
 						checks--
 						if (checks <= 0) break
 					if (prob(slippery) && src.slip())
-						src.visible_message("<span class='alert'><b>[src]</b> slips on [F]!</span>",\
-						"<span class='alert'>You slip on [F]!</span>")
+						src.visible_message(SPAN_ALERT("<b>[src]</b> slips on [F]!"),\
+						SPAN_ALERT("You slip on [F]!"))
 				if(-1) //space lube. this code bit is shit but i'm too lazy to make it Real right now. the proper implementation should also make exceptions for ice and stuff.
 					src.remove_pulling()
-					src.changeStatus("weakened", 3.5 SECONDS)
-					boutput(src, "<span class='notice'>You slipped on [F]!</span>")
-					playsound(T, "sound/misc/slip.ogg", 50, 1, -3)
+					src.changeStatus("knockdown", 3.5 SECONDS)
+					boutput(src, SPAN_NOTICE("You slipped on [F]!"))
+					playsound(T, 'sound/misc/slip.ogg', 50, TRUE, -3)
 					var/atom/target = get_edge_target_turf(src, src.dir)
 					src.throw_at(target, 12, 1, throw_type = THROW_SLIP)
 				if(-2) //superlibe
 					src.remove_pulling()
-					src.changeStatus("weakened", 6 SECONDS)
-					playsound(T, "sound/misc/slip.ogg", 50, 1, -3)
-					boutput(src, "<span class='notice'>You slipped on [F]!</span>")
+					src.changeStatus("knockdown", 6 SECONDS)
+					playsound(T, 'sound/misc/slip.ogg', 50, TRUE, -3)
+					boutput(src, SPAN_NOTICE("You slipped on [F]!"))
 					var/atom/target = get_edge_target_turf(src, src.dir)
 					src.throw_at(target, 30, 1, throw_type = THROW_SLIP)
 					random_brute_damage(src, 10)
@@ -760,7 +766,7 @@ var/mutable_appearance/fluid_ma
 
 
 	//Possibility to consume reagents. (Each reagent should return 0 in its reaction_[type]() proc if reagents should be removed from fluid)
-	if (do_reagent_reaction && F.group.reagents && F.group.reagents.reagent_list)
+	if (do_reagent_reaction && F.group.reagents && F.group.reagents.reagent_list && F.amt > CHEM_EPSILON)
 		F.group.last_reacted = F
 		var/react_volume = F.amt > 10 ? (F.amt / 2) : (F.amt)
 		react_volume = min(react_volume,100) //capping the react amt
@@ -774,7 +780,7 @@ var/mutable_appearance/fluid_ma
 			F.group.reagents.remove_reagent(current_id, current_reagent.volume * volume_fraction)
 		/*
 		if (length(reacted_ids))
-			src.update_icon()
+			src.UpdateIcon()
 		*/
 
 	..()
@@ -788,44 +794,33 @@ var/mutable_appearance/fluid_ma
 		entered_group = 0
 
 	//BLOODSTAINS
-	if (F.group.master_reagent_id =="blood" || F.group.master_reagent_id == "bloodc")
-		if (F.group.master_reagent_id == "blood")
-			//if (ishuman(M))
-			if (src.lying)
-				if (src.wear_suit)
-					src.wear_suit.add_blood(F)
-					src.set_clothing_icon_dirty()
-				else if (src.w_uniform)
-					src.w_uniform.add_blood(F)
-					src.set_clothing_icon_dirty()
+	if (F.group.master_reagent_id == "blood" || F.group.master_reagent_id == "bloodc" || F.group.master_reagent_id == "hemolymph") // Replace with a blood reagent check proc
+		if (src.lying)
+			if (src.wear_suit)
+				src.wear_suit.add_blood(F)
+				src.update_bloody_suit()
+			else if (src.w_uniform)
+				src.w_uniform.add_blood(F)
+				src.update_bloody_uniform()
+		else
+			if (src.shoes)
+				src.shoes.add_blood(F)
+				src.update_bloody_shoes()
 			else
-				if (src.shoes)
-					src.shoes.add_blood(F)
-					src.set_clothing_icon_dirty()
-			F.add_tracked_blood(src)
-			//else if (isliving(M))// || isobj(AM))
-			//	M.add_blood(F)
-			//	if (!M.anchored)
-			//		F.add_tracked_blood(M)
+				src.add_blood(F)
 
+		F.add_tracked_blood(src)
+		src.update_bloody_feet()
 
 	var/do_reagent_reaction = 1
 
-	if (F.my_depth_level == 2 || F.my_depth_level == 3)
-		if (src.wear_suit && src.wear_suit.permeability_coefficient <= 0.01)
+	if (F.my_depth_level == 1 && src.traction != TRACTION_NONE)
+		if(!src.lying && src.shoes && src.shoes.hasProperty ("chemprot") && (src.shoes.getProperty("chemprot") >= 5)) //sandals do not help
 			do_reagent_reaction = 0
-	if (F.my_depth_level >= 4)
-		if ((src.wear_suit && src.wear_suit.permeability_coefficient <= 0.01) && (src.head && src.head.seal_hair))
-			do_reagent_reaction = 0
+			if (!src.wear_suit || !(src.wear_suit.c_flags & SPACEWEAR)) // suits can go over shoes
+				F.group.reagents.reaction(src.shoes, TOUCH, F.group.amt_per_tile, can_spawn_fluid = FALSE)
 
-	if(!shoes)
-		do_reagent_reaction = 1
-
-	if (src.lying)
-		if (!((src.wear_suit && src.wear_suit.permeability_coefficient <= 0.01) && (src.head && src.head.seal_hair)))
-			do_reagent_reaction = 1
-
-	if (do_reagent_reaction && entered_group) //if entered_group == 1, it may not have been set yet
+	if (entered_group) //if entered_group == 1, it may not have been set yet
 		if (isturf(oldloc))
 			if (T.active_liquid)
 				entered_group = 0

@@ -1,11 +1,21 @@
 /mob/living/carbon/human/tdummy
 	real_name = "Target Dummy"
 	var/shutup = FALSE
-//	nodamage = 1
+	var/stam_monitor
+
 	New()
 		. = ..()
-		src.maptext_y = 32
+		src.stam_monitor = new /obj/machinery/maptext_monitor/stamina(src)
+		src.AddComponent(/datum/component/health_maptext)
+		src.ensure_speech_tree().AddSpeechModifier(SPEECH_MODIFIER_TEST_DUMMY)
 
-	say(message, ignore_stamina_winded)
-		if(!shutup)
-			. = ..()
+	disposing()
+		QDEL_NULL(src.stam_monitor)
+		. = ..()
+
+/mob/living/carbon/human/bald
+	real_name = "Test Subject"
+	New()
+		. = ..()
+		JobEquipSpawned("Staff Assistant")
+		src.bioHolder.mobAppearance.customizations["hair_bottom"] =  new /datum/customization_style/none

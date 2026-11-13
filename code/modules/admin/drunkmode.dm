@@ -10,8 +10,7 @@ var/list/dangerousVerbs = list(\
 
 //No banning for you
 /client/proc/warn,\
-/client/proc/openBanPanel,\
-/client/proc/cmd_admin_addban,\
+/client/proc/ban_panel,\
 /client/proc/banooc,\
 /client/proc/sharkban,\
 
@@ -22,7 +21,6 @@ var/list/dangerousVerbs = list(\
 
 //Shitguy stuff
 /client/proc/debug_variables,\
-/client/proc/cmd_mass_modify_object_variables,\
 /client/proc/cmd_debug_mutantrace,\
 /client/proc/cmd_debug_del_all,\
 /client/proc/general_report,\
@@ -36,7 +34,6 @@ var/list/dangerousVerbs = list(\
 /client/proc/cmd_modify_market_variables,\
 /client/proc/BK_finance_debug,\
 /client/proc/BK_alter_funds,\
-/client/proc/debug_pools,\
 /client/proc/debug_variables,\
 /client/proc/debug_global_variable,\
 /client/proc/call_proc,\
@@ -49,7 +46,6 @@ var/list/dangerousVerbs = list(\
 /client/proc/debug_reaction_list,\
 /client/proc/debug_reagents_cache,\
 /client/proc/set_admin_level,\
-/client/proc/show_camera_paths, \
 /*/client/proc/remove_camera_paths_verb, \*/
 /client/proc/check_gang_scores,\
 /client/proc/critter_creator_debug,\
@@ -64,14 +60,11 @@ var/list/dangerousVerbs = list(\
 
 //Toggles (these are ones that could be very confusing to accidentally toggle for a drunk person)
 /client/proc/toggle_toggles,\
-/client/proc/toggle_popup_verbs,\
 /client/proc/toggle_server_toggles_tab,\
 /datum/admins/proc/toggleenter,\
 /datum/admins/proc/toggle_blood_system,\
 /datum/admins/proc/toggle_bone_system,\
 /client/proc/togglebuildmode,\
-/client/proc/toggle_atom_verbs,\
-/client/proc/toggle_camera_network_reciprocity, \
 /client/proc/toggle_atom_verbs,\
 /client/proc/toggle_extra_verbs,\
 /datum/admins/proc/togglethetoggles,\
@@ -85,7 +78,8 @@ var/list/dangerousVerbs = list(\
 	set desc = "Are you drunk and slightly responsible still? Turn this on!"
 	set popup_menu = 0
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	if (alert("Enable drunk mode for yourself?", "Confirmation", "Yes", "No") == "Yes")
 		var/not_drunk_but_high = (alert("Are you boozin' or weedin'", "drugs", "Drunk", "High") == "High")
@@ -102,7 +96,8 @@ var/list/dangerousVerbs = list(\
 	set desc = "Done being drunk? We'll see."
 	set popup_menu = 0
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	//Puzzle goes here
 	var/message = "Hello! You are drunk! Think you're not? Solve this simple puzzle then.\n\n"
@@ -136,7 +131,8 @@ var/list/dangerousVerbs = list(\
 
 	if (!C) return
 
-	admin_only
+	ADMIN_ONLY
+	SHOW_VERB_DESC
 
 	//Apparently if the onlineAdmins list contains only one entry, it just picks it by default without giving any input
 	if (src == C)
@@ -149,7 +145,7 @@ var/list/dangerousVerbs = list(\
 /client/proc/toggleDrunkMode(var/client/C, var/is_actually_high = 0)
 	if (!C) return
 
-	admin_only
+	ADMIN_ONLY
 
 	var/forced = 0
 	if (C != src)
@@ -177,8 +173,8 @@ var/list/dangerousVerbs = list(\
 			C.verbs += /client/proc/enableDrunkMode
 
 		var/logMessage = (forced ? "was forced out of drunk-mode by [key_name(src)]" : "has disabled drunk-mode for themselves")
-		logTheThing("admin", C, null, logMessage)
-		logTheThing("diary", C, null, logMessage, "admin")
+		logTheThing(LOG_ADMIN, C, logMessage)
+		logTheThing(LOG_DIARY, C, logMessage, "admin")
 		message_admins("[key_name(C)] [logMessage]")
 
 	else
@@ -194,8 +190,8 @@ var/list/dangerousVerbs = list(\
 			C.verbs += /client/proc/disableDrunkMode
 
 		var/logMessage = (forced ? "was forced into drunk-mode by [key_name(src)]" : "has enabled drunk-mode for themselves")
-		logTheThing("admin", C, null, logMessage)
-		logTheThing("diary", C, null, logMessage, "admin")
+		logTheThing(LOG_ADMIN, C, logMessage)
+		logTheThing(LOG_DIARY, C, logMessage, "admin")
 		message_admins("[key_name(C)] [logMessage]")
 
 		if (!is_actually_high)
@@ -220,4 +216,4 @@ var/list/dangerousVerbs = list(\
 			)
 			command_alert("[C.key] [pick(announce)].", "Weedmin detected")
 
-		boutput(C, "<span class='alert'><b><big>You are now in drunk-mode!</big></b><br>You will have reduced powers so you can't fuck shit up so much.<br>Use \"Disable Drunk Mode\" to disable this.</span>")
+		boutput(C, SPAN_ALERT("<b><big>You are now in drunk-mode!</big></b><br>You will have reduced powers so you can't fuck shit up so much.<br>Use \"Disable Drunk Mode\" to disable this."))

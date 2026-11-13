@@ -1,48 +1,60 @@
 /**
- * Copyright (c) 2021 Ben Lubar
+ * Copyright (c) 2025 Ben Lubar & ZeWaka
  * SPDX-License-Identifier: MIT
  */
 
-@use 'sass:color';
-@use 'sass:meta';
+.theme-genetek:root {
+  // Vars
+  --genetek: #1b676b;
 
-$genetek: #1b676b;
-
-@use '../colors.scss' with (
-  $primary: color.scale($genetek, $lightness: +25%),
-  $label: #bfcc90,
-  $fg-map-keys: (),
-  $bg-map-keys: (),
-);
-@use '../base.scss' with (
-  $color-bg: color.scale($genetek, $lightness: -45%),
-);
-
-.theme-genetek {
-  // Components
-  @include meta.load-css('../components/Button.scss', $with: (
-    'color-default': $genetek,
-    'color-transparent-text': rgba(234, 253, 230, 0.75),
-  ));
-  @include meta.load-css('../components/ProgressBar.scss', $with: (
-    'color-default-fill': $genetek,
-    'background-color': rgba(0, 0, 0, 0.5),
-  ));
-  @include meta.load-css('../components/Section.scss');
+  // Base
+  --color-base: color-mix(in srgb, var(--genetek), black 55%);
+  --color-primary: color-mix(in srgb, var(--genetek), white 25%);
+  --color-label: #bfcc90;
 
   // Layouts
-  @include meta.load-css('../layouts/Layout.scss');
-  @include meta.load-css('../layouts/Window.scss');
-  @include meta.load-css('../layouts/TitleBar.scss', $with: (
-    'background-color': color.scale($genetek, $lightness: -25%),
-  ));
+  --titlebar-background: color-mix(in srgb, var(--genetek), black 25%);
+
+  // Components
+  --button-background-default: var(--genetek);
+  --button-color-transparent: rgba(234, 253, 230, 0.75);
+
+  --progress-bar-fill: var(--genetek);
+  --progress-bar-background: rgba(0, 0, 0, 0.5);
 
   .Layout__content {
     background-position-x: -60%;
-    background-image: url('../../assets/bg-genetek.svg');
+    background-image: url('../assets/bg-genetek.svg') !important;
   }
 
-  .color-label {
-    color: #bfcc90 !important;
+  .genetek-disabled {
+    --genetek: #36645d;
+    --button-color: #999;
+    --button-background-default: #999;
+    --button-background-selected: #999;
+
+    .Button--color--teal {
+      background-color: #999 !important;
+    }
+  }
+
+  // Evenly spaced list items
+  .LabeledList__cell {
+    height: 2em;
+  }
+
+  // Accommodate 32px gene icons on the Mutations tab
+  .BioEffect__section {
+    .Section__title {
+      min-height: calc(32px + 2 * var(--space-m));
+      display: flex;
+      align-items: center;
+    }
+
+    .Section__buttons {
+      top: 50%;
+      transform: translateY(-50%);
+      margin-top: 0;
+    }
   }
 }

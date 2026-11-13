@@ -1,21 +1,20 @@
-<!-- The text between the arrows are comments - they will not be visible on your PR. -->
-<!-- To automatically tag this PR, add the uppercase label(s) surrounded by brackets below, for example: [LABEL] -->
+<!-- The text between the arrows are comments - they won't be visible on your PR. -->
 
 ## About the PR <!-- Describe the Pull Request here. What does it change? What other things could this impact? -->
 
-
-
 ## Why's this needed? <!-- Describe why you think this should be added to the game. -->
 
+## Testing <!-- Please provide at least one screenshot of your changes working if appropriate, or a description of how you've tested them if not. -->
 
+<!-- !!! PRs that are opened without being properly tested may be reverted to draft or closed without warning !!! -->
 
-## Changelog
-<!-- If necessary, put your changelog entry below. Otherwise, please delete it.
-Use however you want to be credited in the changelog in place of CodeDude.
-Use (*) for major changes and (+) for minor changes. For example: -->
+## Changelog <!-- If necessary, put your changelog entry below. Otherwise, /please/ delete this entire section. -->
+
+<!-- Put how you want to be credited in the changelog in place of CodeDude. -->
+<!-- Use (*) for major changes and (+) for minor changes. See the contributor guide for details. For example: -->
 
 ```changelog
 (u)CodeDude
 (*)Added soft soft pizza to the game - a tasty drink found in soda machines!
-(+)Made some small sprite changes to the base pizza sprite.
+(+)Drinking any kind of soda will cause you to burp violently.
 ```

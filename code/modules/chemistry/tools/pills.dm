@@ -32,65 +32,36 @@
 		if (!src.reagents || !src.reagents.total_volume)
 			user.show_text("[src] doesn't contain any reagents.", "red")
 			return
-
-		if (iscarbon(user) || ismobcritter(user))
-			user.visible_message("[user] swallows [src].",\
-			"<span class='notice'>You swallow [src].</span>")
-			logTheThing("combat", user, null, "swallows a [src.name] [log_reagents(src)] at [log_loc(user)].")
-			if (reagents.total_volume)
-				reagents.reaction(user, INGEST)
-				sleep(0.1 SECONDS)
-				reagents.trans_to(user, reagents.total_volume)
-			user.u_equip(src)
-			qdel(src)
+		src.pill_action(user, user)
 		return
 
-	attack(mob/M as mob, mob/user as mob, def_zone)
+	attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
 		if (!src.reagents || !src.reagents.total_volume)
 			user.show_text("[src] doesn't contain any reagents.", "red")
 			return
 
-		if (iscarbon(M) || ismobcritter(M))
-			if (M == user)
-				//boutput(M, "<span class='notice'>You swallow [src].</span>")
-				user.visible_message("[user] swallows [src].",\
-				"<span class='notice'>You swallow [src].</span>")
-			else if(check_target_immunity(M))
-				user.show_message( "<span class='alert'>You try to force [M] to swallow [src], but fail!</span>")
+		if (iscarbon(target) || ismobcritter(target))
+			if (target == user)
+				src.pill_action(target, user)
+			else if(check_target_immunity(target))
+				user.show_message( SPAN_ALERT("You try to force [target] to swallow [src], but can't!"))
 				return
 			else
-				user.visible_message("<span class='alert'>[user] attempts to force [M] to swallow [src].</span>",\
-				"<span class='alert'>You attempt to force [M] to swallow [src].</span>")
-				logTheThing("combat", user, M, "tries to force-feed a [src.name] [log_reagents(src)] to [constructTarget(M,"combat")] at [log_loc(user)].")
-
-				if (!do_mob(user, M))
-					if (user && ismob(user))
-						user.show_text("You were interrupted!", "red")
-					return
-				if (!src.reagents || !src.reagents.total_volume)
-					user.show_text("[src] doesn't contain any reagents.", "red")
-					return
-				user.visible_message("<span class='alert'>[user] forces [M] to swallow [src].</span>",\
-				"<span class='alert'>You force [M] to swallow [src].</span>")
-
-			logTheThing("combat", user, M, "[user == M ? "swallows" : "makes [constructTarget(M,"combat")] swallow"] a [src.name] [log_reagents(src)] at [log_loc(user)].")
-			if (reagents.total_volume)
-				reagents.reaction(M, INGEST)
-				sleep(0.1 SECONDS)
-				reagents.trans_to(M, reagents.total_volume)
-			user.u_equip(src)
-			qdel(src)
+				user.visible_message(SPAN_ALERT("[user] attempts to force [target] to swallow [src]."),\
+				SPAN_ALERT("You attempt to force [target] to swallow [src]."))
+				logTheThing(LOG_COMBAT, user, "tries to force-feed a [src.name] [log_reagents(src)] to [constructTarget(target,"combat")] at [log_loc(user)].")
+				actions.start(new/datum/action/bar/icon/pill(target, src, src.icon, src.icon_state), user)
 			return 1
 
 		return 0
 
-	attackby(obj/item/I as obj, mob/user as mob)
+	attackby(obj/item/I, mob/user)
 		if (!I)
 			return
-		if (I.is_open_container() && I.reagents)
+		if (I.is_open_container(TRUE) && I.reagents)
 			if (istype(I, /obj/item/clothing/mask/cigarette)) //Apparently you can smush a lit cigarette into a pill and destroy both
 				return
-			afterattack(I, user)	//Probably weird but afterattack contains the dissolving code
+			src.AfterAttack(I, user)	//Probably weird but afterattack contains the dissolving code
 		return
 
 	proc/create_random_icon()
@@ -100,21 +71,21 @@
 	afterattack(var/atom/target, mob/user, flag)
 		if (!isobj(target))
 			return ..()
-		if (target.is_open_container() && target.reagents)
+		if (target.is_open_container(TRUE) && target.reagents)
 			if (!src.reagents || !src.reagents.total_volume)
-				boutput(user, "<span class='alert'>[src] doesn't contain any reagents.</span>")
+				boutput(user, SPAN_ALERT("[src] doesn't contain any reagents."))
 				return
 			if (target.reagents.is_full())
-				boutput(user, "<span class='alert'>[target] is full!</span>")
+				boutput(user, SPAN_ALERT("[target] is full!"))
 				return
 
 			if (istype(target, /obj/item/pen/sleepypen))
-				boutput(user, "<span class='notice'>You cram the pill into the [target.name]. Elegant.</span>")
+				boutput(user, SPAN_NOTICE("You cram the pill into the [target.name]. Elegant."))
 			else
-				user.visible_message("<span class='alert'>[user] puts something in [target].</span>",\
-				"<span class='success'>You dissolve [src] in [target].</span>")
+				user.visible_message(SPAN_ALERT("[user] puts something in [target]."),\
+				SPAN_SUCCESS("You dissolve [src] in [target]."))
 
-			logTheThing("combat", user, null, "dissolves a [src.name] [log_reagents(src)] in [target] at [log_loc(user)].")
+			logTheThing(LOG_CHEMISTRY, user, "dissolves a [src.name] [log_reagents(src)] in [target] at [log_loc(user)].")
 			reagents.trans_to(target, src.reagents.total_volume)
 			user.u_equip(src)
 			qdel(src)
@@ -122,6 +93,30 @@
 		else
 			return ..()
 
+	on_reagent_transfer()
+		..()
+		qdel(src)
+
+	proc/pill_action(mob/user, mob/target)
+		if (iscarbon(target) || ismobcritter(target))
+			if (target == user)
+				user.visible_message("[user] swallows [src].",\
+				SPAN_NOTICE("You swallow [src]."))
+			else if(check_target_immunity(target))
+				user.show_message( SPAN_ALERT("You try to force [target] to swallow [src], but fail!"))
+				return
+			else
+				user.visible_message(SPAN_ALERT("[user] forces [target] to swallow [src]."),\
+				SPAN_ALERT("You force [target] to swallow [src]."))
+
+			logTheThing(user == target ? LOG_CHEMISTRY : LOG_COMBAT, user, "[user == target ? "swallows" : "makes [constructTarget(target,"combat")] swallow"] a [src.name] [log_reagents(src)] at [log_loc(user)].")
+
+			if (src.reagents.total_volume)
+				src.reagents.reaction(target, INGEST)
+				sleep(0.1 SECONDS)
+				reagents?.trans_to(target, src.reagents.total_volume)
+			user.u_equip(src)
+			qdel(src)
 
 
 
@@ -164,6 +159,15 @@
 		..()
 		reagents.add_reagent("cyanide", 50)
 
+/obj/item/reagent_containers/pill/toxlite // Small pill for the trader that sells cyanide. So as to not be offgassed instantly.
+	name = "small cyanide pill"
+	desc = "Smaller but still Highly lethal."
+	icon_state = "pill5"
+
+	New()
+		..()
+		reagents.add_reagent("cyanide", 30)
+
 /obj/item/reagent_containers/pill/stox
 	name = "morphine pill"
 	desc = "Used to treat severe pain. Highly addictive."
@@ -175,12 +179,22 @@
 
 /obj/item/reagent_containers/pill/salicylic_acid
 	name = "analgesic pill"
-	desc = "Commonly used to treat moderate pain and fevers."
+	desc = "A painkiller used to treat minor injuries."
 	icon_state = "pill4"
 
 	New()
 		..()
 		reagents.add_reagent("salicylic_acid", 10)
+
+
+/obj/item/reagent_containers/pill/acetylsalicylic_acid
+	name = "analgesic pill"
+	desc = "An anticoagulant and painkiller used to treat moderate injuries."
+	icon_state = "pill4"
+
+	New()
+		..()
+		reagents.add_reagent("acetylsalicylic_acid", 10)
 
 /obj/item/reagent_containers/pill/menthol
 	name = "menthol pill"
@@ -255,6 +269,15 @@
 		reagents.add_reagent("hairgrownium", 5)
 
 // drugs 420 all day
+
+/obj/item/reagent_containers/pill/CBD
+	name = "cannabidiol pill"
+	desc = "An alternative painkiller with no psychoactive effects."
+	icon_state = "pill23"
+
+	New()
+		. = ..()
+		reagents.add_reagent("CBD", 20)
 
 /obj/item/reagent_containers/pill/methamphetamine
 	name = "methamphetamine pill"
@@ -361,3 +384,12 @@
 	New()
 		..()
 		reagents.add_reagent("ipecac", 5)
+
+/obj/item/reagent_containers/pill/bronadyl
+	name = "Bronadyl pill"
+	desc = "A cheap hay fever medication."
+	icon_state = "pill24"
+
+	New()
+		..()
+		reagents.add_reagent("antihistamine", 5)

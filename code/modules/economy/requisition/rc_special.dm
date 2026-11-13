@@ -1,18 +1,22 @@
 ABSTRACT_TYPE(/datum/req_contract/special)
-//contracts for utilisation by the special order event
-//these are distinguished by the requisition being sent physically, either standalone or in a crate with stuff
-//they are not inspected by the requisitions handler, and do not receive the screwup protection that is afforded to regular contracts
-
+/**
+ * Contracts for utilisation by the special order event.
+ * These are distinguished by the requisition being sent physically, either standalone or in a crate with stuff.
+ * They are not inspected by the requisitions handler, and do not receive the screwup protection that is afforded to regular contracts.
+ * They do not appear in the general market.
+ */
 /datum/req_contract/special
 	req_code = "REQ-THIRDPARTY"
 
-	var/obj/storage/crate/sendingCrate // specify crate to send, if desired
+	///Specify a crate to send the requisition in, if desired.
+	var/obj/storage/crate/sendingCrate
 
-	var/obj/item/paper/req_sheet // physical manifest of requested items. its presence in the crate is required to send order back successfully
-	//these are contained in special_order.dm, along with the event that creates these contracts
+	//Physical manifest of requested items. Its presence in the crate is required to send order back successfully. Automatically set up.
+	var/obj/item/paper/req_sheet
+	//These are contained in special_order.dm, along with the event that creates these contracts
 
 	New()
-		//add entries, then call this
+		//in subtypes, add entries, then call back to this
 		..()
 		update_requisition(req_sheet)
 
@@ -25,24 +29,16 @@ ABSTRACT_TYPE(/datum/req_contract/special)
 			req_sheet.info += get_rewards_list()
 		req_sheet.info += "<BR/><BR/><font face='System' size='1'><span style='color:#666666;'><center>╔ REQHUB: THIRD PARTY REQUISITION ╗<br>TAG SENT CRATE WITH REQ_THIRDPARTY<br>╚ RETURNS AT DISCRETION OF CLIENT ╝</center></span>"
 
-	//formats src.rc_entries for being put onto paper
+	///Formats src.rc_entries for being put onto paper.
 	proc/get_shopping_list()
 		. = "<ul>"
 		for(var/datum/rc_entry/rce in src.rc_entries)
 			if(rce.name)
-				switch(rce.entryclass)
-					if(1) //item by path
-						. += "<li>[rce.count]x [rce.name]</li>"
-					if(2) //reagent
-						. += "<li>[rce.count]+ unit[s_es(rce.count)] of [rce.name]</li>"
-					if(3) //item stacks
-						. += "<li>[rce.count]+ [rce.name]</li>"
-					else //something else entirely custom
-						. += "<li>[rce.name]</li>"
+				. += rce.shoppinglist_description()
 		. += "</ul>"
 		return
 
-	//formats src.item_rewarders for being put on paper
+	///Formats the requisition's item rewarders for being put on paper.
 	proc/get_rewards_list()
 		. += "<br/><ul>"
 		if(src.payout) . += "<li>[src.payout] credits</li>"
@@ -65,7 +61,7 @@ ABSTRACT_TYPE(/datum/req_contract/special/surgery)
 /datum/req_contract/special/surgery/organ_swap
 	name = "Organ Swap"
 	weight = 50
-	payout = 5000
+	payout = PAY::DOCTORATE*10*2
 	var/mob/living/carbon/human/target
 	var/target_organs = list()
 	sendingCrate = new /obj/storage/crate/wooden
@@ -98,7 +94,7 @@ ABSTRACT_TYPE(/datum/req_contract/special/surgery)
 		src.target.TakeDamage("All", rand(10, 20), rand(10, 20))
 		src.target.organHolder.damage_organs(1, 6, 10, target_organs)
 
-		SPAWN_DBG(0.5 SECOND) // Delay for JobEquipSpawned to resolve
+		SPAWN(0.5 SECOND) // Delay for JobEquipSpawned to resolve
 			for(var/slot in list(SLOT_EARS, SLOT_WEAR_ID, SLOT_BACK, SLOT_BELT))
 				var/obj/O = src.target.get_slot(slot)
 				if(O)
@@ -139,13 +135,13 @@ ABSTRACT_TYPE(/datum/req_contract/special/surgery)
 /datum/req_contract/special/weed_sampler
 	name = "Weed Flight"
 	req_sheet = new /obj/item/paper/requisition/weed_sample
-	payout = 41714
+	payout = PAY::DONTBUYIT*2
 
 	New()
 		src.rc_entries += rc_buildentry(/datum/rc_entry/item/megaweed,1)
 		src.rc_entries += rc_buildentry(/datum/rc_entry/item/whiteweed,1)
 		src.rc_entries += rc_buildentry(/datum/rc_entry/item/omegaweed,1)
-		src.rc_entries += rc_buildentry(/datum/rc_entry/stack/pizza/spacer,6)
+		src.rc_entries += rc_buildentry(/datum/rc_entry/food/pizza/spacer,12)
 		..()
 
 /datum/rc_entry/item
@@ -159,43 +155,44 @@ ABSTRACT_TYPE(/datum/req_contract/special/surgery)
 		name = "Omega Weed"
 		typepath = /obj/item/plant/herb/cannabis/omega
 
-/datum/rc_entry/stack/pizza/spacer
-	name = "Pizza Hexa-Subsections (May Be Unseparated)"
+/datum/rc_entry/food/pizza/spacer
+	name = "Pizza Mouthfuls (Must Be Unseparated)"
 
 
 
 /datum/req_contract/special/pizza_party
 	name = "Pizza Party"
 	req_sheet = new /obj/item/paper/requisition/pizza_party
-	payout = 2600 //pizza adds from 2400 to 3600
+	payout = PAY::TRADESMAN*10
 
 	nt
 		name = "Pizza Party (NanoTrasen)"
 		req_sheet = new /obj/item/paper/requisition/pizza_party/nt
-		payout = 3600
+		payout =  PAY::TRADESMAN*10
 
 	New()
-		src.rc_entries += rc_buildentry(/datum/rc_entry/stack/pizza,rand(20,30)*6)
+		src.rc_entries += rc_buildentry(/datum/rc_entry/food/pizza,rand(10,15)*12)
 		..()
 
-
+//contract below defines the details itself based on variety of order - this is just a dummy so as not to use an abstract type
+/datum/rc_entry/food/mealfood
 
 ABSTRACT_TYPE(/datum/req_contract/special/chef)
 /datum/req_contract/special/chef
 	weight = 50
-	payout = 2000
+	payout = PAY::DOCTORATE*18*3
 	req_sheet = new /obj/item/paper/requisition/food_order
-	var/mealflag = MEAL_TIME_BREAKFAST
+	var/mealflag = FOOD::MEAL::BREAKFAST
 	var/list/cornucopia = list()
 	var/list/name_of_food = list()
 
 	breakfast_order
 		name = "Breakfast Order"
-		mealflag = MEAL_TIME_BREAKFAST
+		mealflag = FOOD::MEAL::BREAKFAST
 		New()
 			src.build_foodlist()
 			for(var/i in 1 to rand(3,6))
-				var/datum/rc_entry/item/nom = new /datum/rc_entry/item
+				var/datum/rc_entry/item/nom = new /datum/rc_entry/food/mealfood
 				nom.typepath = pick(src.cornucopia)
 				nom.name = src.name_of_food[nom.typepath]
 				nom.count = pick(60; 1, 30; 2, 10; 3)
@@ -204,11 +201,11 @@ ABSTRACT_TYPE(/datum/req_contract/special/chef)
 
 	lunch_order
 		name = "Lunch Order"
-		mealflag = MEAL_TIME_LUNCH
+		mealflag = FOOD::MEAL::LUNCH
 		New()
 			src.build_foodlist()
 			for(var/i in 1 to rand(3,6))
-				var/datum/rc_entry/item/nom = new /datum/rc_entry/item
+				var/datum/rc_entry/item/nom = new /datum/rc_entry/food/mealfood
 				nom.typepath = pick(src.cornucopia)
 				nom.name = src.name_of_food[nom.typepath]
 				nom.count = pick(60; 1, 40; 2)
@@ -217,11 +214,11 @@ ABSTRACT_TYPE(/datum/req_contract/special/chef)
 
 	dinner_order
 		name = "Dinner Order"
-		mealflag = MEAL_TIME_DINNER
+		mealflag = FOOD::MEAL::DINNER
 		New()
 			src.build_foodlist()
 			for(var/i in 1 to rand(3,6))
-				var/datum/rc_entry/item/nom = new /datum/rc_entry/item
+				var/datum/rc_entry/item/nom = new /datum/rc_entry/food/mealfood
 				nom.typepath = pick(src.cornucopia)
 				nom.name = src.name_of_food[nom.typepath]
 				nom.count = pick(60; 1, 40; 2)
@@ -230,11 +227,11 @@ ABSTRACT_TYPE(/datum/req_contract/special/chef)
 
 	snack_order
 		name = "Snack Order"
-		mealflag = MEAL_TIME_SNACK
+		mealflag = FOOD::MEAL::SNACK
 		New()
 			src.build_foodlist()
 			for(var/i in 1 to rand(3,6))
-				var/datum/rc_entry/item/nom = new /datum/rc_entry/item
+				var/datum/rc_entry/item/nom = new /datum/rc_entry/food/mealfood
 				nom.typepath = pick(src.cornucopia)
 				nom.name = src.name_of_food[nom.typepath]
 				nom.count = pick(40; 1, 40; 2, 20; 3)
@@ -256,10 +253,10 @@ ABSTRACT_TYPE(/datum/req_contract/special/chef)
 	payout = 0 //price in blood
 
 	New()
-		src.rc_entries += rc_buildentry(/datum/rc_entry/reagent/blood,rand(8,12)*100)
+		src.rc_entries += rc_buildentry(/datum/rc_entry/reagent/blood,rand(5,10)*100)
 		..()
 
 /datum/rc_entry/reagent/blood
 	name = "blood"
-	chemname = "blood"
-	feemod = 10
+	chem_ids = "blood"
+	feemod = PAY::UNTRAINED/10

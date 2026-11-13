@@ -4,8 +4,9 @@
 	desc = "Did you know that if you laid your guts out in a straight line, they'd be about 9 meters long? Also, you'd probably be dying, so it's not something you should do. Probably."
 	organ_holder_name = "intestines"
 	organ_holder_location = "chest"
-	organ_holder_required_op_stage = 4.0
 	icon_state = "intestines"
+	surgery_flags = SURGERY_SAWING | SURGERY_CUTTING
+	region = ABDOMINAL
 	var/digestion_efficiency = 1
 
 	// on_transplant()
@@ -19,23 +20,24 @@
 	on_transplant(mob/M)
 		. = ..()
 		if(!broken)
-			APPLY_MOB_PROPERTY(M, PROP_DIGESTION_EFFICIENCY, src, digestion_efficiency)
+			APPLY_ATOM_PROPERTY(M, PROP_MOB_DIGESTION_EFFICIENCY, src, digestion_efficiency)
 
 	on_removal()
+		REMOVE_ATOM_PROPERTY(src.donor, PROP_MOB_DIGESTION_EFFICIENCY, src)
 		. = ..()
-		REMOVE_MOB_PROPERTY(src.donor, PROP_DIGESTION_EFFICIENCY, src)
 
 	unbreakme()
 		..()
-		if(donor)
-			APPLY_MOB_PROPERTY(src.donor, PROP_DIGESTION_EFFICIENCY, src, digestion_efficiency)
+		if(..() && donor)
+			APPLY_ATOM_PROPERTY(src.donor, PROP_MOB_DIGESTION_EFFICIENCY, src, digestion_efficiency)
 
 	breakme()
-		..()
-		if(donor)
-			REMOVE_MOB_PROPERTY(src.donor, PROP_DIGESTION_EFFICIENCY, src)
+		if(..() && donor)
+			REMOVE_ATOM_PROPERTY(src.donor, PROP_MOB_DIGESTION_EFFICIENCY, src)
 
 	disposing()
+		if (src.donor) // force-replaced organs get deleted without on_removal()
+			REMOVE_ATOM_PROPERTY(src.donor, PROP_MOB_DIGESTION_EFFICIENCY, src)
 		if (holder)
 			if (holder.intestines == src)
 				holder.intestines = null
@@ -51,16 +53,19 @@
 		..()
 		src.icon_state = pick("plant_intestines", "plant_intestines_bloom")
 
+TYPEINFO(/obj/item/organ/intestines/cyber)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_ELECTRONIC
+	mats = 6
+
 /obj/item/organ/intestines/cyber
 	name = "cyberintestines"
 	desc = "A fancy robotic intestines to replace one that someone's lost!"
 	icon_state = "cyber-intestines"
 	// item_state = "heart_robo1"
-	made_from = "pharosium"
+	default_material = "pharosium"
 	robotic = 1
 	created_decal = /obj/decal/cleanable/oil
 	edible = 0
-	mats = 6
 
 	emag_act(mob/user, obj/item/card/emag/E)
 		. = ..()
@@ -76,3 +81,22 @@
 			digestion_efficiency = clamp(digestion_efficiency, 0, 200) / 100
 		else
 			. = ..()
+
+/obj/item/organ/intestines/amphibian
+	name = "amphibian intestines"
+	desc = "A fair bit shorter than you expected."
+	icon_state = "amphibian_intestines"
+
+/obj/item/organ/intestines/skeleton
+	name = "skeleton intestines"
+	desc = "This is fucking spaghetti. Is someone pulling your leg?"
+	icon_state = "skeleton_intestines"
+	default_material = "bone"
+	blood_reagent = "calcium"
+
+/obj/item/organ/intestines/martian
+	name = "squishy tube"
+	desc = "Some hunk of a martian digestive system, you think."
+	icon_state = "martian_intestines"
+	created_decal = /obj/decal/cleanable/martian_viscera/fluid
+	default_material = "viscerite"

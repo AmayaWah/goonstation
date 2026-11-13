@@ -3,20 +3,21 @@
 	icon = 'icons/obj/tripod.dmi'
 	icon_state = "tripod"
 	density = 1
-	anchored = 1
+	anchored = ANCHORED
+	status = REQ_PHYSICAL_ACCESS
 
 	machine_registry_idx = MACHINES_MISC
 	var/obj/item/tripod_bulb/bulb = null
 
 	attack_hand(mob/user)
-		if (can_reach(user,src))
+		if (in_interact_range(src, user))
 			if (bulb)
 				bulb.removed(src)
 				user.put_in_hand_or_drop(bulb)
 				bulb = null
-				src.updateicon()
+				src.UpdateIcon()
 			else
-				boutput(user, "<span class='notice'>You fold up the tripod.</span>")
+				boutput(user, SPAN_NOTICE("You fold up the tripod."))
 				var/obj/item/tripod/I = new()
 				if (src.material)
 					I.setMaterial(src.material)
@@ -29,17 +30,17 @@
 			bulb = W
 			W.set_loc(src)
 			bulb.inserted(src)
-			src.updateicon()
+			src.UpdateIcon()
 
 	process()
 		if (bulb)
 			bulb.process(src)
 
-	proc
-		updateicon()
-			src.overlays.len = 0
-			if (bulb)
-				bulb.updateicon(src)
+
+	update_icon()
+		src.overlays.len = 0
+		if (bulb)
+			bulb.UpdateIcon(src)
 
 /obj/item/tripod
 	name = "folded tripod"
@@ -47,7 +48,7 @@
 	icon_state = "folded"
 
 	attack_self(mob/user)
-		SETUP_GENERIC_ACTIONBAR(user, src, 0.5 SECONDS, .proc/setup_tripod, list(user), src.icon, src.icon_state, null, null)
+		SETUP_GENERIC_ACTIONBAR(user, src, 0.5 SECONDS, PROC_REF(setup_tripod), list(user), src.icon, src.icon_state, null, null)
 
 	proc/setup_tripod(mob/user)
 		if(!(src in user.equipped_list()))
@@ -65,7 +66,6 @@
 	proc
 		removed()
 		inserted()
-		updateicon()
 
 	light
 		name = "big bulb"
@@ -87,7 +87,7 @@
 			light.disable()
 			light.detach()
 
-		updateicon(obj/machinery/tripod/tripod)
+		update_icon(obj/machinery/tripod/tripod)
 			tripod.overlays += "tripod_light"
 
 	beacon
@@ -114,7 +114,7 @@
 			light.disable()
 			light.detach()
 
-		updateicon(obj/machinery/tripod/tripod)
+		update_icon(obj/machinery/tripod/tripod)
 			tripod.overlays += "tripod_beacon"
 
 		attack_self(mob/user)

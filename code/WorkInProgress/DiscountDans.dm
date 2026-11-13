@@ -114,7 +114,7 @@
 	desc = "Discount Dan's loves you too!"
 	density = 0
 	opacity = 0
-	anchored = 1
+	anchored = ANCHORED
 
 	deconstruct_flags = DECON_MULTITOOL
 
@@ -149,17 +149,17 @@
 		light.attach(src)
 		light.enable()
 
-	attackby(var/obj/item/I as obj, user as mob)
+	attackby(var/obj/item/I, user)
 		if(istype(I, /obj/item/ticket/golden))
 			qdel(I)
-			boutput(user, "<span class='notice'>You insert the golden ticket into the GTM.</span>")
+			boutput(user, SPAN_NOTICE("You insert the golden ticket into the GTM."))
 			src.current_tickets++
 			src.updateUsrDialog()
 		else
 			src.Attackhand(user)
 		return
 
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if(..())
 			return
 
@@ -170,9 +170,9 @@
 		if (src.temp)
 			dat += src.temp
 		else
-			dat += "<BR><A HREF='?src=\ref[src];redeem=1'>Redeem tickets</A>"
+			dat += "<BR><A HREF='byond://?src=\ref[src];redeem=1'>Redeem tickets</A>"
 
-		dat += "<BR><A HREF='?action=mach_close&window=gtm'>Close</A></span>"
+		dat += "<BR><A HREF='byond://?action=mach_close&window=gtm'>Close</A></span>"
 		user.Browse(dat, "window=gtm;size=400x500;title=Golden Ticket Machine")
 		onclose(user, "gtm")
 
@@ -201,7 +201,7 @@
 			src.temp += "<tr><th>Reward</th><th>Cost</th><th>Description</th></tr>"
 
 			for (var/datum/ticket_reward/R in ticket_rewards)
-				src.temp += "<tr><td><a href='?src=\ref[src];buy=\ref[R]'><b><u>[R.name]</u></b></a></td><td>[R.cost]</td><td>[R.description]</td></tr>"
+				src.temp += "<tr><td><a href='byond://?src=\ref[src];buy=\ref[R]'><b><u>[R.name]</u></b></a></td><td>[R.cost]</td><td>[R.description]</td></tr>"
 
 			src.temp += "</table></div>"
 
@@ -210,11 +210,11 @@
 			if(istype(R))
 				if(src.current_tickets < R.cost)
 					src.temp = "<BR>Insufficient tickets.<BR>"
-					src.temp += "<BR><A HREF='?src=\ref[src];redeem=1'>Redeem tickets</A>"
+					src.temp += "<BR><A HREF='byond://?src=\ref[src];redeem=1'>Redeem tickets</A>"
 				else
 					src.current_tickets -= R.cost
 					src.temp = "<BR>Thank you for your loyalty to Discount Dan's!"
-					src.temp += "<BR><A HREF='?src=\ref[src];redeem=1'>Redeem tickets</A>"
+					src.temp += "<BR><A HREF='byond://?src=\ref[src];redeem=1'>Redeem tickets</A>"
 					new R.path(src.loc)
 
 		src.updateUsrDialog()

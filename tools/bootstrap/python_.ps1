@@ -11,8 +11,40 @@
 # regardless of ExecutionPolicy.
 $host.ui.RawUI.WindowTitle = "starting :: python $args"
 $ErrorActionPreference = "Stop"
+# stupid fucking workaround for powershell 5 vs 7 bullshit. - tgstation#97434
+$Env:PSModulePath = "$Env:ProgramFiles\WindowsPowerShell\Modules;$PSHOME\Modules"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+if (-not (Get-Command Get-FileHash -ErrorAction SilentlyContinue)) {
+	function Get-FileHash {
+		param(
+			[Parameter(Mandatory = $true)]
+			[string] $Path
+		)
+
+		$sha256 = [System.Security.Cryptography.SHA256]::Create()
+		try {
+			$stream = [System.IO.File]::OpenRead($Path)
+			try {
+				$hashBytes = $sha256.ComputeHash($stream)
+			}
+			finally {
+				$stream.Dispose()
+			}
+		}
+		finally {
+			$sha256.Dispose()
+		}
+
+		$hex = [BitConverter]::ToString($hashBytes) -replace '-', ''
+		return [PSCustomObject]@{
+			Algorithm = 'SHA256'
+			Hash      = $hex
+			Path      = $Path
+		}
+	}
+}
 
 function ExtractVersion {
 	param([string] $Path, [string] $Key)
@@ -49,8 +81,14 @@ if (!(Test-Path $PythonExe -PathType Leaf)) {
 
 	[System.IO.Compression.ZipFile]::ExtractToDirectory($Archive, $PythonDir)
 
+	$PythonVersionArray = $PythonVersion.Split(".")
+	$PythonVersionString = "python$($PythonVersionArray[0])$($PythonVersionArray[1])"
+	Write-Output "Generating PATH descriptor."
+	New-Item "$Cache/$PythonVersionString._pth" | Out-Null
+	Set-Content "$Cache/$PythonVersionString._pth" "$PythonVersionString.zip`n.`n..\..\..`nimport site`n"
+
 	# Copy a ._pth file without "import site" commented, so pip will work
-	Copy-Item "$Bootstrap/python36._pth" $PythonDir `
+	Copy-Item "$Cache/$PythonVersionString._pth" $PythonDir `
 		-ErrorAction Stop
 
 	Remove-Item $Archive

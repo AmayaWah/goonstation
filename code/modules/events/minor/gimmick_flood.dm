@@ -1,6 +1,6 @@
 /datum/random_event/minor/gimmick_flood
 	name = "Random Flood"
-	disabled = 1 // disabled for now as we dismantle old Ass Jam stuff, find a reason to enable it later, this would be a good player-triggerable event. -warc
+	disabled = 1 // disabled for now, this would be a good player-triggerable event. -warc
 	weight = 30
 	customization_available = 1
 	var/reagent_type = null
@@ -12,20 +12,8 @@
 			return
 
 		if (alert(usr, "Random reagent?", "Random reagent?", "Yes", "No") == "No")
-			var/list/L = list()
-			var/searchFor = input(usr, "Look for a part of the reagent name (or leave blank for all)", "Add reagent") as null|text
-			if(searchFor)
-				for(var/R in concrete_typesof(/datum/reagent))
-					if(findtext("[R]", searchFor)) L += R
-			else
-				L = concrete_typesof(/datum/reagent)
-
-			if(L.len == 1)
-				reagent_type = L[1]
-			else if(L.len > 1)
-				reagent_type = input(usr,"Select Reagent:","Reagents",null) as null|anything in L
-			else
-				usr.show_text("No reagents matching that name", "red")
+			src.reagent_type = pick_reagent(src)?.type
+			if (!src.reagent_type)
 				return
 
 		amount = input(usr,"Amount:","Amount",2000) as null|num
@@ -47,13 +35,13 @@
 		if(isnull(src.target))
 			if(prob(60) || !by_type[/obj/machinery/drainage] || !length(by_type[/obj/machinery/drainage]))
 				src.target = pick(get_area_turfs(/area/station)) // don't @ me
-				target.visible_message("<span class='alert'><b>A rift to a [reagent.name] dimension suddenly warps into existence!</b></span>")
+				target.visible_message(SPAN_ALERT("<b>A rift to a [reagent.name] dimension suddenly warps into existence!</b>"))
 			else
 				var/obj/machinery/drainage/drain = pick(by_type[/obj/machinery/drainage])
 				drain.clogged = 60 // about 3 minutes
-				drain.update_icon()
+				drain.UpdateIcon()
 				src.target = get_turf(drain)
-				target.visible_message("<span class='alert'><b>\The [drain] overflows with [reagent.name]!</b></span>")
+				target.visible_message(SPAN_ALERT("<b>\The [drain] overflows with [reagent.name]!</b>"))
 
 		if(!amount)
 			amount = pick(50, 100, 200, 500, 1000, 2000, 5000)
@@ -61,13 +49,13 @@
 		src.target.fluid_react_single(reagent.id, amount)
 
 
-		playsound(target,"sound/effects/teleport.ogg",50,1)
+		playsound(target, 'sound/effects/teleport.ogg', 50,TRUE)
 
-		message_admins("Random flood event triggered on ([showCoords(target.x, target.y, target.z)]) with [amount] [reagent.name].")
+		message_admins("Random flood event triggered on ([log_loc(target)]) with [amount] [reagent.name].")
 
 		var/obj/decal/teleport_swirl/swirl = new /obj/decal/teleport_swirl
 		swirl.set_loc(target)
-		SPAWN_DBG(1.5 SECONDS)
+		SPAWN(1.5 SECONDS)
 			qdel(swirl)
 
 		src.target = initial(src.target)

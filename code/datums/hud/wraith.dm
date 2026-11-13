@@ -1,12 +1,12 @@
 /datum/hud/wraith
-	var/mob/wraith/master
+	var/mob/living/intangible/wraith/master
 	var/atom/movable/screen/intent
 	var/atom/movable/screen/health
 
 	New(M)
 		..()
 		master = M
-		health = create_screen("health","Health", 'icons/mob/wraith_ui.dmi', "health-7", "EAST, NORTH", HUD_LAYER, tooltipTheme = "healthDam healthDam0")
+		health = create_screen("health","Health", 'icons/mob/wraith_ui.dmi', "health-7", "EAST, NORTH", HUD_LAYER, tooltip_options = list("theme" = "healthDam0"))
 		health.desc = "You feel powerful."
 		// var/atom/movable/screen/S = create_screen("release", "release", 'icons/mob/screen1.dmi', "x", "NORTH,EAST", HUD_LAYER)
 		// S.underlays += "block"
@@ -19,24 +19,7 @@
 	relay_click(id, mob/user, list/params)
 		if (id == "release")
 			if (master)
-				master.death(0)
-		else if (id == "intent") // copy n pasted but fuck it for now
-			var/icon_x = text2num(params["icon-x"])
-			var/icon_y = text2num(params["icon-y"])
-			if (icon_x > 16)
-				if (icon_y > 16)
-					master.a_intent = INTENT_DISARM
-				else
-					master.a_intent = INTENT_HARM
-			else
-				if (icon_y > 16)
-					master.a_intent = INTENT_HELP
-				else
-					master.a_intent = INTENT_GRAB
-			src.update_intent()
-
-	proc/update_intent()
-		intent.icon_state = "intent-[master.a_intent]"
+				master.death(FALSE)
 
 	proc/update_health()
 		var/health_num = round((max(master.health,0)/master.max_health)*7)

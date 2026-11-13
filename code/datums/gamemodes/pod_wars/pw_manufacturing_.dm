@@ -1,35 +1,38 @@
 /obj/machinery/manufacturer/pod_wars
-	name = "Ship Component Fabricator"
+	name = "ship component fabricator"
 	desc = "A manufacturing unit calibrated to produce parts for ships."
 	icon_state = "fab-hangar"
 	icon_base = "hangar"
 	var/team_num = 0			//NT = 1, SY = 2
-	free_resource_amt = 20
 	free_resources = list(
-		/obj/item/material_piece/mauxite,
-		/obj/item/material_piece/pharosium,
-		/obj/item/material_piece/molitz
+		/obj/item/material_piece/mauxite = 20,
+		/obj/item/material_piece/pharosium = 20,
+		/obj/item/material_piece/molitz = 20
 	)
 	available = list(
+		/datum/manufacture/pod/preassembeled_parts,
+		/datum/manufacture/putt/preassembeled_parts,
 		/datum/manufacture/pod_wars/lock,
-		/datum/manufacture/putt/engine,
-		/datum/manufacture/putt/boards,
-		/datum/manufacture/putt/control,
-		/datum/manufacture/putt/parts,
-		/datum/manufacture/pod/boards,
-		/datum/manufacture/pod/control,
-		/datum/manufacture/pod/parts,
-		/datum/manufacture/pod/engine,
+		/datum/manufacture/engine_scout,
 		/datum/manufacture/engine2,
 		/datum/manufacture/engine3,
 		/datum/manufacture/pod/lock,
+		/datum/manufacture/pod/lateral_thrusters,
+		/datum/manufacture/pod/afterburner,
+		/datum/manufacture/pod/light_shielding,
+		/datum/manufacture/pod/heavy_shielding,
+		/datum/manufacture/pod/auto_repair_kit,
+		/datum/manufacture/pod/weapons_loader,
+		/datum/manufacture/pod/gunner_support,
 		/datum/manufacture/cargohold,
+		/datum/manufacture/storagehold,
 		/datum/manufacture/orescoop,
 		/datum/manufacture/conclave,
 		/datum/manufacture/communications/mining,
 		/datum/manufacture/pod/weapon/mining_podwars,
 		/datum/manufacture/pod/weapon/mining/drill,
 		/datum/manufacture/pod/weapon/ltlaser,
+		/datum/manufacture/pod/weapon/burst_ltlaser,
 		/datum/manufacture/pod/weapon/mining_weak,
 		/datum/manufacture/pod/weapon/taser,
 		/datum/manufacture/pod/weapon/laser/short,
@@ -37,48 +40,100 @@
 		/datum/manufacture/pod/weapon/disruptor,
 		/datum/manufacture/pod/weapon/disruptor/light,
 		/datum/manufacture/pod/weapon/shotgun,
-		/datum/manufacture/pod/weapon/ass_laser,
+		/datum/manufacture/pod/weapon/salvo_rockets,
+		/datum/manufacture/pod/weapon/hammer_railgun
 	)
 
 	New()
 		START_TRACKING
 		..()
-		add_team_armor()
 
 	disposing()
 		STOP_TRACKING
 		..()
 
-	claim_free_resources(datum/game_mode/pod_wars/PW)
-		if (team_num == TEAM_NANOTRASEN)
-			src.resource_amounts = PW.team_NT.resources
-		else if (team_num == TEAM_SYNDICATE)
-			src.resource_amounts = PW.team_SY.resources
-		..()
-
-	proc/add_team_armor()
-		return
-
-	attack_hand(var/mob/user as mob)
+	attack_hand(var/mob/user)
 		if (get_pod_wars_team_num(user) != src.team_num)
-			boutput(user, "<span class='alert'>This machine's design makes no sense to you, you can't figure out how to use it!</span>")
+			boutput(user, SPAN_ALERT("This machine's design makes no sense to you, you can't figure out how to use it!"))
 			return
 
 		..()
 
 /obj/machinery/manufacturer/pod_wars/nanotrasen
-	name = "NanoTrasen Ship Component Fabricator"
+	name = "\improper NanoTrasen ship component fabricator"
 	team_num = TEAM_NANOTRASEN
-	add_team_armor()
-		available += list(
+	available = list(
+		/datum/manufacture/pod/preassembeled_parts,
+		/datum/manufacture/putt/preassembeled_parts,
+		/datum/manufacture/pod_wars/lock,
+		/datum/manufacture/engine2,
+		/datum/manufacture/engine3,
+		/datum/manufacture/pod/lock,
+		/datum/manufacture/pod/lateral_thrusters,
+		/datum/manufacture/pod/afterburner,
+		/datum/manufacture/pod/light_shielding,
+		/datum/manufacture/pod/heavy_shielding,
+		/datum/manufacture/pod/auto_repair_kit,
+		/datum/manufacture/pod/weapons_loader,
+		/datum/manufacture/pod/gunner_support,
+		/datum/manufacture/cargohold,
+		/datum/manufacture/storagehold,
+		/datum/manufacture/orescoop,
+		/datum/manufacture/conclave,
+		/datum/manufacture/communications/mining,
+		/datum/manufacture/pod/weapon/mining_podwars,
+		/datum/manufacture/pod/weapon/mining/drill,
+		/datum/manufacture/pod/weapon/ltlaser,
+		/datum/manufacture/pod/weapon/burst_ltlaser,
+		/datum/manufacture/pod/weapon/mining_weak,
+		/datum/manufacture/pod/weapon/taser,
+		/datum/manufacture/pod/weapon/laser/short,
+		/datum/manufacture/pod/weapon/laser,
+		/datum/manufacture/pod/weapon/disruptor,
+		/datum/manufacture/pod/weapon/disruptor/light,
+		/datum/manufacture/pod/weapon/shotgun,
+		/datum/manufacture/pod/weapon/salvo_rockets,
+		/datum/manufacture/pod/weapon/hammer_railgun,
 		/datum/manufacture/pod_wars/pod/armor_light/nt,
 		/datum/manufacture/pod_wars/pod/armor_robust/nt
-		)
+
+	)
+
 /obj/machinery/manufacturer/pod_wars/syndicate
-	name = "Syndicate Ship Component Fabricator"
+	name = "\improper Syndicate ship component fabricator"
 	team_num = TEAM_SYNDICATE
-	add_team_armor()
-		available += list(
+	available = list(
+		/datum/manufacture/pod/preassembeled_parts,
+		/datum/manufacture/putt/preassembeled_parts,
+		/datum/manufacture/pod_wars/lock,
+		/datum/manufacture/engine2,
+		/datum/manufacture/engine3,
+		/datum/manufacture/pod/lock,
+		/datum/manufacture/pod/lateral_thrusters,
+		/datum/manufacture/pod/afterburner,
+		/datum/manufacture/pod/light_shielding,
+		/datum/manufacture/pod/heavy_shielding,
+		/datum/manufacture/pod/auto_repair_kit,
+		/datum/manufacture/pod/weapons_loader,
+		/datum/manufacture/pod/gunner_support,
+		/datum/manufacture/cargohold,
+		/datum/manufacture/storagehold,
+		/datum/manufacture/orescoop,
+		/datum/manufacture/conclave,
+		/datum/manufacture/communications/mining,
+		/datum/manufacture/pod/weapon/mining_podwars,
+		/datum/manufacture/pod/weapon/mining/drill,
+		/datum/manufacture/pod/weapon/ltlaser,
+		/datum/manufacture/pod/weapon/burst_ltlaser,
+		/datum/manufacture/pod/weapon/mining_weak,
+		/datum/manufacture/pod/weapon/taser,
+		/datum/manufacture/pod/weapon/laser/short,
+		/datum/manufacture/pod/weapon/laser,
+		/datum/manufacture/pod/weapon/disruptor,
+		/datum/manufacture/pod/weapon/disruptor/light,
+		/datum/manufacture/pod/weapon/shotgun,
+		/datum/manufacture/pod/weapon/salvo_rockets,
+		/datum/manufacture/pod/weapon/hammer_railgun,
 		/datum/manufacture/pod_wars/pod/armor_light/sy,
 		/datum/manufacture/pod_wars/pod/armor_robust/sy
 		)
@@ -86,82 +141,113 @@
 ////////////////pod-weapons//////////////////
 /datum/manufacture/pod/weapon/mining_weak
 	name = "Mining Phaser System"
-	item_paths = list("MET-1","CON-1")
-	item_amounts = list(10,10)
+	item_requirements = list("metal" = 10,
+							 "conductive" = 10)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/bad_mining)
-	time = 5 SECONDS
 	create = 1
-	category = "Tool"
+	time = 5 SECONDS
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/mining_podwars
 	name = "Plasma Cutter System"
-	item_paths = list("MET-2","CON-2", "telecrystal")
-	item_amounts = list(50,50,10)
+	item_requirements = list("metal_dense" = 50,
+							 "conductive_high" = 50,
+							 "telecrystal" = 10)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/mining)
-	time = 5 SECONDS
 	create = 1
-	category = "Tool"
+	time = 5 SECONDS
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/taser
 	name = "Mk.1 Combat Taser"
-	item_paths = list("MET-2","CON-1","CRY-1")
-	item_amounts = list(20,20,30)
+	item_requirements = list("metal_dense" = 20,
+							 "conductive" = 20,
+							 "crystal" = 30)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/taser)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/laser
 	name = "Mk.2 Scout Laser"
-	item_paths = list("MET-2","CON-1","CRY-1")
-	item_amounts = list(25,40,30)
+	item_requirements = list("metal_dense" = 25,
+							 "conductive" = 40,
+							 "crystal" = 30)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/laser)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/laser/short
 	name = "Mk.2 CQ Laser"
-	item_paths = list("MET-2","CON-1","CRY-1")
-	item_amounts = list(20,20,20)
+	item_requirements = list("metal_dense" = 20,
+							 "conductive" = 20,
+							 "crystal" = 20)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/laser/short)
 	time = 10 SECONDS
 
 /datum/manufacture/pod/weapon/disruptor
 	name = "Heavy Disruptor Array"
-	item_paths = list("MET-3","CON-2","CRY-1", "telecrystal")
-	item_amounts = list(20,20,50, 20)
+	item_requirements = list("metal_superdense" = 20,
+							 "conductive_high" = 20,
+							 "crystal" = 50,
+							 "telecrystal" = 20)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/disruptor)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/disruptor/light
 	name = "Mk.3 Disruptor"
-	item_paths = list("MET-2","CON-1","CRY-1")
-	item_amounts = list(20,30,30)
+	item_requirements = list("metal_dense" = 20,
+							 "conductive" = 30,
+							 "crystal" = 30)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/disruptor_light)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/ass_laser
 	name = "Mk.4 Assault Laser"
-	item_paths = list("MET-3","CON-2","CRY-1", "telecrystal")
-	item_amounts = list(35,30,30, 30)
+	item_requirements = list("metal_superdense" = 35,
+							 "conductive_high" = 30,
+							 "crystal" = 30,
+							 "telecrystal" = 30)
 	item_outputs = list(/obj/item/shipcomponent/mainweapon/laser_ass)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
+
+/datum/manufacture/pod/weapon/hammer_railgun
+	name = "Hammerhead Railgun"
+	item_requirements = list("metal_dense" = 20,
+							 "conductive_high" = 40,
+							 "energy_high" = 30)
+	item_outputs = list(/obj/item/shipcomponent/mainweapon/hammer_railgun)
+	create = 1
+	time = 10 SECONDS
+	category = MANUFACTURER::CATEGORY::TOOL
 
 /datum/manufacture/pod/weapon/shotgun
 	name = "SPE-12 Ballistic System"
-	item_paths = list("MET-3","CON-2","CRY-1")
-	item_amounts = list(50,40,10)
-	item_outputs = list(/obj/item/shipcomponent/mainweapon/gun)
+	item_requirements = list("metal_superdense" = 50,
+							 "conductive_high" = 40,
+							 "crystal" = 10)
+	item_outputs = list(/obj/item/shipcomponent/mainweapon/gun/pod_wars)
+	create = 1
 	time = 10 SECONDS
-	create  = 1
-	category = "Tool"
+	category = MANUFACTURER::CATEGORY::TOOL
+
+/datum/manufacture/pod/weapon/salvo_rockets
+	name = "Cerberus Salvo Rockets"
+	item_requirements = list("metal_superdense" = 30,
+							 "conductive_high" = 10,
+							 "crystal" = 10,
+							 "erebite" = 10)
+	item_outputs = list(/obj/item/shipcomponent/mainweapon/salvo_rockets)
+	create = 1
+	time = 10 SECONDS
+	category = MANUFACTURER::CATEGORY::TOOL
 
 ////////////pod-armor///////////////////////
 
@@ -171,12 +257,12 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 
 /datum/manufacture/pod_wars/pod/armor_light
 	name = "Light NT Pod Armor"
-	item_paths = list("MET-3","CON-1")
-	item_amounts = list(50,50)
+	item_requirements = list("metal_superdense" = 50,
+							 "conductive" = 50)
 	item_outputs = list(/obj/item/podarmor/armor_light)
-	time = 20 SECONDS
 	create = 1
-	category = "Component"
+	time = 20 SECONDS
+	category = MANUFACTURER::CATEGORY::COMPONENT
 
 /datum/manufacture/pod_wars/pod/armor_light/nt
 	name = "Light NT Pod Armor"
@@ -188,12 +274,13 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 
 /datum/manufacture/pod_wars/pod/armor_robust
 	name = "Heavy Pod Armor"
-	item_paths = list("MET-3","CON-2", "DEN-3")
-	item_amounts = list(50,30, 10)
+	item_requirements = list("metal_superdense" = 50,
+							 "conductive_high" = 30,
+							 "crystal_dense" = 10)
 	item_outputs = list(/obj/item/podarmor/armor_heavy)
-	time = 30 SECONDS
 	create = 1
-	category = "Component"
+	time = 30 SECONDS
+	category = MANUFACTURER::CATEGORY::COMPONENT
 
 /datum/manufacture/pod_wars/pod/armor_robust/nt
 	name = "Robust NT Pod Armor"
@@ -206,39 +293,42 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 //costs a good bit more than the standard jetpack. for balance reasons here. to make jetpacks a commodity.
 /datum/manufacture/pod_wars/jetpack
 	name = "Jetpack"
-	item_paths = list("MET-2","CON-1")
-	item_amounts = list(30,50)
+	item_requirements = list("metal_dense" = 30,
+							 "conductive" = 50)
 	item_outputs = list(/obj/item/tank/jetpack)
-	time = 60 SECONDS
 	create = 1
-	category = "Clothing"
+	time = 60 SECONDS
+	category = MANUFACTURER::CATEGORY::CLOTHING
 
 /datum/manufacture/pod_wars/jetpack/syndicate
 	name = "Jetpack"
-	item_paths = list("MET-2","CON-1")
-	item_amounts = list(30,50)
+	item_requirements = list("metal_dense" = 30,
+							 "conductive" = 50)
 	item_outputs = list(/obj/item/tank/jetpack/syndicate)
-	time = 60 SECONDS
 	create = 1
-	category = "Clothing"
+	time = 60 SECONDS
+	category = MANUFACTURER::CATEGORY::CLOTHING
 
 /datum/manufacture/pod_wars/industrialboots
 	name = "Mechanised Boots"
-	item_paths = list("MET-3","CON-2","POW-2", "DEN-2")
-	item_amounts = list(50,50,70,50)
+	item_requirements = list("metal_superdense" = 50,
+							 "conductive_high" = 50,
+							 "energy_high" = 70,
+							 "dense_super" = 50)
 	item_outputs = list(/obj/item/clothing/shoes/industrial)
-	time = 120 SECONDS
 	create = 1
-	category = "Clothing"
+	time = 120 SECONDS
+	category = MANUFACTURER::CATEGORY::CLOTHING
 
 /datum/manufacture/pod_wars/accumulator
 	name = "Mineral Accumulator"
-	item_paths = list("MET-2","CON-2","DEN-1")
-	item_amounts = list(25,15,2)
+	item_requirements = list("metal_dense" = 25,
+							 "conductive_high" = 15,
+							 "dense" = 2)
 	item_outputs = list(/obj/machinery/oreaccumulator)
-	time = 120 SECONDS
 	create = 1
-	category = "Machinery"
+	time = 120 SECONDS
+	category = MANUFACTURER::CATEGORY::MACHINERY
 
 /datum/manufacture/pod_wars/accumulator/syndicate
 	name = "Syndicate Mineral Accumulator"
@@ -250,20 +340,25 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 
 /datum/manufacture/pod_wars/medical_refill
 	name = "NanoMed Refill Cartridge"
+	item_requirements = list("metal" = 25,
+							 "fabric" = 25,
+							 "dense" = 20)
 	item_outputs = list(/obj/item/vending/restock_cartridge/medical)
-	item_paths = list("MET-1","FAB-1","DEN-1")
-	item_amounts = list(25,25,20)
 	time = 60 SECONDS
-	category = "Ammo"
+	category = MANUFACTURER::CATEGORY::AMMO
 
 /obj/machinery/manufacturer/mining/pod_wars/
 	var/team_num = 0
+	free_resources = list(
+		/obj/item/material_piece/mauxite = 20,
+		/obj/item/material_piece/pharosium = 20,
+		/obj/item/material_piece/molitz = 20)
 
 	New()
 		START_TRACKING
 		available -= /datum/manufacture/ore_accumulator
 		available -= /datum/manufacture/jetpack
-
+		available -= /datum/manufacture/industrialarmor
 		available -= /datum/manufacture/industrialboots
 		available += /datum/manufacture/pod_wars/industrialboots
 
@@ -274,19 +369,13 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 		STOP_TRACKING
 		..()
 
-	claim_free_resources(datum/game_mode/pod_wars/PW)
-		if (team_num == TEAM_NANOTRASEN)
-			src.resource_amounts = PW.team_NT.resources
-		else if (team_num == TEAM_SYNDICATE)
-			src.resource_amounts = PW.team_SY.resources
-		..()
-
 /obj/machinery/manufacturer/mining/pod_wars/syndicate
 	team_num = TEAM_SYNDICATE
 
 	New()
 		available += /datum/manufacture/pod_wars/accumulator/syndicate
 		available += /datum/manufacture/pod_wars/jetpack/syndicate
+		available += /datum/manufacture/pod_wars_industrialarmor_SY
 		..()
 
 /obj/machinery/manufacturer/mining/pod_wars/nanotrasen
@@ -295,6 +384,7 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 	New()
 		available += /datum/manufacture/pod_wars/accumulator/nanotrasen
 		available += /datum/manufacture/pod_wars/jetpack
+		available += /datum/manufacture/pod_wars_industrialarmor_NT
 		..()
 
 /obj/machinery/manufacturer/medical/pod_wars
@@ -306,102 +396,128 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 
 /datum/manufacture/pod_wars/cell_high
 	name = "Standard Large Weapon Cell"
-	item_paths = list("MET-2", "CON-2", "POW-1")
-	item_amounts = list(5, 20, 30)
+	item_requirements = list("metal_dense" = 5,
+							 "conductive_high" = 20,
+							 "energy" = 30)
 	item_outputs = list(/obj/item/ammo/power_cell/high_power)
-	time = 1 SECONDS
 	create = 1
-	category = "Ammo"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::AMMO
 
 /datum/manufacture/pod_wars/cell_higher
 	name = "Standard Bubs Weapon Cell"
-	item_paths = list("MET-3", "CON-2", "POW-1", "telecrystal")
-	item_amounts = list(5, 20, 60, 20)
+	item_requirements = list("metal_superdense" = 5,
+							 "conductive_high" = 20,
+							 "energy" = 60,
+							 "telecrystal" = 20)
 	item_outputs = list(/obj/item/ammo/power_cell/higher_power)
-	time = 1 SECONDS
 	create = 1
-	category = "Ammo"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::AMMO
 
 ////////////////////////////
 
 /datum/manufacture/pod_wars/cell_pod_wars_basic
 	name = "Basic Self-Charging Weapon Cell"
-	item_paths = list("MET-2", "DEN-1", "CON-2", "POW-1")
-	item_amounts = list(10, 20, 30, 30)
+	item_requirements = list("metal_dense" = 10,
+							 "dense" = 20,
+							 "conductive_high" = 30,
+							 "energy" = 30)
 	item_outputs = list(/obj/item/ammo/power_cell/self_charging/pod_wars_basic)
-	time = 1 SECONDS
 	create = 1
-	category = "Ammo"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::AMMO
 
 /datum/manufacture/pod_wars/cell_pod_wars_standard
 	name = "Standard Self-Charging Weapon Cell"
-	item_paths = list("DEN-2", "CON-2", "POW-1", "telecrystal")
-	item_amounts = list(30, 60, 50, 10)
+	item_requirements = list("dense_super" = 30,
+							 "conductive_high" = 60,
+							 "energy" = 50,
+							 "telecrystal" = 10)
 	item_outputs = list(/obj/item/ammo/power_cell/self_charging/pod_wars_standard)
-	time = 1 SECONDS
 	create = 1
-	category = "Ammo"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::AMMO
 
 /datum/manufacture/pod_wars/cell_pod_wars_high
 	name = "Robust Self-Charging Weapon Cell"
-	item_paths = list("DEN-2", "CON-2", "POW-2", "telecrystal")
-	item_amounts = list(30, 70, 30, 30)
+	item_requirements = list("dense_super" = 30,
+							 "conductive_high" = 70,
+							 "energy_high" = 30,
+							 "telecrystal" = 30)
 	item_outputs = list(/obj/item/ammo/power_cell/self_charging/pod_wars_high)
-	time = 1 SECONDS
 	create = 1
-	category = "Ammo"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::AMMO
 
 
 
 //It's cheap, use it!
 /datum/manufacture/pod_wars/lock
 	name = "Pod Lock (ID Card)"
-	item_paths = list("MET-1")
-	item_amounts = list(1)
+	item_requirements = list("metal" = 1)
 	item_outputs = list(/obj/item/shipcomponent/secondary_system/lock/pw_id)
-	time = 1 SECONDS
 	create = 1
-	category = "Miscellaneous"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::MISCELLANEOUS
 
 /datum/manufacture/pod_wars/barricade
 	name = "Deployable Barricade"
-	item_paths = list("MET-2")
-	item_amounts = list(5)
+	item_requirements = list("metal_dense" = 5)
 	item_outputs = list(/obj/item/deployer/barricade)
-	time = 1 SECONDS
 	create = 1
-	category = "Miscellaneous"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::MISCELLANEOUS
 
 /datum/manufacture/pod_wars/energy_concussion_grenade
-
 	name = "Concussion Grenade"
-	item_paths = list("MET-1", "CON-1", "telecrystal")
-	item_amounts = list(5, 5, 5)
+	item_requirements = list("metal" = 5,
+							 "conductive" = 5,
+							 "telecrystal" = 5)
 	item_outputs = list(/obj/item/old_grenade/energy_concussion)
-	time = 1 SECONDS
 	create = 1
-	category = "Weapon"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::WEAPON
+
 
 /datum/manufacture/pod_wars/energy_frag_grenade
-
 	name = "Blast Grenade"
-	item_paths = list("MET-2", "CON-2", "telecrystal")
-	item_amounts = list(5, 5, 5)
+	item_requirements = list("metal_dense" = 5,
+							 "conductive_high" = 5,
+							 "telecrystal" = 5)
 	item_outputs = list(/obj/item/old_grenade/energy_frag)
-	time = 1 SECONDS
 	create = 1
-	category = "Weapon"
+	time = 1 SECONDS
+	category = MANUFACTURER::CATEGORY::WEAPON
+
 
 /datum/manufacture/pod_wars/handcuffs
-
 	name = "Handcuffs"
-	item_paths = list("MET-1")
-	item_amounts = list(5)
+	item_requirements = list("metal" = 5)
 	item_outputs = list(/obj/item/handcuffs)
-	time = 2 SECONDS
 	create = 1
-	category = "Weapon"
+	time = 2 SECONDS
+	category = MANUFACTURER::CATEGORY::WEAPON
 
+/datum/manufacture/pod_wars_industrialarmor_NT
+	name = "Industrial Space Armor Set"
+	item_requirements = list("metal_superdense" = 15,
+							 "conductive_high" = 10,
+							 "crystal_dense" = 5)
+	item_outputs = list(/obj/item/clothing/suit/space/pod_wars/NT/industrial, /obj/item/clothing/head/helmet/space/pod_wars/NT/industrial)
+	create = 1
+	time = 90 SECONDS
+	category = MANUFACTURER::CATEGORY::CLOTHING
+
+/datum/manufacture/pod_wars_industrialarmor_SY
+	name = "Industrial Space Armor Set"
+	item_requirements = list("metal_superdense" = 15,
+							 "conductive_high" = 10,
+							 "crystal_dense" = 5)
+	item_outputs = list(/obj/item/clothing/suit/space/pod_wars/SY/industrial, /obj/item/clothing/head/helmet/space/pod_wars/SY/industrial)
+	create = 1
+	time = 90 SECONDS
+	category = MANUFACTURER::CATEGORY::CLOTHING
 
 /obj/machinery/chem_dispenser/medical
 	name = "medical reagent dispenser"
@@ -410,7 +526,7 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 		 "salbutamol", "anti_rad",\
 		"oculine", "mannitol", "saline",\
 		"salicylic_acid", "blood",\
-		"menthol", "antihistamine")
+		"menthol", "antihistamine", "oculine")
 
 	icon_state = "dispenser"
 	icon_base = "dispenser"
@@ -421,8 +537,8 @@ ABSTRACT_TYPE(/datum/manufacture/pod_wars/pod)
 	dispensable_reagents = list("antihol", "charcoal", "epinephrine", "mutadone", "proconvertin", "filgrastim", "atropine",\
 	"salbutamol", "perfluorodecalin", "synaptizine", "anti_rad",\
 	"oculine", "mannitol", "penteticacid", "saline",\
-	"salicylic_acid", "blood", \
-	"menthol", "antihistamine", "smelling_salt")
+	"salicylic_acid","acetylsalicylic_acid", "blood", \
+	"menthol", "antihistamine", "smelling_salt", "oculine")
 
 /obj/machinery/manufacturer/general/pod_wars
 	New()

@@ -26,7 +26,6 @@
 	asteroiddoors
 		name = "Safehouse (asteroid doors)"
 		icon_state = "green"
-		force_fullbright = 1
 
 //TURFS
 
@@ -58,22 +57,23 @@
 	desc = "A free-floating mineral deposit from space."
 	icon_base = "adoor"
 	doordir = "single"
-	color = "#cccccc" //To match with asteroid var/stone_color, change if you need it to match something.
+	plane = PLANE_NOSHADOW_BELOW
+	color = "#D1E6FF" //To match with asteroid var/stone_color, change if you need it to match something.
 
-	flags = FPRINT | IS_PERSPECTIVE_FLUID | ALWAYS_SOLID_FLUID //The poddoors aren't inherently fullbright, need a suitable turf or area underneath.
+	flags = IS_PERSPECTIVE_FLUID | FLUID_DENSE //The poddoors aren't inherently fullbright, need a suitable turf or area underneath.
 
 	podbay_autoclose
-		autoclose = 1
+		autoclose = TRUE
 
 		asteroid_horizontal
-			name = "podbay (asteroid)"
+			name = "asteroid"
 			id = "podbay_saferoom"
 			dir = NORTH
 
 			vertical
 				dir = EAST
 
-/obj/machinery/door_control/podbay/suspiciousdebris/
+/obj/machinery/door_control/podbay/suspiciousdebris
 	name = "suspicious debris"
 	id = "podbay_safehouse"
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
@@ -92,12 +92,13 @@
 
 	initializeBioholder() //We need bioholder data intialised so we can use it elsewhere.
 		bioHolder.ownerName = name
-		bioHolder.mobAppearance.customization_first = new /datum/customization_style/moustache/vandyke
-		bioHolder.mobAppearance.customization_first_color = "#241200"
-		bioHolder.mobAppearance.customization_second = new /datum/customization_style/none
-		bioHolder.mobAppearance.customization_second_color = "#241200"
-		bioHolder.mobAppearance.customization_third = new /datum/customization_style/none
-		bioHolder.mobAppearance.customization_third_color = "#241200"
+		bioHolder.ownerType = src.type
+		bioHolder.mobAppearance.customizations["hair_bottom"].style =  new /datum/customization_style/moustache/vandyke
+		bioHolder.mobAppearance.customizations["hair_bottom"].color = "#241200"
+		bioHolder.mobAppearance.customizations["hair_middle"].style =  new /datum/customization_style/none
+		bioHolder.mobAppearance.customizations["hair_middle"].color = "#241200"
+		bioHolder.mobAppearance.customizations["hair_top"].style =  new /datum/customization_style/none
+		bioHolder.mobAppearance.customizations["hair_top"].color = "#241200"
 		bioHolder.mobAppearance.e_color = "#363978"
 		bioHolder.mobAppearance.s_tone = "#FFCC99"
 		bioHolder.age = 52
@@ -106,7 +107,7 @@
 		bioHolder.mobAppearance.underwear = "none"
 		bioHolder.mobAppearance.u_color = "#FFFFFF"
 		bioHolder.Uid = bioHolder.CreateUid()
-		bioHolder.uid_hash = md5(bioHolder.Uid)
+		bioHolder.build_fingerprints()
 		. = ..()
 
 obj/item/reagent_containers/iv_drip/dead_exec
@@ -147,7 +148,7 @@ obj/item/reagent_containers/iv_drip/dead_exec
 	if(ON_COOLDOWN(src, "bio_handscanner_attackby", cooldown)) // To reduce chat spam in case of multi-click
 		return
 	if(istype(W, /obj/item/parts/human_parts/arm/))
-		boutput(user, "<span class='alert'>ERROR: no pulse detected.</span>")
+		boutput(user, SPAN_ALERT("ERROR: no pulse detected."))
 	if(istype(W, /obj/item/card/emag))
 		boutput(user, "You short out the hand scanner's circuits. So much for cutting edge.")
 		for(var/obj/machinery/door/poddoor/M in by_type[/obj/machinery/door])
@@ -157,15 +158,15 @@ obj/item/reagent_containers/iv_drip/dead_exec
 				else
 					M.close()
 
-/obj/machinery/bio_handscanner/attack_hand(mob/user as mob)
+/obj/machinery/bio_handscanner/attack_hand(mob/user)
 	src.add_fingerprint(user)
-	if(ON_COOLDOWN(src, "bio_handscanner_attackhhand", cooldown)) // To reduce chat spam in case of multi-click
+	if(ON_COOLDOWN(src, "bio_handscanner_attackhand", cooldown)) // To reduce chat spam in case of multi-click
 		return
-	playsound(src.loc, "sound/effects/handscan.ogg", 50, 1)
+	playsound(src.loc, 'sound/effects/handscan.ogg', 50, 1)
 	if(ishuman(user))
 		var/mob/living/carbon/human/H = user
 		if(H.bioHolder.Uid == allowed_bioHolders) //Are you the authorised bioHolder (for all intents and purposes)?
-			user.visible_message("<span class='notice'>The [src] accepts the biometrics of the hand and beeps.</span>")
+			user.visible_message(SPAN_NOTICE("The [src] accepts the biometrics of the hand and beeps."))
 			for(var/obj/machinery/door/poddoor/M in by_type[/obj/machinery/door])
 				if(M.id == src.id)
 					if(M.density)
@@ -173,14 +174,14 @@ obj/item/reagent_containers/iv_drip/dead_exec
 					else
 						M.close()
 		else
-			boutput(user, "<span class='alert'>Invalid biometric profile. Access denied.</span>")
+			boutput(user, SPAN_ALERT("Invalid biometric profile. Access denied."))
 
-/obj/decal/fakeobjects/safehouse/cloner
+/obj/fakeobject/safehouse/cloner
 	name = "lazarus H-16 cloning pod"
 	desc = "An advanced cloning pod, designed to be operated automatically through packets. What a great idea!"
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "cloner1"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	layer = 3.1
 	var/datum/light/light
@@ -194,26 +195,27 @@ obj/item/reagent_containers/iv_drip/dead_exec
 		light.attach(src)
 		light.enable()
 
-		var/mob/living/carbon/human/dead_exec/M //Setting up the puzzle
-		M = new /mob/living/carbon/human/dead_exec(src.loc) //aka Jean
-		var/datum/bioHolder/D = new/datum/bioHolder(null)
-		D.CopyOther(M.bioHolder)
+		SPAWN(5 SECONDS) //give it a sec
+			var/mob/living/carbon/human/dead_exec/M //Setting up the puzzle
+			M = new /mob/living/carbon/human/dead_exec(src.loc) //aka Jean
+			var/datum/bioHolder/D = new/datum/bioHolder(null)
+			D.CopyOther(M.bioHolder)
 
-		for_by_tcl(O, /obj/machinery/bio_handscanner)
-			O.allowed_bioHolders = D.Uid //Copy the Uid only, copying and comparing against all bioHolder data is too prone to error.
+			for_by_tcl(O, /obj/machinery/bio_handscanner)
+				O.allowed_bioHolders = D.Uid //Copy the Uid only, copying and comparing against all bioHolder data is too prone to error.
 
-		for_by_tcl(O, /obj/item/reagent_containers/iv_drip/dead_exec)
-			if(!O.reagents.has_reagent("blood"))
-				return
-			var/datum/reagent/blood/B = O.reagents.reagent_list["blood"]
-			B.data = D //Give the blood Jean's bioHolder info.
+			for_by_tcl(O, /obj/item/reagent_containers/iv_drip/dead_exec)
+				if(!O.reagents.has_reagent("blood"))
+					return
+				var/datum/reagent/blood/B = O.reagents.reagent_list["blood"]
+				B.data = D //Give the blood Jean's bioHolder info.
 
-		SPAWN_DBG(5 SECONDS) //Jean's just here to set up the puzzle, we don't want him sticking around.
-		qdel(M)
+			sleep(5 SECONDS) //Jean's just here to set up the puzzle, we don't want him sticking around.
+			qdel(M)
 
-	attack_hand(mob/user as mob)
-		boutput(user, "An advanced cloning pod, designed to be operated automatically through packets. What a great idea!<br>Currently idle.<br><span class='alert'>Biomatter reserves are depleted.</span>")
-		playsound(src.loc, "sound/impact_sounds/Generic_Stab_1.ogg", 25, 1)
+	attack_hand(mob/user)
+		boutput(user, "An advanced cloning pod, designed to be operated automatically through packets. What a great idea!<br>Currently idle.<br>[SPAN_ALERT("Alert: Biomatter reserves are low (5% full).")]")
+		playsound(src.loc, 'sound/impact_sounds/Generic_Stab_1.ogg', 25, 1)
 		src.add_fingerprint(user)
 		return
 
@@ -267,36 +269,34 @@ obj/item/reagent_containers/iv_drip/dead_exec
 					attempt_remote_scan(src.owner)
 
 	on_death()
+		. = ..()
 		if(!ishuman(src.owner))
 			return
 		attempt_remote_scan(src.owner)
 
 	proc/attempt_remote_scan(mob/living/carbon/human/H)
 		for_by_tcl(C, /obj/machinery/computer/cloning) //Scan success or corruption is on a by-computer basis, results allowed to differ.
-			C.scan_mob(H) //Take advantage of scan_mob's checks
-			var/datum/db_record/R = new /datum/db_record()
-			R = C.find_record(H.ckey)
-			if(!isnull(R))// Proceed if scan was a success or user has been scanned previously, our broadcast is interfering with the existing scan.
+			var/datum/computer/file/clone/clone_file = C.scan_mob(H) //Take advantage of scan_mob's checks
+			if(!isnull(clone_file))// Proceed if scan was a success or user has been scanned previously, our broadcast is interfering with the existing scan.
 				boutput(H,"Link to cloning computer establised succesfully.")
 				playsound(src.loc, 'sound/machines/ping.ogg', 50, 1)
 				var/has_puritan = FALSE
-				var/datum/traitHolder/traits = R["traits"]
+				var/datum/traitHolder/traits = clone_file["traits"]
 				if(traits.hasTrait("puritan")) //Does the user's clone record have puritan?
 					has_puritan = TRUE
-					boutput(H,"Subject had puritan")
 				if(prob(20) && !has_puritan) //If the scan doesn't have puritan, roll a dice. Too uncommon to weaponise too common for general use.
 					traits.addTrait("puritan") // Signal has degraded. Did the player learn nothing from the prefab??
 
 //DECORATIVE OBJECTS
 
-/obj/decal/fakeobjects/beacon
+/obj/fakeobject/beacon
 	name = "broken beacon"
 	desc = "A small tracking beacon in fairly poor condition. What's it doing all the way out here?"
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "beaconbroken"
-	anchored = 1
+	anchored = ANCHORED
 
-/obj/item/disk/data/fixed_disk/safehouse_rdrive
+/obj/item/disk/data/fixed_disk/hd64/safehouse_rdrive
 	New()
 		..()
 		//First off, create the directory for logging stuff
@@ -322,24 +322,27 @@ obj/item/reagent_containers/iv_drip/dead_exec
 
 /obj/machinery/computer3/generic/personal/safehouse
 	name = "Computer Console"
-	setup_drive_type = /obj/item/disk/data/fixed_disk/safehouse_rdrive
-	setup_starting_peripheral1 = /obj/item/peripheral/network/powernet_card
+	setup_drive_type = /obj/item/disk/data/fixed_disk/hd64/safehouse_rdrive
+	setup_starting_peripherals = list(
+			/obj/item/peripheral/card_scanner,
+			/obj/item/peripheral/drive,
+			/obj/item/peripheral/network/powernet_card)
 
 /obj/item/storage/briefcase/safehouse
 	name = "suspicious briefcase"
 	desc = "One of those briefcases spies leave at park benches."
 	spawn_contents = list(/obj/item/paper/safehouse/cloner_note)
 
-	New()
+	make_my_stuff()
 		..()
-		var/obj/item/spacecash/random/tourist/S1 = new /obj/item/spacecash/random/tourist
-		S1.setup(src)
-		var/obj/item/spacecash/random/tourist/S2 = new /obj/item/spacecash/random/tourist
-		S2.setup(src)
-		var/obj/item/spacecash/random/tourist/S3 = new /obj/item/spacecash/random/tourist
-		S3.setup(src)
-		var/obj/item/spacecash/random/tourist/S4 = new /obj/item/spacecash/random/tourist
-		S4.setup(src)
+		var/obj/item/currency/spacecash/tourist/S1 = new /obj/item/currency/spacecash/tourist
+		S1.setup(src, try_add_to_storage = TRUE)
+		var/obj/item/currency/spacecash/tourist/S2 = new /obj/item/currency/spacecash/tourist
+		S2.setup(src, try_add_to_storage = TRUE)
+		var/obj/item/currency/spacecash/tourist/S3 = new /obj/item/currency/spacecash/tourist
+		S3.setup(src, try_add_to_storage = TRUE)
+		var/obj/item/currency/spacecash/tourist/S4 = new /obj/item/currency/spacecash/tourist
+		S4.setup(src, try_add_to_storage = TRUE)
 
 /obj/decal/poster/wallsign/dead_exec_portrait
 	name = "executive portrait"
@@ -349,8 +352,8 @@ obj/item/reagent_containers/iv_drip/dead_exec
 	pixel_x = 0;
 	pixel_y = 26
 
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='notice'>You check behind the [src.name] for a hidden safe, but don't find anything.</span>")
+	attack_hand(mob/user)
+		boutput(user, SPAN_NOTICE("You check behind the [src.name] for a hidden safe, but don't find anything."))
 		src.add_fingerprint(user)
 		return
 
@@ -362,8 +365,8 @@ obj/item/reagent_containers/iv_drip/dead_exec
 	pixel_x = 0;
 	pixel_y = 10
 
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='notice'>You rub the sculpture's bald head for luck.</span>")
+	attack_hand(mob/user)
+		boutput(user, SPAN_NOTICE("You rub the sculpture's bald head for luck."))
 		src.add_fingerprint(user)
 		return
 
@@ -373,106 +376,106 @@ obj/item/reagent_containers/iv_drip/dead_exec
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "scuffmarks"
 
-/obj/decal/fakeobjects/recordplayer
+/obj/fakeobject/recordplayer
 	name = "old record player"
 	desc = "An old fashioned turntable for playing vinyl. Doesn't appear to be plugged in."
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "recordplayer"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	attackby(obj/item/W, mob/user)
 		if(istype(W, /obj/item/record))
-			src.visible_message("<span class='notice'><b>[user] attempts to place the 12 inch record on the 7 inch turntable, but it obviously doesn't fit. How embarassing!</b></span>")
+			src.visible_message(SPAN_NOTICE("<b>[user] attempts to place the 12 inch record on the 7 inch turntable, but it obviously doesn't fit. How embarassing!</b>"))
 		return
 
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='notice'>You fiddle with the [src.name] but you can't seem to get it working.</span>")
+	attack_hand(mob/user)
+		boutput(user, SPAN_NOTICE("You fiddle with the [src.name] but you can't seem to get it working."))
 		src.add_fingerprint(user)
 		return
 
-/obj/decal/fakeobjects/safehouse/reclaimer
+/obj/fakeobject/safehouse/reclaimer
 	name = "enzymatic reclaimer"
 	desc = "A tank resembling a rather large blender, designed to recover biomatter for use in cloning."
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "reclaimer"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	layer = 3.1 //I mess with layers here & below to help me set-up the clone room. Quite a bit was var-edited in StrongDMM as well.
 
-	attack_hand(mob/user as mob)
-		boutput(user, "<span class='notice'>You try to activate the [src.name] but nothing happens! Looks like it's jammed</span>")
+	attack_hand(mob/user)
+		boutput(user, SPAN_NOTICE("You try to activate the [src.name] but nothing happens! Looks like it's jammed"))
 		src.add_fingerprint(user)
 		return
 
-/obj/decal/fakeobjects/safehouse/biomatter_tank
+/obj/fakeobject/safehouse/biomatter_tank
 	name = "biomatter reserve tank"
 	desc = "A reserve tank for storing large quantities of biomatter. You could clone a small army with a tank that size."
 	icon = 'icons/obj/large/32x48.dmi'
 	icon_state = "biomatter_tank0"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	layer = 3.1
 
-/obj/decal/fakeobjects/safehouse/biotube
+/obj/fakeobject/safehouse/biotube
 	name = "biomatter transfer pipe"
 	desc = "A large pipe for transporting fluid. It looks very durable."
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "biotube"
-	anchored = 1
+	anchored = ANCHORED
 	layer = 2.8
 
-/obj/decal/fakeobjects/safehouse/conduit
+/obj/fakeobject/safehouse/conduit
 	name = "electrical conduit"
 	desc = "An electrical conduit. The casing is welded on"
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "conduit"
-	anchored = 1
+	anchored = ANCHORED
 	layer = 2.8
 
-/obj/decal/fakeobjects/safehouse/mechcomp_cabinet
+/obj/fakeobject/safehouse/mechcomp_cabinet
 	name = "component cabinets"
 	desc = "A pair of cabinets containing mechanical components, set up to automate operation of the cloner. Technology is incredible!"
 	icon = 'icons/obj/large/32x48.dmi'
 	icon_state = "cabinets1"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	layer = 3.1
 
-/obj/decal/fakeobjects/safehouse/cloning_console
+/obj/fakeobject/safehouse/cloning_console
 	name = "cloning console"
 	desc = "A console used to operate a cloning scanner and pod. This one looks like it's seen better days."
 	icon = 'icons/obj/computer.dmi'
 	icon_state = "scannerb"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	layer = 3.1
 
-/obj/decal/fakeobjects/safehouse/dead_exec
+/obj/fakeobject/safehouse/dead_exec
 	name = "dead clone"
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "deadexecclean"
-	anchored = 1
+	anchored = ANCHORED
 	layer = 2.9
 
 	bloody
 		name = "bloody clone"
 		icon_state = "deadexecbloody"
 
-/obj/decal/fakeobjects/safehouse/airhandlingunit
+/obj/fakeobject/safehouse/airhandlingunit
 	name = "air handling unit"
 	desc = "This a recirculating air handling unit designed to keep ambient conditions within comfortable limits."
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "airhandlingunit"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 
-/obj/decal/fakeobjects/safehouse/airfilter
+/obj/fakeobject/safehouse/airfilter
 	name = "air filter"
 	desc = "This is a filter for scrubbing CO2 and other harmful gases out the air. The 'filter clogged' alarm is lit up."
 	icon = 'icons/obj/adventurezones/safehouse.dmi'
 	icon_state = "filter1"
-	anchored = 1
+	anchored = ANCHORED
 	density = 1
 	var/datum/light/light
 
@@ -480,7 +483,7 @@ obj/item/reagent_containers/iv_drip/dead_exec
 		..()
 		light = new/datum/light/point //We want this to stand out in the dark & draw the player to examine it.
 		light.set_brightness(0.3)
-		light.set_color(1, 0.50, 0.50)
+		light.set_color(1, 0.5, 0.5)
 		light.attach(src)
 		light.enable()
 
@@ -581,7 +584,7 @@ obj/item/reagent_containers/iv_drip/dead_exec
 		<br> Head Researcher, VitaNova</span>
 		"}
 
-/datum/computer/file/record/saferoom/
+/datum/computer/file/record/saferoom
 	New()
 		..()
 		src.name = "[copytext("\ref[src]", 4, 12)]GENERIC"
@@ -669,12 +672,12 @@ obj/item/reagent_containers/iv_drip/dead_exec
 "",
 "Here's your order summary:",
 "",
-"CO2 Filters - 4 off - $1400",
+"CO2 Filters - 4 off - 1400[CREDIT_SIGN]",
 "",
-"Subtotal: $1400",
-"Shipping: $40",
-"Discount $0",
-"Grand Total: $1440",
+"Subtotal: 1400[CREDIT_SIGN]",
+"Shipping: 40[CREDIT_SIGN]",
+"Discount 0[CREDIT_SIGN]",
+"Grand Total: 1440[CREDIT_SIGN]",
 "",
 "If you have any queries about your order please log",
 "on to our customer portal.",

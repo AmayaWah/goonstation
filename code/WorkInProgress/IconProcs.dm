@@ -80,6 +80,18 @@ icon
 		// apply mask
 		Blend(M, ICON_ADD)
 
+	/// Stab randomly at the icon until we find a pixel, return its color
+	proc/RandomPixelColor()
+		var/color
+		var/frustration = 0
+		while (!color)
+			frustration ++
+			//exclude the edges because there's usually nothing there
+			color = src.GetPixel(rand(10,25), rand(10,25))
+			if (color)
+				return color
+			if (frustration > 20) //giv up
+				return null
 /*
 	HSV format is represented as "#hhhssvv" or "#hhhssvvaa"
 
@@ -101,6 +113,33 @@ icon
 
 		Higher value means brighter color
  */
+
+/// Use another icon as a cut-out for the original icon
+proc/GetMaskedIcon(var/icon/original, var/icon/mask_base)
+	RETURN_TYPE(/icon)
+	var/icon/mask = icon(mask_base)
+	mask.MapColors(1,1,1, 1,1,1, 1,1,1, 1,1,1)
+	mask.Blend(original, ICON_MULTIPLY)
+	return mask
+
+proc/GetTexturedIcon(var/icon/I, var/texture)
+	RETURN_TYPE(/icon)
+	if(isfile(I))
+		I = icon(I) // Management needs you to find the difference between these two icons: "It's the same icon." - Byond
+	if(!I || !texture)
+		return null
+
+	var/icon_height = I.Height()
+	var/icon_width = I.Width()
+	var/icon/tex
+	if(icon_height <= 32 && icon_width <= 32)
+		tex = icon('icons/effects/atom_textures_32.dmi', texture)
+	else if(icon_height <= 64 && icon_width <= 64)
+		tex = icon('icons/effects/atom_textures_64.dmi', texture)
+	else
+		return null
+
+	return GetMaskedIcon(tex, I)
 
 proc/ReadRGB(rgb)
 	if(!rgb) return
@@ -217,7 +256,7 @@ proc/HSVtoRGB(hsv)
 		else if(hue >= 255)  {r=mid; g=hi;  b=lo }
 		else                 {r=hi;  g=mid; b=lo }
 
-	return (HSV.len > 3) ? rgb(r,g,b,HSV[4]) : rgb(r,g,b)
+	return (length(HSV) > 3) ? rgb(r,g,b,HSV[4]) : rgb(r,g,b)
 
 proc/RGBtoHSV(rgb)
 	if(!rgb) return "#0000000"
@@ -288,9 +327,9 @@ proc/BlendHSV(hsv1, hsv2, amount)
 	var/list/HSV2 = ReadHSV(hsv2)
 
 	// add missing alpha if needed
-	if(HSV1.len < HSV2.len) HSV1 += 255
-	else if(HSV2.len < HSV1.len) HSV2 += 255
-	var/usealpha = HSV1.len > 3
+	if(length(HSV1) < HSV2.len) HSV1 += 255
+	else if(length(HSV2) < HSV1.len) HSV2 += 255
+	var/usealpha = length(HSV1) > 3
 
 	// normalize hsv values in case anything is screwy
 	if(HSV1[1] > 1536) HSV1[1] %= 1536
@@ -342,9 +381,9 @@ proc/BlendRGB(rgb1, rgb2, amount)
 	var/list/RGB2 = ReadRGB(rgb2)
 
 	// add missing alpha if needed
-	if(RGB1.len < RGB2.len) RGB1 += 255
-	else if(RGB2.len < RGB1.len) RGB2 += 255
-	var/usealpha = RGB1.len > 3
+	if(length(RGB1) < RGB2.len) RGB1 += 255
+	else if(length(RGB2) < RGB1.len) RGB2 += 255
+	var/usealpha = length(RGB1) > 3
 
 	var/r = round(RGB1[1] + (RGB2[1] - RGB1[1]) * amount, 1)
 	var/g = round(RGB1[2] + (RGB2[2] - RGB1[2]) * amount, 1)
@@ -393,13 +432,13 @@ proc/RotateHue(hsv, angle)
 	// decompress hue
 	HSV[1] += round(HSV[1] / 255)
 
-	return hsv(HSV[1], HSV[2], HSV[3], (HSV.len > 3 ? HSV[4] : null))
+	return hsv(HSV[1], HSV[2], HSV[3], (length(HSV) > 3 ? HSV[4] : null))
 
 // Convert an rgb color to grayscale
 proc/GrayScale(rgb)
 	var/list/RGB = ReadRGB(rgb)
 	var/gray = RGB[1]*0.3 + RGB[2]*0.59 + RGB[3]*0.11
-	return (RGB.len > 3) ? rgb(gray, gray, gray, RGB[4]) : rgb(gray, gray, gray)
+	return (length(RGB) > 3) ? rgb(gray, gray, gray, RGB[4]) : rgb(gray, gray, gray)
 
 // Change grayscale color to black->tone->white range
 proc/ColorTone(rgb, tone)

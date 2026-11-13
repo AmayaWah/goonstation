@@ -33,7 +33,7 @@
 		A.opinion = rand(-1, 1)
 
 		A.subtitle = A.detokenize(pick(subtitle_templates), tokens, add_tokens)
-		var/article = {"%company_name% %expand_influence% %industry%. [ucfirst(product_name)] %hit_shelves% %this_time% "}
+		var/article = {"%company_name% %expand_influence% %industry%. [capitalize(product_name)] %hit_shelves% %this_time% "}
 		if (A.opinion > 0)
 			A.headline = A.detokenize(pick(title_templates), tokens, add_tokens)
 			article += "but %positive_outcome%, %signifying% the %resounding% %success% the product is. The %stock_market% is %excited% over this %development%, and %stockholder% optimism is expected to %rise% as well as the stock value. Our advice: %buy%."
@@ -173,6 +173,6 @@
 	)
 
 	generateProductName(company)
-		var/list/meat = list("chicken", "beef", "seal", "monkey", "goat", "insect", "pigeon", "human", "walrus", "wendigo", "bear", "horse", "turkey", "pork", "shellfish", "starfish", "mimic", "mystery")
+		var/list/meat = list("chicken", "beef", "seal", "monkey", "goat", "insect", "pigeon", "human", "walrus", "brullbar", "bear", "horse", "turkey", "pork", "shellfish", "starfish", "mimic", "mystery")
 		var/list/qualifier = list("synthetic", "organic", "bio", "diet", "sugar-free", "paleolithic", "homeopathic", "recycled", "reclaimed", "vat-grown")
 		return "the [pick(qualifier)] [pick(meat)] meat product line"

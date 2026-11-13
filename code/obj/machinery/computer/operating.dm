@@ -1,11 +1,10 @@
 /obj/machinery/computer/operating
-	name = "Operating Computer"
+	name = "operating computer"
 	density = 1
-	anchored = 1.0
+	anchored = ANCHORED
 	icon = 'icons/obj/computer.dmi'
 	icon_state = "operating"
 	desc = "Shows information on a patient laying on an operating table."
-	power_usage = 500
 	can_reconnect = TRUE
 	circuit_type = /obj/item/circuitboard/operating
 
@@ -13,10 +12,28 @@
 
 	var/obj/machinery/optable/table = null
 	id = 0
+	var/list/victim_data[][] = list()
+	var/const/history_max = 25
+
+	attackby(obj/item/W, mob/user)
+		. = ..()
+		if (iswrenchingtool(W) && src.circuit_type)
+			playsound(src.loc, 'sound/items/Ratchet.ogg', 50, 1)
+			SETUP_GENERIC_ACTIONBAR(user, src, 2 SECONDS, /obj/machinery/computer/operating/proc/change_shape,\
+			list(W, user), W.icon, W.icon_state, "[user] changes the shape of the [src].", null)
+		else
+			src.Attackhand(user)
+
+	get_help_message(dist, mob/user)
+		. = "You can use a <b>screwdriver</b> to unscrew the screen"
+		if (src.can_reconnect)
+			. += ",\nor a <b>multitool</b> to re-scan for equipment. <br> You may also use a <b>wrench</b> to reconfigure the [src] visually."
+		else
+			. += "."
 
 /obj/machinery/computer/operating/New()
 	..()
-	SPAWN_DBG(0.5 SECONDS)
+	SPAWN(0.5 SECONDS)
 		connection_scan()
 
 /obj/machinery/computer/operating/connection_scan()
@@ -26,56 +43,55 @@
 	add_fingerprint(user)
 	if(status & (BROKEN|NOPOWER))
 		return
-	interacted(user)
+	ui_interact(user)
 
-/obj/machinery/computer/operating/proc/interacted(mob/user)
-	if (!in_interact_range(src,user) || (status & (BROKEN|NOPOWER)) )
-		src.remove_dialog(user)
-		user.Browse(null, "window=op")
-		return
-
-	src.add_dialog(user)
-	var/dat = "<HEAD><TITLE>Operating Computer</TITLE><META HTTP-EQUIV='Refresh' CONTENT='10'></HEAD><BODY><br>"
-	dat += "<A HREF='?action=mach_close&window=op'>Close</A><br><br>" //| <A HREF='?src=\ref[user];update=1'>Update</A>"
-	if(src.table && (src.table.check_victim()))
-		src.victim = src.table.victim
-		dat += {"
-<B>Patient Information:</B><BR>
-<BR>
-<B>Name:</B> [src.victim.real_name]<BR>
-<B>Age:</B> [src.victim.bioHolder.age]<BR>
-<B>Blood Type:</B> [src.victim.bioHolder.bloodType]<BR>
-<BR>
-<B>Health:</B> [src.victim.health]<BR>
-<B>Brute Damage:</B> [src.victim.get_brute_damage()]<BR>
-<B>Toxins Damage:</B> [src.victim.get_toxin_damage()]<BR>
-<B>Fire Damage:</B> [src.victim.get_burn_damage()]<BR>
-<B>Suffocation Damage:</B> [src.victim.get_oxygen_deprivation()]<BR>
-<B>Patient Status:</B> [src.victim.stat ? "Non-responsive" : "Stable"]<BR>
-"}
-	else
-		src.victim = null
-		dat += {"
-<B>Patient Information:</B><BR>
-<BR>
-<B>No Patient Detected</B>
-"}
-	user.Browse(dat, "window=op")
-	onclose(user, "op")
-
-/obj/machinery/computer/operating/Topic(href, href_list)
-	if(..())
-		return
-	if ((usr.contents.Find(src) || (in_interact_range(src, usr) && istype(src.loc, /turf))) || (issilicon(usr)))
-		src.add_dialog(usr)
-//		if (href_list["update"])
-//			src.interacted(usr)
-	return
+/obj/machinery/computer/operating/ui_interact(mob/user, datum/tgui/ui)
+	if (src.victim)
+		SEND_SIGNAL(src.victim.reagents, COMSIG_REAGENTS_ANALYZED, user)
+	ui = tgui_process.try_update_ui(user, src, ui)
+	if(!ui)
+		ui = new(user, src, "OperatingComputer")
+		ui.open()
 
 /obj/machinery/computer/operating/process()
 	..()
 	if (status & (BROKEN | NOPOWER))
 		return
-	use_power(250)
+	if(src.table && (src.table.check_victim()))
+		src.victim = src.table.victim
+	else
+		src.victim = null
+		src.victim_data = null
+	if (src.victim)
+		src.victim_data += list(sample_victim())
+		if (length(src.victim_data) > src.history_max)
+			src.victim_data.Cut(1, 2) //drop the oldest entry
+		use_power(500)
 
-	src.updateDialog()
+
+/obj/machinery/computer/operating/proc/sample_victim()
+	. = list()
+	.["brute"] = src.victim?.get_brute_damage()
+	.["burn"] = src.victim?.get_burn_damage()
+	.["toxin"] = src.victim?.get_toxin_damage()
+	.["oxy"] = src.victim?.get_oxygen_deprivation()
+
+/obj/machinery/computer/operating/ui_data(mob/user)
+	. = list()
+	.["occupied"] = istype(src.victim)
+	if(!src.victim)
+		return
+	. += src.victim.ui_health_data(TRUE, TRUE, TRUE, TRUE)
+	.["patient_data"] = src.victim_data
+
+/obj/machinery/computer/operating/small
+	density = 0
+	icon_state = "operating-small"
+
+/obj/machinery/computer/operating/proc/change_shape()
+	if (src.density)
+		src.base_icon_state = "operating-small"
+	else
+		src.base_icon_state = "operating"
+	src.power_change() // redraw nopower/broken/screen glow
+	src.density = !src.density

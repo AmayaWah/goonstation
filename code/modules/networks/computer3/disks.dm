@@ -1,36 +1,61 @@
 //CONTENTS
-//Base disk
-//Base fixed disk
+//Base Data Disk
+//Floppies:
+// - Base
+// - Demo 'Farmer Jeff'
+// - Monkey 'Mr. Muggles'
+// - Security 'SECAUTH'
+// - Sec Command 'SECAUTH'
+// - Computer3Boot 'ThinkDOS'
+// - DevKit 'T-DISK'/'Development'
+// - Office
+
+//Read-only Floppies:
+// - Network Progs 'Network Tools'
+// - Medical Progs 'Med-Trak 4'
+// - Security Progs 'SecMate 7'
+// - Bank Progs ' BankBoss 2' B)
+// - Research Progs 'AutoMate'
+// - Ext Research Progs 'Research Suite'
+// - Terminal OS 'TermOS B'
+// - Communications 'COMMaster'
+// - Engine Prog 'EngineMaster'
+// - Authentication
+
+//Long Range Teleporter Floppies:
+// - Icemoon1&2 'Senex'
+// - Solarium 'Sol'
+// - Biodome 'Fatuus'
+// - Mars outpost
+// - Lavamoon 'Io'
+// - Luna Museum
+// - Ainley
+// - Meat Derelict 'Derelict Station'
+
+//Wide floppies
 //Base memcard
 //Base tape reel (HEH)
-//Base "read only" floppy.
-//Computer3 boot floppy
-//Network tools floppy
-//Medical program floppy
-//Security program floppy
-//Research programs floppy
-//Computer3-formatted fixed disk.
-//Box of tapes
+
+
 
 
 /obj/item/disk/data
 	name = "data disk"
-	icon = 'icons/obj/cloning.dmi'
+	icon = 'icons/obj/items/disks.dmi'
 	icon_state = "datadisk0" //Gosh I hope syndies don't mistake them for the nuke disk.
 	item_state = "card-id"
 	w_class = W_CLASS_TINY
-	//DNA machine vars
-	var/data = ""
-	var/ue = 0
-	var/data_type = "ui" //ui|se
-	var/owner = "Farmer Jeff"
 	var/read_only = 0 //Well,it's still a floppy disk
 	//Filesystem vars
 	var/datum/computer/folder/root = null
 	var/file_amount = 32
 	var/file_used = 0
-	var/portable = 1
 	var/title = "Data Disk"
+	var/disk_color = "#bdbdbd"
+	var/random_color = 1
+
+	HELP_MESSAGE_OVERRIDE({"Use in-hand to toggle the write protect tab.
+		Zap with a <b>multitool</b> to wipe the disk."})
 
 	New()
 		..()
@@ -42,8 +67,6 @@
 		if (root)
 			root.dispose()
 			root = null
-
-		data = null
 		. = ..()
 
 	clone()
@@ -51,23 +74,18 @@
 		if (!D)
 			return
 
-		D.data = src.data
-		D.ue = src.ue
-		D.data_type = src.data_type
-		D.owner = src.owner
 		D.read_only = src.read_only
-
 		D.title = src.title
 		D.file_amount = src.file_amount
 		if (src.root)
-			D.root = src.root.copy_folder()
+			D.root = src.root.copy_file()
 			D.root.holder = D
 
 		return D
 
 	proc/wipe_or_zap(mob/user)
 		if(!read_only)
-			user.visible_message("<span class='alert'><b>[user] wipes the [src.name]!</b></span>")
+			user.visible_message(SPAN_ALERT("<b>[user] wipes the [src.name]!</b>"))
 			elecflash(src,0, power=2, exclude_center = 0)
 			if (src.root)
 				src.root.dispose()
@@ -75,23 +93,66 @@
 			src.root = new /datum/computer/folder
 			src.root.holder = src
 			src.root.name = "root"
+			src.name_suffixes = list()
+			src.UpdateName()
 		else
-			user.visible_message("<span class='alert'><b>[user] is zapped as the multitool backfires! The [src.name] seems unphased.</b></span>")
+			user.visible_message(SPAN_ALERT("<b>[user] is zapped as the multitool sparks off [src]'s write-protect tab! The [src.name] seems unphased.</b>"))
 			elecflash(user,0, power=2, exclude_center = 0)
 
-	attackby(obj/item/W as obj, mob/user as mob)
+	emp_act()
+		. = ..()
+		if (src.root)
+			src.root.dispose()
+
+		src.root = new /datum/computer/folder
+		src.root.holder = src
+		src.root.name = "root"
+
+	attackby(obj/item/W, mob/user)
 		if (ispulsingtool(W))
-			user.visible_message("<span class='alert'><b>[user] begins to wipe [src.name]!</b></span>")
+			user.visible_message(SPAN_ALERT("<b>[user] begins to wipe [src]!</b>"))
 			SETUP_GENERIC_ACTIONBAR(user, src, 3 SECONDS, /obj/item/disk/data/proc/wipe_or_zap, list(user), src.icon, src.icon_state, null, null)
 
-/obj/item/disk/data/floppy
-	var/random_color = 1
+///The name this disk should show up as in UIs
+/obj/item/disk/data/proc/disk_name()
+	var/name = length(src.name_suffixes) ? src.name_suffixes[1] : src.name
+	var/regex/kill_brackets = regex(@"[\(\)]", "g")
+	name = kill_brackets.Replace(name, "")
+	return name
 
 /obj/item/disk/data/floppy/New()
 	. = ..()
 	if(random_color)
 		var/diskcolor = pick(0,1,2)
 		src.icon_state = "datadisk[diskcolor]"
+		switch (diskcolor)
+			if (0)
+				src.disk_color = "#f04c59"
+			if (1)
+				src.disk_color = "#5166ee"
+			if (2)
+				src.disk_color = "#D0D510"
+
+/obj/item/disk/data/floppy/attackby(obj/item/W, mob/user)
+	if (!istype(W, /obj/item/pen))
+		return ..()
+
+	var/str = copytext(strip_html_tags(tgui_input_text(user, "Label text?", "Write label", allowEmpty = TRUE, max_length = 30)), 1, 32)
+
+	if(str)
+		phrase_log.log_phrase("label", str, no_duplicates=TRUE)
+	if (W.loc != user)
+		return
+	if(url_regex?.Find(str))
+		str = null
+	if (!str || !length(str))
+		return
+	str = "([str])"
+	if (length(src.name_suffixes) < 1)
+		src.name_suffixes = list(str)
+	else
+		src.name_suffixes[1] = str
+	src.UpdateName()
 
 /obj/item/disk/data/floppy/attack_self(mob/user as mob)
 	src.read_only = !src.read_only
@@ -99,72 +160,36 @@
 
 /obj/item/disk/data/floppy/examine()
 	. = ..()
-	. += "The write-protect tab is set to [src.read_only ? "protected" : "unprotected"]."
+	. += "<b>The write-protect tab is set to [src.read_only ? "protected" : "unprotected"]."
 
 /obj/item/disk/data/floppy/demo
 	name = "data disk - 'Farmer Jeff'"
-	data = "0C80C80C80C80C80C8000000000000161FBDDEF"
-	ue = 1
 	read_only = 1
 
 /obj/item/disk/data/floppy/monkey
 	name = "data disk - 'Mr. Muggles'"
-	data_type = "se"
-	data = "0983E840344C39F4B059D5145FC5785DC6406A4FFF"
 	read_only = 1
 
-/obj/item/disk/data/fixed_disk
-	name = "Storage Drive"
-	icon_state = "harddisk"
-	title = "Storage Drive"
-	file_amount = 80
-	portable = 0
-
-/obj/item/disk/data/memcard
-	name = "Memory Board"
-	icon_state = "memcard"
-	desc = "A large board of non-volatile memory."
-	title = "MEMCORE"
-	file_amount = 640
-	portable = 0
-
-/obj/item/disk/data/tape
-	name = "ThinkTape"
-	desc = "A form of proprietary magnetic data tape used by Thinktronic Data Systems, LLC."
-	title = "MAGTAPE"
-	icon_state = "tape"
-	inhand_image_icon = 'icons/mob/inhand/hand_books.dmi'
-	item_state = "paper"
-	file_amount = 128
-	portable = 0
+/obj/item/disk/data/floppy/sec_command
+	icon_state = "datadiskhos"
+	disk_color = "#afb9c4"
+	random_color = FALSE
 
 	New()
-		. = ..()
-		src.root.gen = 99 //No subfolders!!
+		..()
+		var/datum/computer/file/record/authrec = new /datum/computer/file/record {name = "SECAUTH";} (src)
+		authrec.fields = list("HEADS"="[netpass_heads]",
+							"SEC"="[netpass_security]",)
+		src.root.add_file(authrec)
 
-	attackby(obj/item/W as obj, mob/user as mob)
-		if (istype(W, /obj/item/pen))
-			var/t = input(user, "Enter new tape label", src.name, null) as text
-			t = copytext(strip_html(t), 1, 36)
-			if (!in_interact_range(src, user) && src.loc != user)
-				return
-			if (!t)
-				src.name = "ThinkTape"
-				return
-
-			src.name = "ThinkTape-'[t]'"
-		else
-			..()
-
-//Floppy disks that are read-only ONLY.
-//It's good to have a more permanent source of programs when somebody deletes everything (until they space all the disks)
-//Remember to actually set them as read only after adding files in New()
-/obj/item/disk/data/floppy/read_only
-	name = "permafloppy"
-
-	attack_self(mob/user as mob)
-		boutput(user, "<span class='alert'>You can't flip the write-protect tab, it's held in place with glue or something!</span>")
-		return
+/obj/item/disk/data/floppy/security
+	icon_state = "datadisksec"
+	random_color = FALSE
+	New()
+		..()
+		var/datum/computer/file/record/authrec = new /datum/computer/file/record {name = "SECAUTH";} (src)
+		authrec.fields = list("SEC"="[netpass_security]")
+		src.root.add_file( authrec )
 
 /obj/item/disk/data/floppy/computer3boot
 	name = "data disk-'ThinkDOS'"
@@ -180,6 +205,30 @@
 		newfolder.name = "bin"
 		src.root.add_file( newfolder )
 		newfolder.add_file( new /datum/computer/file/terminal_program/writewizard(src))
+
+/obj/item/disk/data/floppy/devkit
+	name = "data disk-'Development'"
+	title = "T-DISK"
+
+/obj/item/disk/data/floppy/office
+	var/label = ""
+
+	New()
+		. = ..()
+		src.name_suffix("([src.label])")
+		src.UpdateName()
+
+
+//////////////////////////////////////////////////////////////////////////////////////
+//Floppy disks that are read-only ONLY.
+//It's good to have a more permanent source of programs when somebody deletes everything (until they space all the disks(the crusher calls))
+//Remember to actually set them as read only after adding files in New()
+/obj/item/disk/data/floppy/read_only
+	name = "permafloppy"
+
+	attack_self(mob/user as mob)
+		boutput(user, SPAN_ALERT("You can't flip the write-protect tab, it's held in place with glue or something!"))
+		return
 
 /obj/item/disk/data/floppy/read_only/network_progs
 	name = "data disk-'Network Tools'"
@@ -198,23 +247,33 @@
 
 /obj/item/disk/data/floppy/read_only/medical_progs
 	name = "data disk-'Med-Trak 4'"
-	desc = "The future of professional medical record management"
+	desc = "The future of professional medical record management."
 	title = "Med-Trak 4"
 
 	New()
 		. = ..()
-		src.root.add_file( new /datum/computer/file/terminal_program/medical_records(src))
+		src.root.add_file( new /datum/computer/file/terminal_program/db_manager/medtrak(src))
 		src.read_only = 1
 
 /obj/item/disk/data/floppy/read_only/security_progs
-	name = "data disk-'SecMate 6'"
-	desc = "It manages security records.  It is the law."
-	title = "SecMate 6"
+	name = "data disk-'SecMate 7'"
+	desc = "It manages security records. It is the law."
+	title = "SecMate 7"
 
 	New()
 		. = ..()
-		src.root.add_file( new /datum/computer/file/terminal_program/secure_records(src))
+		src.root.add_file( new /datum/computer/file/terminal_program/db_manager/secmate(src))
 		src.root.add_file( new /datum/computer/file/terminal_program/manifest(src))
+		src.read_only = 1
+
+/obj/item/disk/data/floppy/read_only/bank_progs
+	name = "data disk-'BankBoss 2'"
+	desc = "For managing and micro-managing staff payroll."
+	title = "BankBoss 2"
+
+	New()
+		. = ..()
+		src.root.add_file( new /datum/computer/file/terminal_program/db_manager/bankboss(src))
 		src.read_only = 1
 
 /obj/item/disk/data/floppy/read_only/research_progs
@@ -271,67 +330,181 @@
 		src.read_only = 1
 #endif
 
+TYPEINFO(/obj/item/disk/data/floppy/read_only/authentication)
+	analyser_flags = parent_type::analyser_flags | ANALYSER_SYNDIE_ONLY
+	mats = 15
+
 /obj/item/disk/data/floppy/read_only/authentication
 	name = "Authentication Disk"
 	desc = "Capable of storing entire kilobytes of information, this disk carries activation codes for various secure things that aren't nuclear bombs."
-	icon = 'icons/obj/items/items.dmi'
 	icon_state = "nucleardisk"
+	disk_color = "#5fce64"
 	item_state = "card-id"
+	object_flags = NO_GHOSTCRITTER
 	w_class = W_CLASS_TINY
-	mats = 15
 	random_color = 0
-	file_amount = 32.0
+	file_amount = 32
+	HELP_MESSAGE_OVERRIDE({"Use on an armed nuclear bomb to alter the time remaining until detonation.
+	Use on an armory authorization computer to issue an emergency authorization or unauthorization.
+	Use on an escape shuttle launch computer to alter the time until departure."})
 
 	New()
 		. = ..()
-		SPAWN_DBG(1 SECOND) //Give time to actually generate network passes I guess.
+		START_TRACKING
+		src.AddComponent(/datum/component/replace_on_cryo)
+		// I'm not including the captain here so you can see when they recollect it.
+		src.AddComponent(/datum/component/log_item_pickup, first_time_only=FALSE, message_admins_too=FALSE)
+		SPAWN(1 SECOND) //Give time to actually generate network passes I guess.
 			if (!root) return
 			var/datum/computer/file/record/authrec = new /datum/computer/file/record {name = "GENAUTH";} (src)
 			authrec.fields = list("HEADS"="[netpass_heads]",
 								"SEC"="[netpass_security]",
-								"MED"="[netpass_medical]")
+								"MED"="[netpass_medical]",
+								"LOGIN"="[netpass_login]")
 
 			src.root.add_file( authrec )
 			src.root.add_file( new /datum/computer/file/terminal_program/communications(src))
 			src.read_only = 1
 
-/obj/item/disk/data/floppy/devkit
-	name = "data disk-'Development'"
-	title = "T-DISK"
+	disposing()
+		STOP_TRACKING
+		. = ..()
 
-//A fixed disk with some structure already set up for the main os I guess
-/obj/item/disk/data/fixed_disk/computer3
+	attack_self(mob/user as mob)
+		if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+			return
+		user.visible_message("[user] flashes the [name].", "You show off the [name].")
+		actions.start(new /datum/action/show_item(user, src, "disk"), user)
+
+	attack(mob/target, mob/user, def_zone, is_special = FALSE, params = null)
+		if(ON_COOLDOWN(user, "showoff_item", SHOWOFF_COOLDOWN))
+			return
+		user.visible_message("[user] flashes the [name] at [target.name].", "You show off the [name] to [target.name]")
+		actions.start(new /datum/action/show_item(user, src, "disk"), user)
+
+//////////////////////////////////////////////////////////////////////////////////////
+///Long range teleporter disks woohoo
+/obj/item/disk/data/floppy/lrt
+	name = "galactic coordinate disk - 'Blank'"
+	title = "Teleconsole"
+	icon_state = "datadisktele0"
+	random_color = FALSE
+
+	var/target_name
+
 	New()
 		. = ..()
-		//First off, create the directory for logging stuff
-		var/datum/computer/folder/newfolder = new /datum/computer/folder(  )
-		newfolder.name = "logs"
-		src.root.add_file( newfolder )
-		newfolder.add_file( new /datum/computer/file/record/c3help(src))
-		//This is the bin folder. For various programs I guess sure why not.
-		newfolder = new /datum/computer/folder
-		newfolder.name = "bin"
-		src.root.add_file( newfolder )
-		//newfolder.add_file( new /datum/computer/file/terminal_program/sigcrafter(src))
-		newfolder.add_file( new /datum/computer/file/terminal_program/sigpal(src))
-		newfolder.add_file( new /datum/computer/file/terminal_program/background/signal_catcher(src))
-		if (prob(75))
-			newfolder.add_file( new /datum/computer/file/terminal_program/writewizard(src))
+		var/datum/computer/file/lrt_data/place = new /datum/computer/file/lrt_data(src)
+		place.place_name = src.target_name
+		src.root.add_file( place )
+
+	icemoon
+		name = "galactic coordinate disk - 'Senex'"
+		target_name = "Senex"
+
+	icemoon2
+		name = "galactic coordinate disk - 'Senex II'"
+		target_name = "Senex II"
+
+	solarium
+		name = "galactic coordinate disk - 'Sol'"
+		icon_state = "datadisktele1"
+		disk_color = "#f39249"
+		target_name = "Sol"
+
+	biodome
+		name = "galactic coordinate disk - 'Fatuus'"
+		target_name = "Fatuus"
+
+	mars_outpost
+		name = "galactic coordinate disk - 'Mars'"
+		target_name = "Mars"
+
+	lavamoon
+		name = "galactic coordinate disk - 'Io'"
+		target_name = "Io"
+
+	luna_museum
+		name = "galactic coordinate disk - 'Lunar Museum'"
+		target_name = "Luna"
+
+	ainley
+		name = "galactic coordinate disk - 'Ainley'"
+		target_name = "Ainley Staff Retreat"
+
+	meat_derelict
+		name = "galactic coordinate disk - 'Derelict Station'"
+		target_name = "Derelict Station"
+
+//////////////////////////////////////////////////////////////////////////////////////
+// Wide 5.25" style floppies
+
+/obj/item/disk/data/wide_floppy
+	icon = 'icons/obj/items/disks.dmi'
+	icon_state = "big-red"
+
+/obj/item/disk/data/wide_floppy/New()
+	. = ..()
+	if(src.random_color)
+		var/my_random_color = rand(0,7)
+		switch(my_random_color)
+			if(0)
+				src.icon_state = "big-red"
+				src.disk_color = "#f04c59"
+			if(1)
+				src.icon_state = "big-yellow"
+				src.disk_color = "#D0D510"
+			if(2)
+				src.icon_state = "big-blue"
+				src.disk_color = "#5166ee"
+			if(3)
+				src.icon_state = "big-green"
+				src.disk_color = "#07a507"
+			if(4)
+				src.icon_state = "big-brown"
+				src.disk_color = "#524030"
+			if(5)
+				src.icon_state = "big-purple"
+				src.disk_color = "#6f228d"
+			if(6)
+				src.icon_state = "big-pink"
+				src.disk_color = "#c168c4"
+			if(7)
+				src.icon_state = "big-cyan"
+				src.disk_color = "#1ba89c"
+
+//////////////////////////////////////////////////////////////////////////////////////
+///Misc Disks
+/obj/item/disk/data/memcard
+	name = "Memory Board"
+	icon_state = "memcard"
+	desc = "A large board of non-volatile memory."
+	title = "MEMCORE"
+	file_amount = 640
+
+/obj/item/disk/data/tape
+	name = "ThinkTape"
+	desc = "A form of proprietary magnetic data tape used by Thinktronic Data Systems, LLC."
+	title = "MAGTAPE"
+	icon_state = "tape"
+	inhand_image_icon = 'icons/mob/inhand/hand_books.dmi'
+	item_state = "paper"
+	file_amount = 128
+
+	New()
+		. = ..()
+		src.root.gen = 99 //No subfolders!!
+
+	attackby(obj/item/W, mob/user)
+		if (istype(W, /obj/item/pen))
+			var/t = input(user, "Enter new tape label", src.name, null) as text
+			t = copytext(strip_html(t), 1, 36)
+			if (!in_interact_range(src, user) && src.loc != user)
+				return
+			if (!t)
+				src.name = "ThinkTape"
+				return
+
+			src.name = "ThinkTape-'[t]'"
 		else
-			newfolder.add_file( new /datum/computer/file/terminal_program/file_transfer(src))
-
-//A computer disk with the hottest software, for nerds
-/obj/item/disk/data/fixed_disk/techcomputer3
-	New()
-		. = ..()
-		var/datum/computer/folder/newfolder = new /datum/computer/folder(  )
-		newfolder.name = "logs"
-		src.root.add_file( newfolder )
-		newfolder.add_file( new /datum/computer/file/record/c3help(src))
-		newfolder = new /datum/computer/folder
-		newfolder.name = "bin"
-		src.root.add_file( newfolder )
-		newfolder.add_file( new /datum/computer/file/terminal_program/sigpal(src))
-		newfolder.add_file( new /datum/computer/file/terminal_program/background/signal_catcher(src))
-		newfolder.add_file( new /datum/computer/file/terminal_program/writewizard(src))
-		newfolder.add_file( new /datum/computer/file/terminal_program/file_transfer(src))
+			..()

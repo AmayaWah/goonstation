@@ -3,18 +3,20 @@
 	name = "SECURE AREA"
 	icon = 'icons/obj/decals/wallsigns.dmi'
 	icon_state = "securearea"
-	anchored = 1.0
+	deconstruct_flags = DECON_WIRECUTTERS
+	anchored = ANCHORED
 	opacity = 0
 	density = 0
 	layer = EFFECTS_LAYER_BASE
 	plane = PLANE_NOSHADOW_BELOW
+	event_handler_flags = USE_FLUID_ENTER | IMMUNE_MINERAL_MAGNET
 
 /obj/joeq
 	desc = "Here lies Joe Q. Loved by all. He was a terrorist. R.I.P."
 	name = "Joe Q. Memorial Plaque"
 	icon = 'icons/obj/decals/wallsigns.dmi'
 	icon_state = "rip"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 0
 
@@ -23,7 +25,7 @@
 	name = "Arthur Muggins Memorial Plaque"
 	icon = 'icons/obj/decals/wallsigns.dmi'
 	icon_state = "rip"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 0
 
@@ -32,7 +34,7 @@
 	name = "Funny-Looking Memorial Plaque"
 	icon = 'icons/obj/decals/wallsigns.dmi'
 	icon_state = "rip"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 0
 
@@ -41,6 +43,6 @@
 	name = "dedication plaque"
 	icon = 'icons/obj/decals/wallsigns.dmi'
 	icon_state = "rip"
-	anchored = 1.0
+	anchored = ANCHORED
 	opacity = 0
 	density = 0
